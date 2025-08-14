@@ -1,0 +1,22 @@
+pref-title = 插件模板设置示例
+pref-enable =
+    .label = 开启
+pref-input = 输入
+pref-help = { $name } Build { $version } { $time }
+
+pref-server-title = MCP 服务器
+pref-server-enable =
+    .label = 启用服务器
+pref-server-port = 端口
+pref-server-port-invalid = 端口号必须在 1024 和 65535 之间。
+pref-server-default-fields = 默认字段
+pref-server-field-title = 标题
+pref-server-field-creators = 作者
+pref-server-field-date = 日期
+pref-server-field-year = 年份
+pref-server-field-itemType = 条目类型
+pref-server-field-doi = DOI
+pref-server-field-isbn = ISBN
+pref-server-field-tags = 标签
+pref-server-field-collections = 分类
+pref-server-field-attachmentPaths = 附件路径

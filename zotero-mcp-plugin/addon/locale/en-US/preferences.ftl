@@ -1,0 +1,22 @@
+pref-title = Addon Template Example
+pref-enable =
+    .label = Enable
+pref-input = Input
+pref-help = { $name } Build { $version } { $time }
+
+pref-server-title = MCP Server
+pref-server-enable =
+    .label = Enable Server
+pref-server-port = Port
+pref-server-port-invalid = Port must be between 1024 and 65535.
+pref-server-default-fields = Default Fields
+pref-server-field-title = Title
+pref-server-field-creators = Creators
+pref-server-field-date = Date
+pref-server-field-year = Year
+pref-server-field-itemType = Item Type
+pref-server-field-doi = DOI
+pref-server-field-isbn = ISBN
+pref-server-field-tags = Tags
+pref-server-field-collections = Collections
+pref-server-field-attachmentPaths = Attachment Paths
