@@ -1,7 +1,7 @@
 # Zotero MCP - Model Context Protocol Integration for Zotero
 
 Zotero MCP 是一个开源项目，旨在通过模型上下文协议（Model Context Protocol, MCP）将强大的 AI 功能与领先的文献管理工具 Zotero 无缝集成。该项目包含两个核心组件：一个 Zotero 插件和一个 MCP 服务器，共同为 AI 助手（如 Claude）提供与您本地 Zotero 文献库交互的能力。
-
+_This README is also available in: [:gb: English](./README.md) | :cn: 简体中文._
 [![GitHub](https://img.shields.io/badge/GitHub-zotero--mcp-blue?logo=github)](https://github.com/cookjohn/zotero-mcp)
 [![zotero target version](https://img.shields.io/badge/Zotero-7-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org)
