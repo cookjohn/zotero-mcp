@@ -49,120 +49,114 @@ Zotero MCP 服务器是一个基于 Model Context Protocol 的工具服务器，
 
 2.  **启动服务**：
     *   在 Zotero 的 `首选项 -> Zotero MCP Plugin` 标签页中，勾选 "Enable Server" 来启动插件内置的 HTTP 服务器。
-    *   通常情况下，保持默认端口 `23119` 即可。
+    *   通常情况下，保持默认端口 `23120` 即可。
 
 3.  **连接 AI 客户端**：
     *   根据您使用的 AI 客户端，参考下面的指南配置 MCP 服务器。您只需要下载 `zotero-mcp-server` 文件夹，无需进行 `npm install` 或 `build` 等开发者操作。
 
 ---
 
-### 2. 多客户端 MCP Server 安装配置指南
+### 2. 配置 MCP Server
 
-您需要先从本仓库下载 `zotero-mcp-server` 文件夹，并记住它的存放路径。
+现在，您可以通过 npm 全局安装 Zotero MCP Server，这是最简单、最推荐的方式。
+
+1.  **安装 Server**：
+    *   打开您的终端（Terminal、命令提示符或 PowerShell）。
+    *   运行以下命令进行全局安装：
+        ```bash
+        npm install -g zotero-mcp
+        ```
+    *   NPM 包页面: [https://www.npmjs.com/package/zotero-mcp](https://www.npmjs.com/package/zotero-mcp)
+
+2.  **获取 Server 脚本路径**：
+    *   安装后，您需要找到 `zotero-mcp` 包的主脚本文件 `index.js` 的完整路径。
+    *   首先，运行以下命令找到 npm 全局模块的安装目录：
+        ```bash
+        npm root -g
+        ```
+    *   该命令会输出一个路径，例如 `C:\Users\YourUser\AppData\Roaming\npm\node_modules` (Windows) 或 `/home/user/.nvm/versions/node/v20.11.1/lib/node_modules` (macOS/Linux)。
+    *   将此路径与 `/zotero-mcp/build/index.js` 拼接起来，就构成了您需要的完整脚本路径。
+    *   **最终路径示例**: `C:\Users\YourUser\AppData\Roaming\npm\node_modules\zotero-mcp\build\index.js`
+
+---
+
+### 3. 连接 AI 客户端
+
+**重要提示**：Zotero MCP Server 是由您的 AI 客户端在需要时 **自动启动** 的，您 **无需** 手动运行任何命令。
+
+您需要在 AI 客户端中配置 `node` 来执行上一步获取的 **完整脚本路径**。
 
 #### a) Cherry Studio 配置
 
-1.  **打开设置**：在 Cherry Studio 界面，点击左下角的齿轮图标，进入 `Settings`。
-2.  **导航到 MCP 配置**：在设置菜单中，选择 `Advanced -> MCP Servers`。
-3.  **添加服务器**：点击 "Add Server" 按钮。
-4.  **填写配置**：
-    *   **Name**: `zotero` (或您喜欢的任何名称)
-    *   **Command**: `node`
-    *   **Args**: `"/path/to/your/zotero-mcp/zotero-mcp-server/build/index.js"` (请将 `/path/to/your/` 替换为实际路径，并保留引号)
-    *   点击 "Save" 保存。
-
-    **路径说明**:
-    *   **Windows 用户**: 推荐使用正斜杠 `/` 作为路径分隔符，例如 `"C:/Users/YourName/Documents/zotero-mcp/..."`。
-    *   **macOS/Linux 用户**: 使用标准 Unix 路径，例如 `"/Users/YourName/Documents/zotero-mcp/..."`。
-
-#### b) Gemini CLI 配置
-
-1.  **编辑配置文件**：找到并打开 Gemini CLI 的配置文件（通常是 `gemini_config.json`）。
-2.  **添加服务器配置**：在 `mcp_servers` 字段下添加以下内容：
+1.  **打开设置**：进入 `Settings -> Advanced -> MCP Servers`。
+2.  **点击 "Import from JSON"** 并粘贴以下内容：
     ```json
-    "mcp_servers": {
+    {
       "zotero": {
-        "command": ["node", "/path/to/your/zotero-mcp/zotero-mcp-server/build/index.js"]
+        "command": "node",
+        "args": ["/path/to/your/zotero-mcp/build/index.js"]
       }
     }
     ```
-    **注意**: 同样需要替换为您的实际路径。
-3.  **验证连接**：重启 Gemini CLI，它会自动连接到 Zotero MCP 服务器。
+    **重要提示**:
+    *   请将 `/path/to/your/zotero-mcp/build/index.js` 替换为您在 **第 2 步** 中获取的 **完整脚本路径**。
+    *   例如: `C:\\Users\\YourUser\\AppData\\Roaming\\npm\\node_modules\\zotero-mcp\\build\\index.js` (在 JSON 中请注意 Windows 路径需要使用双反斜杠 `\\` 进行转义)。
+
+3.  **保存配置**：点击 "Save" 按钮。
+
+#### b) Gemini CLI 配置
+
+1.  **编辑配置文件** (`gemini_config.json`)：
+    ```json
+    "mcp_servers": {
+      "zotero": {
+        "command": ["node", "/path/to/your/zotero-mcp/build/index.js"]
+      }
+    }
+    ```
+    *将 `/path/to/your/.../index.js` 替换为您获取的实际路径。*
 
 #### c) Claude Desktop 配置
 
-Claude Desktop 提供了两种配置 MCP 服务器的方式：通过桌面扩展（推荐）或手动编辑配置文件。
-
-**方式一：通过桌面扩展 (Desktop Extensions) 安装 (推荐)**
-
-这是最简单、最推荐的方式。
-
-1.  **获取扩展**：前往项目的 [Releases 页面](https://github.com/cookjohn/zotero-mcp/releases) 下载最新的 `zotero-mcp-server.dxt` 文件。
-2.  **安装扩展**：
-    *   在 Claude Desktop 中，导航到 `Settings > Extensions`。
-    *   点击 "Install from .dxt file"，然后选择您刚刚下载的 `.dxt` 文件。
-3.  **完成**：扩展会自动处理 MCP 服务器的安装和配置，无需手动操作。
-
-**方式二：手动编辑配置文件**
-
-如果您希望手动控制配置，请按以下步骤操作：
-
 1.  **找到配置文件**：
-    *   **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-    *   **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-    *   **Linux**: `~/.config/Claude/claude_desktop_config.json`
-2.  **添加配置**：在 `mcpServers` 字段下添加 Zotero 服务器。如果该字段不存在，请先创建它。
-
-    **配置示例**:
+    *   Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+    *   macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+2.  **添加配置**：
     ```json
     {
       "mcpServers": {
         "zotero": {
           "command": "node",
-          "args": ["/path/to/your/zotero-mcp/zotero-mcp-server/build/index.js"],
+          "args": ["/path/to/your/zotero-mcp/build/index.js"],
           "env": {}
         }
       }
     }
     ```
-    **路径说明**:
-    *   将 `/path/to/your/` 替换为 `zotero-mcp-server` 文件夹所在的绝对路径。
-    *   **Windows 用户**: 请使用双反斜杠 `\\` 作为路径分隔符，例如 `C:\\Users\\YourName\\Documents\\zotero-mcp\\...`。
-
-3.  **重启应用**：保存文件并重启 Claude Desktop。
+    *将 `/path/to/your/.../index.js` 替换为您获取的实际路径。*
 
 #### d) Cursor IDE 配置
 
-Cursor IDE 使用 `mcp.json` 文件来管理 MCP 服务器。
-
-1.  **打开配置文件**：在 Cursor 中，使用命令面板 (Ctrl+Shift+P 或 Cmd+Shift+P)，搜索并选择 "Configure MCP Servers"。这将打开 `mcp.json` 文件。
-2.  **添加服务器配置**：
+1.  **打开配置文件** (`mcp.json`)：
     ```json
     {
       "servers": {
         "zotero": {
           "command": "node",
-          "args": ["/path/to/your/zotero-mcp/zotero-mcp-server/build/index.js"]
+          "args": ["/path/to/your/zotero-mcp/build/index.js"]
         }
       }
     }
     ```
-    **路径说明**:
-    *   将 `/path/to/your/` 替换为 `zotero-mcp-server` 文件夹所在的绝对路径。
-    *   **Windows 用户**: 请使用正斜杠 `/` 或双反斜杠 `\\` 作为路径分隔符。
-
-3.  **重启 Cursor**: 保存文件并重启 Cursor IDE 以使更改生效。
+    *将 `/path/to/your/.../index.js` 替换为您获取的实际路径。*
 
 #### e) ChatBox 配置
 
-1.  **进入设置**：打开 ChatBox，进入 `设置 -> 工具 -> MCP (Model Context Protocol)`。
-2.  **启用 MCP**：确保 "Enable MCP" 开关已打开。
-3.  **添加 MCP 服务器**：
-    *   点击 "添加"。
+1.  **进入设置**：`设置 -> 工具 -> MCP`。
+2.  **添加服务器**：
     *   **服务器名称**: `zotero`
     *   **命令**: `node`
-    *   **参数**: `"/path/to/your/zotero-mcp/zotero-mcp-server/build/index.js"` (请将路径替换为您的实际路径，并保留引号)
-4.  **测试连接**：保存后，ChatBox 会尝试连接服务器。如果状态显示为 "已连接"，则配置成功。
+    *   **参数**: 填入您上一步获取的 `index.js` **完整路径**。
 
 ---
 
@@ -184,7 +178,7 @@ Cursor IDE 使用 `mcp.json` 文件来管理 MCP 服务器。
 | 步骤 | 检查项 | 解决方案 |
 | :--- | :--- | :--- |
 | **1** | **Zotero 插件服务** | 确保 Zotero 正在运行，并且在 `首选项 -> Zotero MCP Plugin` 中，"Enable Server" 已被勾选。 |
-| **2** | **路径配置** | 仔细检查您在 AI 客户端中填写的 `index.js` 文件的**绝对路径**是否完全正确，包括文件名。注意 Windows 和 macOS/Linux 的路径格式差异。 |
+| **2** | **路径配置** | 确认 AI 客户端中的 `command` 设置为 `node`，并且作为参数的 `index.js` **绝对路径**完全正确。路径错误是导致失败的最常见原因。 |
 | **3** | **端口冲突** | 如果 Zotero 插件端口 `23119` 被占用，请在插件设置中更换端口，并在 `zotero-mcp-server` 目录下创建 `.env` 文件，内容为 `ZOTERO_API_PORT=新端口号`。 |
 | **4** | **查看日志** | 大多数客户端都提供 MCP 服务器的日志输出功能。在 MCP 配置界面寻找 "Show Logs" 或类似的按钮。日志是定位问题的最有效工具，通常会明确指出是路径错误、命令失败还是其他问题。 |
 | **5** | **防火墙/安全软件** | 确认您的防火墙或安全软件没有阻止 `node.exe` (Windows) 或 `node` (macOS/Linux) 的网络通信。 |
@@ -246,17 +240,37 @@ Cursor IDE 使用 `mcp.json` 文件来管理 MCP 服务器。
 
 ### 步骤 2: 安装和配置 MCP 服务器
 
+作为开发者，您可以选择从源代码构建和运行，或者使用已发布的 npm 包。
+
+**方式一：从源代码运行 (推荐用于开发)**
+
 1.  克隆本仓库到本地：
     ```bash
     git clone https://github.com/cookjohn/zotero-mcp.git
     cd zotero-mcp
     ```
-2.  进入 `zotero-mcp-server` 目录，安装依赖并构建项目：
+2.  进入 `zotero-mcp-server` 目录，安装依赖并构建项目。该目录包含了 MCP Server 的所有源代码。
     ```bash
     cd zotero-mcp-server
     npm install
     npm run build
     ```
+3.  运行开发服务器：
+    ```bash
+    npm start
+    ```
+    或者直接通过 node 运行构建后的文件：
+    ```bash
+    node build/index.js
+    ```
+
+**方式二：使用发布的 npm 包**
+
+如果您想测试或使用已发布的版本，可以直接全局安装：
+```bash
+npm install -g zotero-mcp
+```
+然后通过 `zotero-mcp` 命令启动。
 
 ### 步骤 3: 集成到 AI 助手 (以 Claude Desktop 为例)
 

@@ -36,7 +36,7 @@ async function makeZoteroRequest(endpoint, params = {}, pathParams = {}) {
 async function main() {
     const server = new McpServer({
         name: "zotero",
-        version: "0.3.0", // Refactored tools for clarity
+        version: "0.4.0",
     });
     // 1. Ping Tool
     server.tool("ping", "Checks if the Zotero MCP server is running.", {}, async () => {
