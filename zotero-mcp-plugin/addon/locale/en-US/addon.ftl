@@ -1,0 +1,11 @@
+startup-begin = Addon is loading
+startup-finish = Addon is ready
+menuitem-label = Zotero MCP Plugin: Helper Examples
+menupopup-label = Zotero MCP Plugin: Menupopup
+menuitem-submenulabel = Zotero MCP Plugin
+menuitem-filemenulabel = Zotero MCP Plugin: File Menuitem
+prefs-title = Zotero MCP Plugin
+prefs-table-title = Title
+prefs-table-detail = Detail
+tabpanel-lib-tab-label = Lib Tab
+tabpanel-reader-tab-label = Reader Tab

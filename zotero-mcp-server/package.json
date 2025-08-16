@@ -1,0 +1,31 @@
+{
+  "name": "zotero-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP Server for Zotero",
+  "main": "build/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "build:unix": "tsc && chmod 755 build/index.js",
+    "start": "node build/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "zotero"
+  ],
+  "author": "cookjohn",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cookjohn/zotero-mcp.git"
+  },
+  "homepage": "https://github.com/cookjohn/zotero-mcp",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "typescript": "^5.4.5"
+  }
+}

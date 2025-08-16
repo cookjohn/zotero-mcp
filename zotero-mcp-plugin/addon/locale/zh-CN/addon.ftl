@@ -1,0 +1,11 @@
+startup-begin = 插件加载中
+startup-finish = 插件已就绪
+menuitem-label = Zotero MCP Plugin: 帮助工具样例
+menupopup-label = Zotero MCP Plugin: 弹出菜单
+menuitem-submenulabel = Zotero MCP Plugin：子菜单
+menuitem-filemenulabel = Zotero MCP Plugin: 文件菜单
+prefs-title = Zotero MCP Plugin
+prefs-table-title = 标题
+prefs-table-detail = 详情
+tabpanel-lib-tab-label = 库标签
+tabpanel-reader-tab-label = 阅读器标签

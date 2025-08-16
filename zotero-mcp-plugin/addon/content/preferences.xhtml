@@ -1,0 +1,40 @@
+<linkset>
+  <html:link rel="localization" href="__addonRef__-preferences.ftl" />
+</linkset>
+<groupbox
+  onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window });"
+>
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-server-title"></html:h2></label>
+    <checkbox
+      id="zotero-prefpane-__addonRef__-mcp-server-enabled"
+      preference="mcp.server.enabled"
+      data-l10n-id="pref-server-enable"
+    />
+    <hbox>
+      <html:label
+        for="zotero-prefpane-__addonRef__-mcp-server-port"
+        data-l10n-id="pref-server-port"
+      ></html:label>
+      <html:input
+        type="number"
+        id="zotero-prefpane-__addonRef__-mcp-server-port"
+        preference="mcp.server.port"
+        min="1024"
+        max="65535"
+      ></html:input>
+    </hbox>
+  </groupbox>
+  <hbox>
+    <button id="zotero-prefpane-__addonRef__-read-selected" label="Read Selected Items" />
+  </hbox>
+  <hbox class="virtualized-table-container" flex="1" height="300px">
+    <html:div id="__addonRef__-table-container" />
+  </hbox>
+</groupbox>
+<vbox>
+  <html:label
+    data-l10n-id="pref-help"
+    data-l10n-args='{"time": "__buildTime__","name": "__addonName__","version":"__buildVersion__"}'
+  ></html:label>
+</vbox>
