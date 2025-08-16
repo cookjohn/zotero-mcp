@@ -5,7 +5,7 @@
   "description": "Zotero MCP Plugin",
   "config": {
     "addonName": "Zotero MCP Plugin",
-    "addonID": "zotero-mcp-plugin@example.com",
+    "addonID": "zotero-mcp-plugin@autoagent.my",
     "addonRef": "zotero-mcp-plugin",
     "addonInstance": "ZoteroMCP",
     "prefsPrefix": "extensions.zotero.zotero-mcp-plugin"
@@ -25,7 +25,9 @@
     "build": "zotero-plugin build && tsc --noEmit",
     "lint:check": "prettier --check . && eslint .",
     "lint:fix": "prettier --write . && eslint . --fix",
-    "release": "zotero-plugin release",
+    "release": "npm version patch --force -m \"Release v%s\" && git push --follow-tags",
+    "release:beta": "npm version prepatch --preid beta --force -m \"Release v%s\" && git push --follow-tags",
+    "prepare-release": "node scripts/prepare-release.js",
     "test": "zotero-plugin test",
     "update-deps": "npm update --save"
   },

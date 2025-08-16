@@ -1,0 +1,52 @@
+name: Beta Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Prepare release assets
+        run: npm run prepare-release -- --beta
+
+      - name: Get plugin info
+        id: plugin-info
+        run: |
+          XPI_NAME=$(node -p "require('./package.json').name").xpi
+          VERSION=$(node -p "require('./package.json').version")
+          echo "xpi_name=$XPI_NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.plugin-info.outputs.xpi_name }}
+            update-beta.json
+          tag_name: v${{ steps.plugin-info.outputs.version }}
+          name: Beta Release v${{ steps.plugin-info.outputs.version }}
+          body: |
+            Beta release notes for version ${{ steps.plugin-info.outputs.version }}.
+          draft: false
+          prerelease: true

@@ -1,0 +1,18 @@
+{
+  "addons": {
+    "zotero-mcp-plugin@example.com": {
+      "updates": [
+        {
+          "version": "1.0.0-beta.0",
+          "update_link": "https://github.com/cookjohn/zotero-mcp/releases/download/v1.0.0-beta.0/zotero-mcp-plugin-1.0.0-beta.0.xpi",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "6.999",
+              "strict_max_version": "8.*"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
