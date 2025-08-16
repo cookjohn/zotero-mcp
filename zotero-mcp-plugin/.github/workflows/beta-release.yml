@@ -26,6 +26,12 @@ jobs:
       - name: Build plugin
         run: npm run build
 
+      - name: Upload build artifact for debugging
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-beta
+          path: .scaffold/build/
+
       - name: Prepare release assets
         run: npm run prepare-release -- --beta
 
