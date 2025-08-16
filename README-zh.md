@@ -49,16 +49,38 @@ Zotero MCP 服务器是一个基于 Model Context Protocol 的工具服务器，
     *   在 Zotero 中，通过 `工具 -> 附加组件` 安装该 `.xpi` 文件。
     *   重启 Zotero。
 
-2.  **启动服务**：
-    *   在 Zotero 的 `首选项 -> Zotero MCP Plugin` 标签页中，勾选 "Enable Server" 来启动插件内置的 HTTP 服务器。
-    *   通常情况下，保持默认端口 `23120` 即可。
+2.  **安装 MCP Server**：
+    打开您的终端（Terminal、命令提示符或 PowerShell）。
+    *   运行以下命令进行全局安装：
+        ```bash
+        npm install -g zotero-mcp
+        ```
+    *   安装后，您需要找到 `zotero-mcp` 包的主脚本文件 `index.js` 的完整路径。
+    *   首先，运行以下命令找到 npm 全局模块的安装目录：
+        ```bash
+        npm root -g
+        ```
+    *   该命令会输出一个路径，例如 `C:\Users\YourUser\AppData\Roaming\npm\node_modules` (Windows) 或 `/home/user/.nvm/versions/node/v20.11.1/lib/node_modules` (macOS/Linux)。
+    *   将此路径与 `/zotero-mcp/build/index.js` 拼接起来，就构成了您需要的完整脚本路径。
+    *   **最终路径示例**: `C:\Users\YourUser\AppData\Roaming\npm\node_modules\zotero-mcp\build\index.js`
 
 3.  **连接 AI 客户端**：
-    *   根据您使用的 AI 客户端，参考下面的指南配置 MCP 服务器。您只需要下载 `zotero-mcp-server` 文件夹，无需进行 `npm install` 或 `build` 等开发者操作。
+    *   根据您使用的 AI 客户端，参考下面的指南配置 MCP 服务器。通常直接粘贴配置以下配置文件即可开始使用。
+    ```json
+    {
+      "zotero": {
+        "command": "node",
+        "args": ["/path/to/your/zotero-mcp/build/index.js"]
+      }
+    }
+    ```
+    **重要提示**:
+    *   请将 `/path/to/your/zotero-mcp/build/index.js` 替换为您在 **第 2 步** 中获取的 **完整脚本路径**。
+    *   例如: `C:\\Users\\YourUser\\AppData\\Roaming\\npm\\node_modules\\zotero-mcp\\build\\index.js` (在 JSON 中请注意 Windows 路径需要使用双反斜杠 `\\` 进行转义)。
 
 ---
 
-### 2. 配置 MCP Server
+### 2.  MCP Server详细说明
 
 现在，您可以通过 npm 全局安装 Zotero MCP Server，这是最简单、最推荐的方式。
 
