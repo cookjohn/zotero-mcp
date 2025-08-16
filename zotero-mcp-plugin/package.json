@@ -1,7 +1,7 @@
 {
   "name": "zotero-mcp-plugin",
   "type": "module",
-  "version": "1.0.0",
+  "version": "1.0.1-beta.0",
   "description": "Zotero MCP Plugin",
   "config": {
     "addonName": "Zotero MCP Plugin",
@@ -28,7 +28,9 @@
     "release": "npm version patch --force -m \"Release v%s\" && git push --follow-tags",
     "release:beta": "npm version prepatch --preid beta --force -m \"Release v%s\" && git push --follow-tags",
     "prepare-release": "node scripts/prepare-release.js",
+    "release:init": "node scripts/init-release.js",
     "test": "zotero-plugin test",
+    "test:update": "node scripts/test-update.js",
     "update-deps": "npm update --save"
   },
   "dependencies": {
