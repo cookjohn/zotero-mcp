@@ -78,6 +78,14 @@ Zotero MCP 服务器是一个基于 Model Context Protocol 的工具服务器，
     *   请将 `/path/to/your/zotero-mcp/build/index.js` 替换为您在 **第 2 步** 中获取的 **完整脚本路径**。
     *   例如: `C:\\Users\\YourUser\\AppData\\Roaming\\npm\\node_modules\\zotero-mcp\\build\\index.js` (在 JSON 中请注意 Windows 路径需要使用双反斜杠 `\\` 进行转义)。
 
+配置完成后，您就可以在 AI 助手中通过自然语言与您的 Zotero 文献库进行交互了。
+
+**示例:**
+
+-   `"帮我查找一下我的 Zotero 库里所有关于“人工智能”的文献"`
+-   `"获取去年由 Hinton 发表的关于 transformer 的期刊文章"`
+-   `"查找 DOI 为 10.1038/nature14539 的文献"`
+
 ---
 
 ### 2.  MCP Server详细说明
@@ -244,6 +252,22 @@ Zotero MCP 服务器是一个基于 Model Context Protocol 的工具服务器，
 -   **标识符查找**: 可通过 DOI、ISBN 等唯一标识符快速、精确定位文献。
 -   **协议转换**: 将 AI 助手的 MCP 请求转换为对 `zotero-mcp-plugin` HTTP API 的调用。
 -   **本地化运行**: 作为本地进程运行，确保数据安全，所有操作均在本地完成。
+
+---
+
+## 效果展示
+
+这里是一些展示 Zotero MCP 功能的截图：
+
+| 功能 | 截图 |
+| :--- | :---: |
+| **功能说明** | ![功能说明](./IMG/功能说明.png) |
+| **文献检索** | ![文献检索](./IMG/文献检索.png) |
+| **元数据查看** | ![元数据查看](./IMG/元数据查看.png) |
+| **全文读取 1** | ![全文读取 1](./IMG/全文读取1.png) |
+| **全文读取 2** | ![全文读取 2](./IMG/全文读取2.png) |
+| **附件检索 (Gemini CLI)** | ![附件检索](./IMG/geminicli-附件检索.png) |
+| **PDF 读取 (Gemini CLI)** | ![PDF 读取](./IMG/geminicli-pdf读取.png) |
 
 ---
 

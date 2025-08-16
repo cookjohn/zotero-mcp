@@ -196,6 +196,22 @@ npm install -g zotero-mcp
 -   **Local Operation**: Runs as a local process, ensuring data privacy.
 
 ---
+## 📸 Screenshots
+
+Here are some screenshots demonstrating the functionality of Zotero MCP:
+
+| Feature | Screenshot |
+| :--- | :---: |
+| **Feature Demonstration** | ![Feature Demonstration](./IMG/功能说明.png) |
+| **Literature Search** | ![Literature Search](./IMG/文献检索.png) |
+| **Viewing Metadata** | ![Viewing Metadata](./IMG/元数据查看.png) |
+| **Full-text Reading 1** | ![Full-text Reading 1](./IMG/全文读取1.png) |
+| **Full-text Reading 2** | ![Full-text Reading 2](./IMG/全文读取2.png) |
+| **Searching Attachments (Gemini CLI)** | ![Searching Attachments](./IMG/geminicli-附件检索.png) |
+| **Reading PDF (Gemini CLI)** | ![Reading PDF](./IMG/geminicli-pdf读取.png) |
+
+---
+
 
 ## 🔧 API Reference
 
