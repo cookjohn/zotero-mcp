@@ -1,0 +1,7 @@
+# IDE configuration
+.vscode/
+.idea/
+.roo/
+# System files
+.DS_Store
+Thumbs.db
