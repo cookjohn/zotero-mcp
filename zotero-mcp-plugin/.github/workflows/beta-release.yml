@@ -32,17 +32,18 @@ jobs:
       - name: Get plugin info
         id: plugin-info
         run: |
-          XPI_NAME=$(node -p "require('./package.json').name").xpi
           VERSION=$(node -p "require('./package.json').version")
-          echo "xpi_name=$XPI_NAME" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          # Copy and rename the xpi file with version number
+          cp .scaffold/build/zotero-mcp-plugin.xpi ./zotero-mcp-plugin-${VERSION}.xpi
+          echo "xpi_filename=zotero-mcp-plugin-${VERSION}.xpi" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            .scaffold/build/${{ steps.plugin-info.outputs.xpi_name }}
+            ${{ steps.plugin-info.outputs.xpi_filename }}
             update-beta.json
           tag_name: v${{ steps.plugin-info.outputs.version }}
           name: Beta Release v${{ steps.plugin-info.outputs.version }}
