@@ -448,7 +448,7 @@ export async function handleSearchRequest(
       query: params,
       pagination: { limit: 1, offset: 0, total: item ? 1 : 0, hasMore: false },
       searchTime: `${Date.now() - startTime}ms`,
-      results: item ? [formatItem(item)] : [],
+      results: item ? [await formatItem(item)] : [],
     };
   }
 
@@ -681,6 +681,31 @@ export async function handleSearchRequest(
   const paginatedItems = items.slice(offset, offset + limit);
   const results = paginatedItems.map((item) => {
     const formatted = formatItemBrief(item);
+
+    // 添加附件路径信息
+    try {
+      const attachmentIDs = item.getAttachments();
+      if (attachmentIDs && attachmentIDs.length > 0) {
+        formatted.attachments = attachmentIDs.map((id: number) => {
+          const attachment = Zotero.Items.get(id);
+          if (attachment && attachment.isAttachment()) {
+            return {
+              key: attachment.key,
+              filename: attachment.attachmentFilename || '',
+              filePath: attachment.getFilePath() || '',
+              contentType: attachment.attachmentContentType || '',
+              linkMode: attachment.attachmentLinkMode
+            };
+          }
+          return null;
+        }).filter((att: any) => att !== null);
+      } else {
+        formatted.attachments = [];
+      }
+    } catch (error) {
+      ztoolkit.log(`[SearchEngine] Error getting attachments for item ${item.key}: ${error}`, "warn");
+      formatted.attachments = [];
+    }
 
     // 添加标签匹配信息
     if ((item as any).matchedTags) {

@@ -1,5 +1,6 @@
 const MCP_SERVER_PORT = "mcp.server.port";
 const MCP_SERVER_ENABLED = "mcp.server.enabled";
+const MCP_INTEGRATED_ENABLED = "mcp.integrated.enabled";
 
 type PreferenceObserver = (name: string) => void;
 
@@ -76,6 +77,40 @@ class ServerPreferences {
         );
       }
       return DEFAULT_ENABLED;
+    }
+  }
+
+  public isMCPIntegratedEnabled(): boolean {
+    const DEFAULT_MCP_ENABLED = true; // Integrated MCP is the new default
+    try {
+      const enabled = Zotero.Prefs.get(MCP_INTEGRATED_ENABLED, true);
+
+      // 添加调试日志
+      if (typeof Zotero !== "undefined" && Zotero.debug) {
+        Zotero.debug(
+          `[ServerPreferences] MCP integrated enabled value from prefs: ${enabled} (type: ${typeof enabled})`,
+        );
+      }
+
+      // 确保返回有效的布尔值
+      if (enabled === undefined || enabled === null) {
+        if (typeof Zotero !== "undefined" && Zotero.debug) {
+          Zotero.debug(
+            `[ServerPreferences] MCP integrated enabled value invalid, using default: ${DEFAULT_MCP_ENABLED}`,
+          );
+        }
+        return DEFAULT_MCP_ENABLED;
+      }
+
+      return Boolean(enabled);
+    } catch (error) {
+      // 如果偏好设置系统还未初始化或发生错误，返回默认值
+      if (typeof Zotero !== "undefined" && Zotero.debug) {
+        Zotero.debug(
+          `[ServerPreferences] Error getting MCP integrated enabled status: ${error}. Using default: ${DEFAULT_MCP_ENABLED}`,
+        );
+      }
+      return DEFAULT_MCP_ENABLED;
     }
   }
 

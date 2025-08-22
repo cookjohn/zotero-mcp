@@ -10,7 +10,7 @@
       id="zotero-prefpane-__addonRef__-mcp-server-enabled"
       preference="mcp.server.enabled"
       data-l10n-id="pref-server-enable"
-    />
+    ></checkbox>
     <hbox>
       <html:label
         for="zotero-prefpane-__addonRef__-mcp-server-port"
@@ -25,15 +25,87 @@
       ></html:input>
     </hbox>
   </groupbox>
-  <hbox>
-    <button
-      id="zotero-prefpane-__addonRef__-read-selected"
-      label="Read Selected Items"
-    />
-  </hbox>
+  
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-client-config-title"></html:h2></label>
+    <html:p data-l10n-id="pref-client-config-description"></html:p>
+    
+    <hbox align="center">
+      <html:label for="client-type-select" data-l10n-id="pref-client-type-label"></html:label>
+      <html:select id="client-type-select">
+        <html:option value="claude-desktop">Claude Desktop</html:option>
+        <html:option value="cline-vscode">Cline (VS Code)</html:option>
+        <html:option value="continue-dev">Continue.dev</html:option>
+        <html:option value="cursor">Cursor</html:option>
+        <html:option value="cherry-studio">Cherry Studio</html:option>
+        <html:option value="gemini-cli">Gemini CLI</html:option>
+        <html:option value="chatbox">Chatbox</html:option>
+        <html:option value="custom-http">自定义 HTTP 客户端</html:option>
+      </html:select>
+    </hbox>
+    
+    <hbox align="center">
+      <html:label for="server-name-input" data-l10n-id="pref-server-name-label"></html:label>
+      <html:input
+        type="text"
+        id="server-name-input"
+        value="zotero-mcp"
+        placeholder="zotero-mcp"
+      />
+    </hbox>
+    
+    <hbox>
+      <button
+        id="generate-config-button"
+        data-l10n-id="pref-generate-config-button"
+      ></button>
+      <button
+        id="copy-config-button"
+        data-l10n-id="pref-copy-config-button"
+        disabled="true"
+      ></button>
+      <button
+        id="copy-guide-button"  
+        data-l10n-id="pref-copy-guide-button"
+        disabled="true"
+      ></button>
+    </hbox>
+    
+    <html:div>
+      <html:label data-l10n-id="pref-config-output-label"></html:label>
+      <html:textarea
+        id="config-output"
+        rows="10"
+        readonly="true"
+        style="width: 100%; font-family: monospace; font-size: 12px;"
+        placeholder="点击生成配置按钮来生成客户端配置..."
+      ></html:textarea>
+    </html:div>
+  </groupbox>
+  
   <hbox class="virtualized-table-container" flex="1" height="300px">
     <html:div id="__addonRef__-table-container" />
   </hbox>
+  
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-contact-title"></html:h2></label>
+    <vbox>
+      <html:div style="margin: 5px 0;">
+        <html:span data-l10n-id="pref-contact-email"></html:span>
+      </html:div>
+      <html:div style="margin: 5px 0;">
+        <html:a 
+          href="https://github.com/cookjohn/zotero-mcp" 
+          target="_blank"
+          data-l10n-id="pref-contact-github"
+          style="color: #0066cc; text-decoration: underline;"
+        ></html:a>
+      </html:div>
+      <html:div style="margin: 5px 0;">
+        <html:span data-l10n-id="pref-contact-wechat"></html:span>
+      </html:div>
+    </vbox>
+  </groupbox>
 </groupbox>
 <vbox>
   <html:label

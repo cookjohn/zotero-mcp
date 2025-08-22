@@ -1,20 +1,6 @@
-import {
-  handleSearch,
-  handleGetCollections,
-  handleSearchCollections,
-  handleGetCollectionDetails,
-  handleGetCollectionItems,
-  handleGetPDFContent,
-  handleAdvancedSearchTestEndpoint,
-  handleSearchAnnotations,
-  handleGetItemNotes,
-  handleGetItemAnnotations,
-  handleGetAnnotationById,
-  handleGetAnnotationsBatch,
-} from "./apiHandlers";
-import { handleSearchTest } from "./searchTest";
-import { testPDFExtraction } from "./apiTest";
-import { handleAnnotationTestEndpoint } from "./annotationTestHandler";
+import { StreamableMCPServer } from "./streamableMCPServer";
+import { serverPreferences } from "./serverPreferences";
+import { testMCPIntegration } from "./mcpTest";
 
 declare let ztoolkit: ZToolkit;
 
@@ -24,6 +10,8 @@ export class HttpServer {
   }
   private serverSocket: any;
   private isRunning: boolean = false;
+  private mcpServer: StreamableMCPServer | null = null;
+  private port: number = 8080;
 
   public isServerRunning(): boolean {
     return this.isRunning;
@@ -43,6 +31,7 @@ export class HttpServer {
     }
 
     try {
+      this.port = port;
       Zotero.debug(
         `[HttpServer] Attempting to start server on port ${port}...`,
       );
@@ -59,11 +48,28 @@ export class HttpServer {
       Zotero.debug(
         `[HttpServer] Successfully started HTTP server on port ${port}`,
       );
+
+      // Initialize integrated MCP server if enabled
+      this.initializeMCPServer();
     } catch (e) {
       const errorMsg = `[HttpServer] Failed to start server on port ${port}: ${e}`;
       Zotero.debug(errorMsg);
       this.stop();
       throw new Error(errorMsg);
+    }
+  }
+
+  private initializeMCPServer(): void {
+    if (serverPreferences.isMCPIntegratedEnabled()) {
+      try {
+        this.mcpServer = new StreamableMCPServer();
+        ztoolkit.log(`[HttpServer] Integrated MCP server initialized`);
+      } catch (error) {
+        ztoolkit.log(`[HttpServer] Failed to initialize MCP server: ${error}`);
+        // Don't throw error, HTTP server can still work without MCP
+      }
+    } else {
+      ztoolkit.log(`[HttpServer] Integrated MCP server disabled in preferences`);
     }
   }
 
@@ -80,6 +86,16 @@ export class HttpServer {
       Zotero.debug("[HttpServer] HTTP server stopped successfully.");
     } catch (e) {
       Zotero.debug(`[HttpServer] Error stopping server: ${e}`);
+    }
+
+    // Clean up MCP server
+    this.cleanupMCPServer();
+  }
+
+  private cleanupMCPServer(): void {
+    if (this.mcpServer) {
+      this.mcpServer = null;
+      ztoolkit.log("[HttpServer] MCP server cleaned up");
     }
   }
 
@@ -213,61 +229,51 @@ export class HttpServer {
           }
 
           let result;
-          const collectionKeyMatch = path.match(/^\/collections\/([A-Z0-9]+)$/);
-          const collectionItemsMatch = path.match(
-            /^\/collections\/([A-Z0-9]+)\/items$/,
-          );
-          const pdfContentMatch = path.match(
-            /^\/items\/([A-Z0-9]+)\/pdf-content$/,
-          );
-          const itemNotesMatch = path.match(/^\/items\/([A-Z0-9]+)\/notes$/);
-          const itemAnnotationsMatch = path.match(
-            /^\/items\/([A-Z0-9]+)\/annotations$/,
-          );
-          const annotationByIdMatch = path.match(/^\/annotations\/([A-Z0-9]+)$/);
-          const annotationsBatchMatch = path.match(/^\/annotations\/batch$/);
 
-          if (path === "/collections") {
-            result = await handleGetCollections(query);
-          } else if (pdfContentMatch) {
-            const params = { 1: pdfContentMatch[1] };
-            result = await handleGetPDFContent(params, query);
-          } else if (path === "/collections/search") {
-            result = await handleSearchCollections(query);
-          } else if (collectionKeyMatch) {
-            const params = { 1: collectionKeyMatch[1] };
-            result = await handleGetCollectionDetails(params, query);
-          } else if (collectionItemsMatch) {
-            const params = { 1: collectionItemsMatch[1] };
-            result = await handleGetCollectionItems(params, query);
-          } else if (itemNotesMatch) {
-            const params = { 1: itemNotesMatch[1] };
-            result = await handleGetItemNotes(params, query);
-          } else if (itemAnnotationsMatch) {
-            const params = { 1: itemAnnotationsMatch[1] };
-            result = await handleGetItemAnnotations(params, query);
-          } else if (annotationByIdMatch && method === "GET") {
-            const params = { 1: annotationByIdMatch[1] };
-            result = await handleGetAnnotationById(params);
-          } else if (annotationsBatchMatch && method === "POST") {
-            result = await handleGetAnnotationsBatch(requestBody);
-          } else if (path === "/annotations/search") {
-            result = await handleSearchAnnotations(query);
-          } else if (path.startsWith("/search")) {
-            result = await handleSearch(query);
-          } else if (path === "/test/advanced-search") {
-            result = await handleAdvancedSearchTestEndpoint();
-          } else if (path === "/test/annotations") {
-            result = await handleAnnotationTestEndpoint();
-          } else if (path.startsWith("/test")) {
-            result = await handleSearchTest();
-          } else if (path === "/api-test") {
-            const report = await testPDFExtraction();
+          if (path === "/mcp" && method === "POST") {
+            // Handle MCP requests via streamable HTTP
+            if (this.mcpServer) {
+              result = await this.mcpServer.handleMCPRequest(requestBody);
+            } else {
+              result = {
+                status: 503,
+                statusText: "Service Unavailable",
+                headers: { "Content-Type": "application/json; charset=utf-8" },
+                body: JSON.stringify({ error: "MCP server not enabled" }),
+              };
+            }
+          } else if (path === "/mcp/status") {
+            // MCP server status endpoint
+            if (this.mcpServer) {
+              result = {
+                status: 200,
+                statusText: "OK",
+                headers: { "Content-Type": "application/json; charset=utf-8" },
+                body: JSON.stringify(this.mcpServer.getStatus()),
+              };
+            } else {
+              result = {
+                status: 503,
+                statusText: "Service Unavailable",
+                headers: { "Content-Type": "application/json; charset=utf-8" },
+                body: JSON.stringify({ error: "MCP server not enabled", enabled: false }),
+              };
+            }
+          } else if (path === "/mcp/capabilities" || path === "/capabilities" || path === "/help") {
+            // Comprehensive capabilities discovery endpoint
             result = {
               status: 200,
               statusText: "OK",
-              headers: { "Content-Type": "text/plain; charset=utf-8" },
-              body: report,
+              headers: { "Content-Type": "application/json; charset=utf-8" },
+              body: JSON.stringify(this.getCapabilities()),
+            };
+          } else if (path === "/test/mcp") {
+            const testResult = await testMCPIntegration();
+            result = {
+              status: 200,
+              statusText: "OK",
+              headers: { "Content-Type": "application/json; charset=utf-8" },
+              body: JSON.stringify(testResult),
             };
           } else if (path.startsWith("/ping")) {
             const response =
@@ -395,6 +401,299 @@ export class HttpServer {
       this.isRunning = false;
     },
   };
+
+/**
+ * Get comprehensive capabilities and API documentation
+ */
+private getCapabilities() {
+  return {
+    serverInfo: {
+      name: "Zotero MCP Plugin",
+      version: "1.1.0",
+      description: "Model Context Protocol integration for Zotero research management",
+      author: "Zotero MCP Team",
+      repository: "https://github.com/zotero/zotero-mcp",
+      documentation: "https://github.com/zotero/zotero-mcp/blob/main/README.md"
+    },
+    protocols: {
+      mcp: {
+        version: "2024-11-05",
+        transport: "streamable-http",
+        endpoint: "/mcp",
+        description: "Full MCP protocol support for AI clients"
+      },
+      rest: {
+        version: "1.1.0",
+        description: "REST API for direct HTTP access",
+        baseUrl: `http://localhost:${this.port}`
+      }
+    },
+    capabilities: {
+      search: {
+        library: true,
+        annotations: true,
+        collections: true,
+        fullText: true,
+        advanced: true
+      },
+      retrieval: {
+        items: true,
+        annotations: true,
+        pdfContent: true,
+        collections: true,
+        notes: true
+      },
+      formats: {
+        json: true,
+        text: true,
+        markdown: false
+      }
+    },
+    tools: [
+      {
+        name: "search_library",
+        description: "Search the Zotero library with advanced parameters including boolean operators, relevance scoring, and pagination. Returns: {query, pagination, searchTime, results: [{key, title, creators, date, attachments: [{key, filename, filePath, contentType, linkMode}]}], searchFeatures, version}",
+        category: "search",
+        parameters: {
+          q: { type: "string", description: "General search query", required: false },
+          title: { type: "string", description: "Title search", required: false },
+          titleOperator: { 
+            type: "string", 
+            enum: ["contains", "exact", "startsWith", "endsWith", "regex"],
+            description: "Title search operator",
+            required: false
+          },
+          yearRange: { type: "string", description: "Year range (e.g., '2020-2023')", required: false },
+          relevanceScoring: { type: "boolean", description: "Enable relevance scoring", required: false },
+          sort: { 
+            type: "string", 
+            enum: ["relevance", "date", "title", "year"],
+            description: "Sort order",
+            required: false
+          },
+          limit: { type: "number", description: "Maximum results to return", required: false },
+          offset: { type: "number", description: "Pagination offset", required: false }
+        },
+        examples: [
+          { query: { q: "machine learning" }, description: "Basic text search" },
+          { query: { title: "deep learning", titleOperator: "contains" }, description: "Title-specific search" },
+          { query: { yearRange: "2020-2023", sort: "relevance" }, description: "Year-filtered search with relevance sorting" }
+        ]
+      },
+      {
+        name: "search_annotations",
+        description: "Search all notes, PDF annotations and highlights with smart content processing",
+        category: "search",
+        parameters: {
+          q: { type: "string", description: "Search query for content, comments, and tags", required: false },
+          type: { 
+            type: "string", 
+            enum: ["note", "highlight", "annotation", "ink", "text", "image"],
+            description: "Filter by annotation type",
+            required: false
+          },
+          detailed: { type: "boolean", description: "Return detailed content (default: false for preview)", required: false },
+          limit: { type: "number", description: "Maximum results (preview: 20, detailed: 50)", required: false },
+          offset: { type: "number", description: "Pagination offset", required: false }
+        },
+        examples: [
+          { query: { q: "important findings" }, description: "Search annotation content" },
+          { query: { type: "highlight", detailed: true }, description: "Get detailed highlights" }
+        ]
+      },
+      {
+        name: "get_item_details",
+        description: "Get detailed information for a specific item including metadata, abstract, attachments info, notes, and tags but not fulltext content. Returns: {key, title, creators, date, itemType, publicationTitle, volume, issue, pages, DOI, url, abstractNote, tags, notes: [note_content], attachments: [{key, title, path, contentType, filename, url, linkMode, hasFulltext, size}]}",
+        category: "retrieval",
+        parameters: {
+          itemKey: { type: "string", description: "Unique item key", required: true }
+        },
+        examples: [
+          { query: { itemKey: "ABCD1234" }, description: "Get item by key" }
+        ]
+      },
+      {
+        name: "get_annotation_by_id",
+        description: "Get complete content of a specific annotation by ID",
+        category: "retrieval",
+        parameters: {
+          annotationId: { type: "string", description: "Annotation ID", required: true }
+        }
+      },
+      {
+        name: "get_annotations_batch",
+        description: "Get complete content of multiple annotations by IDs",
+        category: "retrieval",
+        parameters: {
+          ids: { 
+            type: "array", 
+            items: { type: "string" },
+            description: "Array of annotation IDs",
+            required: true
+          }
+        }
+      },
+      {
+        name: "get_item_pdf_content",
+        description: "Extract text content from PDF attachments",
+        category: "retrieval",
+        parameters: {
+          itemKey: { type: "string", description: "Item key", required: true },
+          page: { type: "number", description: "Specific page number (optional)", required: false }
+        }
+      },
+      {
+        name: "get_collections",
+        description: "Get list of all collections in the library",
+        category: "collections",
+        parameters: {
+          limit: { type: "number", description: "Maximum results to return", required: false },
+          offset: { type: "number", description: "Pagination offset", required: false }
+        }
+      },
+      {
+        name: "search_collections",
+        description: "Search collections by name",
+        category: "collections",
+        parameters: {
+          q: { type: "string", description: "Collection name search query", required: true },
+          limit: { type: "number", description: "Maximum results to return", required: false }
+        }
+      },
+      {
+        name: "get_collection_details",
+        description: "Get detailed information about a specific collection",
+        category: "collections",
+        parameters: {
+          collectionKey: { type: "string", description: "Collection key", required: true }
+        }
+      },
+      {
+        name: "get_collection_items",
+        description: "Get items in a specific collection",
+        category: "collections",
+        parameters: {
+          collectionKey: { type: "string", description: "Collection key", required: true },
+          limit: { type: "number", description: "Maximum results to return", required: false },
+          offset: { type: "number", description: "Pagination offset", required: false }
+        }
+      },
+      {
+        name: "get_item_fulltext",
+        description: "Get comprehensive fulltext content from item including attachments, notes, abstracts, and webpage snapshots. Returns: {itemKey, title, itemType, abstract, fulltext: {attachments: [{attachmentKey, filename, filePath, contentType, type, content, length, extractionMethod}], notes: [{noteKey, title, content, htmlContent, length, dateModified}], webpage: {url, filename, filePath, content, length, type}, total_length}, metadata: {extractedAt, sources}}",
+        category: "fulltext",
+        parameters: {
+          itemKey: { type: "string", description: "Item key", required: true },
+          attachments: { type: "boolean", description: "Include attachment content (default: true)", required: false },
+          notes: { type: "boolean", description: "Include notes content (default: true)", required: false },
+          webpage: { type: "boolean", description: "Include webpage snapshots (default: true)", required: false },
+          abstract: { type: "boolean", description: "Include abstract (default: true)", required: false }
+        },
+        examples: [
+          { query: { itemKey: "ABCD1234" }, description: "Get all fulltext content for an item" },
+          { query: { itemKey: "ABCD1234", attachments: true, notes: false }, description: "Get only attachment content" }
+        ]
+      },
+      {
+        name: "get_attachment_content",
+        description: "Extract text content from a specific attachment (PDF, HTML, text files). Returns: {attachmentKey, filename, filePath, contentType, type, content, length, extractionMethod, extractedAt}",
+        category: "fulltext",
+        parameters: {
+          attachmentKey: { type: "string", description: "Attachment key", required: true },
+          format: { type: "string", enum: ["json", "text"], description: "Response format (default: json)", required: false }
+        }
+      },
+      {
+        name: "search_fulltext",
+        description: "Search within fulltext content of items with context and relevance scoring",
+        category: "fulltext",
+        parameters: {
+          q: { type: "string", description: "Search query", required: true },
+          itemKeys: { type: "array", items: { type: "string" }, description: "Limit search to specific items (optional)", required: false },
+          contextLength: { type: "number", description: "Context length around matches (default: 200)", required: false },
+          maxResults: { type: "number", description: "Maximum results to return (default: 50)", required: false },
+          caseSensitive: { type: "boolean", description: "Case sensitive search (default: false)", required: false }
+        },
+        examples: [
+          { query: { q: "machine learning" }, description: "Search for 'machine learning' in all fulltext" },
+          { query: { q: "neural networks", maxResults: 10, contextLength: 100 }, description: "Limited context search" }
+        ]
+      },
+      {
+        name: "get_item_abstract",
+        description: "Get the abstract/summary of a specific item",
+        category: "retrieval",
+        parameters: {
+          itemKey: { type: "string", description: "Item key", required: true },
+          format: { type: "string", enum: ["json", "text"], description: "Response format (default: json)", required: false }
+        }
+      }
+    ],
+    endpoints: {
+      mcp: {
+        "/mcp": {
+          method: "POST",
+          description: "MCP protocol endpoint for AI clients",
+          contentType: "application/json",
+          protocol: "MCP 2024-11-05"
+        }
+      },
+      rest: {
+        "/ping": {
+          method: "GET",
+          description: "Health check endpoint",
+          response: "text/plain"
+        },
+        "/mcp/status": {
+          method: "GET", 
+          description: "MCP server status and capabilities",
+          response: "application/json"
+        },
+        "/capabilities": {
+          method: "GET",
+          description: "This endpoint - comprehensive API documentation",
+          response: "application/json"
+        },
+        "/help": {
+          method: "GET",
+          description: "Alias for /capabilities",
+          response: "application/json"
+        },
+        "/test/mcp": {
+          method: "GET",
+          description: "MCP integration testing endpoint",
+          response: "application/json"
+        }
+      }
+    },
+    usage: {
+      gettingStarted: {
+        mcp: {
+          description: "Connect via MCP protocol",
+          steps: [
+            "Configure MCP client to connect to this server",
+            "Use streamable HTTP transport",
+            "Send MCP requests to /mcp endpoint",
+            "Available tools will be listed via tools/list method"
+          ]
+        },
+        rest: {
+          description: "Use REST API directly", 
+          examples: [
+            "GET /capabilities - Get this documentation",
+            "GET /ping - Health check",
+            "GET /mcp/status - Check MCP server status"
+          ]
+        }
+      },
+      authentication: "None required for local connections",
+      rateLimit: "No rate limiting currently implemented",
+      cors: "CORS headers not currently set"
+    },
+    timestamp: new Date().toISOString(),
+    status: this.mcpServer ? "ready" : "mcp-disabled"
+  };
+}
 }
 
 export const httpServer = new HttpServer();

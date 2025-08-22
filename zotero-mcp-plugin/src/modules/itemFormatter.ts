@@ -23,10 +23,10 @@ export function formatItemBrief(item: Zotero.Item): Record<string, any> {
  * @param fields Optional array of fields to include in the output.
  * @returns A JSON object representing the item.
  */
-export function formatItem(
+export async function formatItem(
   item: Zotero.Item,
   fields?: string[],
-): Record<string, any> {
+): Promise<Record<string, any>> {
   let fieldsToExport: string[];
 
   if (fields) {
@@ -115,13 +115,14 @@ export function formatItem(
           try {
             const attachmentIds = item.getAttachments(false);
             const attachments = Zotero.Items.get(attachmentIds);
-            formattedItem[field] = attachments
-              .map((attachment: Zotero.Item) => {
+            formattedItem[field] = await Promise.all(attachments
+              .map(async (attachment: Zotero.Item) => {
                 if (!attachment.isAttachment()) {
                   return null;
                 }
                 try {
                   return {
+                    key: attachment.key,
                     title: fixStringEncoding(
                       attachment.getField("title") || "",
                     ),
@@ -132,6 +133,10 @@ export function formatItem(
                     filename: fixStringEncoding(
                       attachment.attachmentFilename || "",
                     ),
+                    url: fixStringEncoding(attachment.getField("url") || ""),
+                    linkMode: attachment.attachmentLinkMode,
+                    hasFulltext: hasExtractableText(attachment),
+                    size: await getAttachmentSize(attachment),
                   };
                 } catch (e) {
                   ztoolkit.log(
@@ -140,8 +145,8 @@ export function formatItem(
                   );
                   return null;
                 }
-              })
-              .filter((att) => att && att.path); // 确保附件有效且有路径
+              }))
+              .then(results => results.filter((att) => att && att.path)); // 确保附件有效且有路径
           } catch (e) {
             ztoolkit.log(
               `[ItemFormatter] Error getting attachments: ${e}`,
@@ -232,14 +237,81 @@ export function formatItem(
 }
 
 /**
+ * Check if an attachment has extractable text content
+ */
+function hasExtractableText(attachment: Zotero.Item): boolean {
+  try {
+    if (!attachment.isAttachment()) return false;
+    
+    const contentType = attachment.attachmentContentType || "";
+    const path = attachment.getFilePath() || "";
+    
+    // Check for PDF files
+    if (contentType.includes("pdf") || path.toLowerCase().endsWith(".pdf")) {
+      return true;
+    }
+    
+    // Check for text files
+    if (contentType.includes("text") || 
+        [".txt", ".md", ".html", ".htm", ".xml"].some(ext => path.toLowerCase().endsWith(ext))) {
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    ztoolkit.log(`[ItemFormatter] Error checking extractable text: ${error}`, "error");
+    return false;
+  }
+}
+
+/**
+ * Get attachment file size
+ */
+async function getAttachmentSize(attachment: Zotero.Item): Promise<number> {
+  try {
+    if (!attachment.isAttachment()) return 0;
+    
+    const path = attachment.getFilePath();
+    if (!path) return 0;
+    
+    // Try to get file size using OS.File
+    if (typeof OS !== "undefined" && OS.File && OS.File.stat) {
+      try {
+        const stat = await OS.File.stat(path);
+        return (stat as any).size || 0;
+      } catch (e) {
+        ztoolkit.log(`[ItemFormatter] OS.File.stat failed: ${e}`, "error");
+      }
+    }
+    
+    // Fallback: try to use nsIFile
+    try {
+      const file = (Components.classes as any)["@mozilla.org/file/local;1"]
+        .createInstance(Components.interfaces.nsIFile);
+      file.initWithPath(path);
+      if (file.exists()) {
+        return file.fileSize || 0;
+      }
+    } catch (e) {
+      ztoolkit.log(`[ItemFormatter] nsIFile method failed: ${e}`, "error");
+    }
+    
+    return 0;
+  } catch (error) {
+    ztoolkit.log(`[ItemFormatter] Error getting attachment size: ${error}`, "error");
+    return 0;
+  }
+}
+
+/**
  * Formats an array of Zotero items into an array of JSON objects.
  * @param items An array of Zotero.Item objects to format.
  * @param fields Optional array of fields to include in the output for each item.
  * @returns An array of JSON objects representing the items.
  */
-export function formatItems(
+export async function formatItems(
   items: Zotero.Item[],
   fields?: string[],
-): Array<Record<string, any>> {
-  return items.map((item) => formatItem(item, fields));
+): Promise<Array<Record<string, any>>> {
+  return Promise.all(items.map((item) => formatItem(item, fields)));
 }

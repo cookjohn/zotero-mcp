@@ -14,6 +14,11 @@ async function onStartup() {
 
   initLocale();
 
+  // Check if this is first installation and show config prompt
+  // For testing: reset the first install flag (remove this line in production)
+  // Zotero.Prefs.clear("mcp.firstInstallPromptShown");
+  checkFirstInstallation();
+
   // 启动HTTP服务器 (Debug: 强制启动)
   try {
     ztoolkit.log(`===MCP=== [hooks.ts] Attempting to get server port...`);
@@ -102,6 +107,11 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   win.MozXULElement.insertFTLIfNeeded(
     `${addon.data.config.addonRef}-mainWindow.ftl`,
   );
+  
+  // Also load preferences.ftl for first install prompt
+  win.MozXULElement.insertFTLIfNeeded(
+    `${addon.data.config.addonRef}-preferences.ftl`,
+  );
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
@@ -166,6 +176,82 @@ async function onPrefsEvent(type: string, data: { [key: string]: any }) {
 // Add your hooks here. For element click, etc.
 // Keep in mind hooks only do dispatch. Don't add code that does real jobs in hooks.
 // Otherwise the code would be hard to read and maintain.
+
+/**
+ * Check if this is the first installation and prompt user to configure
+ */
+function checkFirstInstallation() {
+  try {
+    const hasShownPrompt = Zotero.Prefs.get("mcp.firstInstallPromptShown", false);
+    if (!hasShownPrompt) {
+      // Mark as shown immediately to prevent multiple prompts
+      Zotero.Prefs.set("mcp.firstInstallPromptShown", true);
+      
+      // Show prompt after a short delay to ensure UI is ready
+      setTimeout(() => {
+        showFirstInstallPrompt();
+      }, 3000);
+    }
+  } catch (error) {
+    ztoolkit.log(`[MCP Plugin] Error checking first installation: ${error}`, "error");
+  }
+}
+
+/**
+ * Show first installation configuration prompt
+ */
+function showFirstInstallPrompt() {
+  try {
+    // Use bilingual text for first install prompt
+    const title = "欢迎使用 Zotero MCP 插件 / Welcome to Zotero MCP Plugin";
+    const promptText = "感谢安装 Zotero MCP 插件！为了开始使用，您需要为您的 AI 客户端生成配置文件。是否现在打开设置页面来生成配置？\n\nThank you for installing the Zotero MCP Plugin! To get started, you need to generate configuration files for your AI clients. Would you like to open the settings page now to generate configurations?";
+    const openPrefsText = "打开设置 / Open Settings";
+    const laterText = "稍后配置 / Configure Later";
+    
+    // Use a simple window confirm instead of Services.prompt for compatibility
+    const message = `${title}\n\n${promptText}\n\n${openPrefsText} (OK) / ${laterText} (Cancel)`;
+    
+    const mainWindow = Zotero.getMainWindow();
+    if (!mainWindow) {
+      ztoolkit.log("[MCP Plugin] No main window available", "error");
+      return;
+    }
+    
+    const result = mainWindow.confirm(message);
+    
+    if (result) {
+      // User chose to open preferences
+      setTimeout(() => {
+        openPreferencesWindow();
+      }, 100);
+    }
+  } catch (error) {
+    ztoolkit.log(`[MCP Plugin] Error showing first install prompt: ${error}`, "error");
+  }
+}
+
+/**
+ * Open the preferences window
+ */
+function openPreferencesWindow() {
+  try {
+    const windowName = `${addon.data.config.addonRef}-preferences`;
+    const existingWindow = Zotero.getMainWindow().ZoteroPane.openPreferences(null, windowName);
+    
+    if (existingWindow) {
+      existingWindow.focus();
+    }
+  } catch (error) {
+    ztoolkit.log(`[MCP Plugin] Error opening preferences: ${error}`, "error");
+    
+    // Fallback: try to open standard preferences
+    try {
+      Zotero.getMainWindow().openPreferences();
+    } catch (fallbackError) {
+      ztoolkit.log(`[MCP Plugin] Fallback preferences open failed: ${fallbackError}`, "error");
+    }
+  }
+}
 
 export default {
   onStartup,

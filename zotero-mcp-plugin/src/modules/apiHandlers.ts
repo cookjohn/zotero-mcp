@@ -9,9 +9,8 @@ import {
 } from "./collectionFormatter";
 import { handleSearchRequest } from "./searchEngine";
 import { PDFService } from "./pdfService";
-import { handleAdvancedSearchTest } from "./advancedSearchTest";
 import { AnnotationService } from "./annotationService";
-import { handleAnnotationTest } from "./annotationTest";
+import { FulltextService } from "./fulltextService";
 
 declare let ztoolkit: ZToolkit;
 
@@ -76,7 +75,7 @@ export async function handleGetItem(
 
     const fieldsParam = query.get("fields");
     const fields = fieldsParam ? fieldsParam.split(",") : undefined;
-    const formattedItem = formatItem(item, fields);
+    const formattedItem = await formatItem(item, fields);
 
     return {
       status: 200,
@@ -529,35 +528,6 @@ export async function handleGetPDFContent(
   }
 }
 
-/**
- * Handles GET /test/advanced-search endpoint.
- * @returns A promise that resolves to an HttpResponse.
- */
-export async function handleAdvancedSearchTestEndpoint(): Promise<HttpResponse> {
-  ztoolkit.log("[MCP ApiHandlers] handleAdvancedSearchTestEndpoint called");
-
-  try {
-    const testResult = await handleAdvancedSearchTest();
-
-    ztoolkit.log(`[MCP ApiHandlers] Advanced search test completed`);
-
-    return testResult;
-  } catch (e) {
-    const error = e instanceof Error ? e : new Error(String(e));
-    ztoolkit.log(
-      `[MCP ApiHandlers] Error in handleAdvancedSearchTestEndpoint: ${error.message}`,
-      "error",
-    );
-    Zotero.logError(error);
-
-    return {
-      status: 500,
-      statusText: "Internal Server Error",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: error.message }),
-    };
-  }
-}
 
 /**
  * Handles GET /annotations/search endpoint.
@@ -901,6 +871,318 @@ export async function handleGetAnnotationsBatch(
       statusText: "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify({ error: errorMsg }),
+    };
+  }
+}
+
+/**
+ * Handles GET /items/:itemKey/fulltext endpoint.
+ * @param params - URL parameters, where params[1] is the itemKey.
+ * @param query - URL query parameters.
+ * @returns A promise that resolves to an HttpResponse.
+ */
+export async function handleGetItemFulltext(
+  params: Record<string, string>,
+  query: URLSearchParams,
+): Promise<HttpResponse> {
+  const itemKey = params[1];
+  if (!itemKey) {
+    return {
+      status: 400,
+      statusText: "Bad Request",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "Missing itemKey parameter" }),
+    };
+  }
+
+  ztoolkit.log(`[MCP ApiHandlers] Getting fulltext for item ${itemKey}`);
+
+  try {
+    const fulltextService = new FulltextService();
+    const fulltext = await fulltextService.getItemFulltext(itemKey);
+
+    // Check if user wants only specific content types
+    const includeAttachments = query.get("attachments") !== "false";
+    const includeNotes = query.get("notes") !== "false";
+    const includeWebpage = query.get("webpage") !== "false";
+    const includeAbstract = query.get("abstract") !== "false";
+
+    // Filter content based on query parameters
+    const filteredFulltext = {
+      ...fulltext,
+      abstract: includeAbstract ? fulltext.abstract : null,
+      fulltext: {
+        attachments: includeAttachments ? fulltext.fulltext.attachments : [],
+        notes: includeNotes ? fulltext.fulltext.notes : [],
+        webpage: includeWebpage ? fulltext.fulltext.webpage : null,
+        total_length: 0
+      }
+    };
+
+    // Recalculate total length
+    filteredFulltext.fulltext.total_length = 
+      (filteredFulltext.abstract?.length || 0) +
+      filteredFulltext.fulltext.attachments.reduce((sum: number, att: any) => sum + att.length, 0) +
+      filteredFulltext.fulltext.notes.reduce((sum: number, note: any) => sum + note.length, 0) +
+      (filteredFulltext.fulltext.webpage?.length || 0);
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify(filteredFulltext, null, 2),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    ztoolkit.log(
+      `[MCP ApiHandlers] Error in handleGetItemFulltext: ${error.message}`,
+      "error",
+    );
+    Zotero.logError(error);
+
+    if (error.message.includes("not found")) {
+      return {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: error.message }),
+      };
+    }
+
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "An unexpected error occurred" }),
+    };
+  }
+}
+
+/**
+ * Handles GET /attachments/:attachmentKey/content endpoint.
+ * @param params - URL parameters, where params[1] is the attachmentKey.
+ * @param query - URL query parameters.
+ * @returns A promise that resolves to an HttpResponse.
+ */
+export async function handleGetAttachmentContent(
+  params: Record<string, string>,
+  query: URLSearchParams,
+): Promise<HttpResponse> {
+  const attachmentKey = params[1];
+  if (!attachmentKey) {
+    return {
+      status: 400,
+      statusText: "Bad Request",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "Missing attachmentKey parameter" }),
+    };
+  }
+
+  ztoolkit.log(`[MCP ApiHandlers] Getting content for attachment ${attachmentKey}`);
+
+  try {
+    const attachment = Zotero.Items.getByLibraryAndKey(
+      Zotero.Libraries.userLibraryID,
+      attachmentKey,
+    );
+
+    if (!attachment || !attachment.isAttachment()) {
+      return {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: `Attachment with key ${attachmentKey} not found` }),
+      };
+    }
+
+    const fulltextService = new FulltextService();
+    const content = await fulltextService.getAttachmentContent(attachment);
+
+    if (!content) {
+      return {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "No extractable content found in attachment" }),
+      };
+    }
+
+    // Check format preference
+    const format = query.get("format") || "json";
+    
+    if (format === "text") {
+      return {
+        status: 200,
+        statusText: "OK",
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+        body: content.content,
+      };
+    } else {
+      return {
+        status: 200,
+        statusText: "OK",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify(content, null, 2),
+      };
+    }
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    ztoolkit.log(
+      `[MCP ApiHandlers] Error in handleGetAttachmentContent: ${error.message}`,
+      "error",
+    );
+    Zotero.logError(error);
+
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "An unexpected error occurred" }),
+    };
+  }
+}
+
+/**
+ * Handles GET /search/fulltext endpoint.
+ * @param query - URL query parameters.
+ * @returns A promise that resolves to an HttpResponse.
+ */
+export async function handleSearchFulltext(
+  query: URLSearchParams,
+): Promise<HttpResponse> {
+  const q = query.get("q");
+  if (!q || q.trim().length === 0) {
+    return {
+      status: 400,
+      statusText: "Bad Request",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "Missing query parameter 'q'" }),
+    };
+  }
+
+  ztoolkit.log(`[MCP ApiHandlers] Searching fulltext for: "${q}"`);
+
+  try {
+    const fulltextService = new FulltextService();
+    
+    // Parse search options
+    const options = {
+      itemKeys: query.get("itemKeys")?.split(",") || null,
+      contextLength: parseInt(query.get("contextLength") || "200", 10),
+      maxResults: Math.min(parseInt(query.get("maxResults") || "50", 10), 200),
+      caseSensitive: query.get("caseSensitive") === "true"
+    };
+
+    const searchResult = await fulltextService.searchFulltext(q, options);
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify(searchResult, null, 2),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    ztoolkit.log(
+      `[MCP ApiHandlers] Error in handleSearchFulltext: ${error.message}`,
+      "error",
+    );
+    Zotero.logError(error);
+
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "An unexpected error occurred" }),
+    };
+  }
+}
+
+/**
+ * Handles GET /items/:itemKey/abstract endpoint.
+ * @param params - URL parameters, where params[1] is the itemKey.
+ * @param query - URL query parameters.
+ * @returns A promise that resolves to an HttpResponse.
+ */
+export async function handleGetItemAbstract(
+  params: Record<string, string>,
+  query: URLSearchParams,
+): Promise<HttpResponse> {
+  const itemKey = params[1];
+  if (!itemKey) {
+    return {
+      status: 400,
+      statusText: "Bad Request",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "Missing itemKey parameter" }),
+    };
+  }
+
+  ztoolkit.log(`[MCP ApiHandlers] Getting abstract for item ${itemKey}`);
+
+  try {
+    const item = Zotero.Items.getByLibraryAndKey(
+      Zotero.Libraries.userLibraryID,
+      itemKey,
+    );
+
+    if (!item) {
+      return {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: `Item with key ${itemKey} not found` }),
+      };
+    }
+
+    const fulltextService = new FulltextService();
+    const abstract = fulltextService.getItemAbstract(item);
+
+    if (!abstract) {
+      return {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "No abstract found for this item" }),
+      };
+    }
+
+    const format = query.get("format") || "json";
+    
+    if (format === "text") {
+      return {
+        status: 200,
+        statusText: "OK",
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+        body: abstract,
+      };
+    } else {
+      return {
+        status: 200,
+        statusText: "OK",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({
+          itemKey,
+          title: item.getDisplayTitle(),
+          abstract,
+          length: abstract.length,
+          extractedAt: new Date().toISOString()
+        }, null, 2),
+      };
+    }
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    ztoolkit.log(
+      `[MCP ApiHandlers] Error in handleGetItemAbstract: ${error.message}`,
+      "error",
+    );
+    Zotero.logError(error);
+
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "An unexpected error occurred" }),
     };
   }
 }

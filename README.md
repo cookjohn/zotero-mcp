@@ -25,10 +25,18 @@ This enables AI assistants to help you with academic tasks such as literature re
 
 ## 🚀 Project Structure
 
-This project is a monorepo containing the following two sub-projects:
+This project now features a **unified architecture** with an integrated MCP server:
 
-1.  **`zotero-mcp-plugin`**: A Zotero plugin that runs an HTTP server within the Zotero client to expose APIs for interacting with the library.
-2.  **`zotero-mcp-server`**: A standalone MCP server that acts as a bridge between the AI assistant and the `zotero-mcp-plugin`, converting MCP tool calls into requests to the Zotero plugin's API.
+- **`zotero-mcp-plugin/`**: A Zotero plugin with **integrated MCP server** that communicates directly with AI clients via Streamable HTTP protocol
+- **`IMG/`**: Screenshots and documentation images
+- **`README.md`** / **`README-zh.md`**: Documentation files
+
+**Unified Architecture:**
+```
+AI Client ↔ Streamable HTTP ↔ Zotero Plugin (with integrated MCP server)
+```
+
+This eliminates the need for a separate MCP server process, providing a more streamlined and efficient integration.
 
 ---
 
@@ -42,75 +50,41 @@ This guide is intended to help general users quickly configure and use Zotero MC
 
 Simply put, Zotero MCP is a bridge connecting your AI client (like Cherry Studio, Gemini CLI, Claude Desktop, etc.) and your local Zotero reference management software. It allows your AI assistant to directly search, query, and cite references from your Zotero library, greatly enhancing academic research and writing efficiency.
 
-**Three-Step Quick Start:**
+**Two-Step Quick Start:**
 
 1.  **Install the Plugin**:
-    *   Go to the project's [Releases Page](https://github.com/cookjohn/zotero-mcp/releases) to download the latest `zotero-mcp-plugin.xpi` file.
+    *   Go to the project's [Releases Page](https://github.com/cookjohn/zotero-mcp/releases) to download the latest `zotero-mcp-plugin-x.x.x.xpi` file.
     *   In Zotero, install the `.xpi` file via `Tools -> Add-ons`.
     *   Restart Zotero.
 
-2.  **Start the Service**:
-    *   In Zotero's `Preferences -> Zotero MCP Plugin` tab, check "Enable Server" to start the plugin's built-in HTTP server.
-    *   Typically, you can keep the default port `23120`.
-
-3.  **Connect Your AI Client**:
-    *   Follow the guide below to configure the MCP server based on your AI client. You only need to download the `zotero-mcp-server` folder; no `npm install` or `build` operations are required for general users.
-
----
-
-### 2. Configure the MCP Server
-
-The easiest and most recommended way is to install the Zotero MCP Server globally via npm.
-
-1.  **Install the Server**:
-    *   Open your terminal (Terminal, Command Prompt, or PowerShell).
-    *   Run the following command for global installation:
-        ```bash
-        npm install -g zotero-mcp
-        ```
-    *   NPM Package Page: [https://www.npmjs.com/package/zotero-mcp](https://www.npmjs.com/package/zotero-mcp)
-
-2.  **Get the Server Script Path**:
-    *   After installation, you need to find the full path to the `index.js` main script file of the `zotero-mcp` package.
-    *   First, run the following command to find the npm global modules installation directory:
-        ```bash
-        npm root -g
-        ```
-    *   This command will output a path, for example, `C:\Users\YourUser\AppData\Roaming\npm\node_modules` (Windows) or `/home/user/.nvm/versions/node/v20.11.1/lib/node_modules` (macOS/Linux).
-    *   Append `/zotero-mcp/build/index.js` to this path to get the full script path you need.
-    *   **Final Path Example**: `C:\Users\YourUser\AppData\Roaming\npm\node_modules\zotero-mcp\build\index.js`
+2.  **Configure the Plugin**:
+    *   In Zotero's `Preferences -> Zotero MCP Plugin` tab, configure your connection settings:
+        - **Enable Server**: Start the integrated MCP server
+        - **Port**: Default is `23120` (you can change this if needed)
+        - **Generate Client Configuration**: Click this button to get configuration for your AI client
 
 ---
 
-### 3. Connect to AI Clients
+### 2. Connect to AI Clients
 
-**Important**: The Zotero MCP Server is **automatically started** by your AI client when needed. You do **not** need to run any commands manually.
+**Important**: The Zotero plugin now includes an **integrated MCP server** that uses the Streamable HTTP protocol. No separate server installation is needed.
 
-You need to configure `node` in your AI client to execute the **full script path** obtained in the previous step.
+#### Streamable HTTP Connection
 
-#### a) Cherry Studio Configuration
+The plugin uses Streamable HTTP, which enables real-time bidirectional communication with AI clients:
 
-1.  **Open Settings**: Go to `Settings -> Advanced -> MCP Servers`.
-2.  **Click "Import from JSON"** and paste the following:
-    ```json
-    {
-      "mcpServers": {
-          "zotero": {
-            "command": "node",
-            "args": ["/path/to/your/zotero-mcp/build/index.js"]
-          }
-      }
-    }
-    ```
-    **Important**:
-    *   Replace `/path/to/your/zotero-mcp/build/index.js` with the **full script path** you obtained in **Step 2**.
-    *   For Windows paths in JSON, use double backslashes `\\` for escaping (e.g., `C:\\Users\\...\\index.js`).
+1. **Enable Server** in the Zotero plugin preferences
+2. **Generate Client Configuration** by clicking the button in plugin preferences
+3. **Copy the generated configuration** to your AI client
 
-3.  **Save Configuration**.
+#### Supported AI Clients
 
-#### b) Other Clients (Gemini CLI, Claude Desktop, etc.)
+- **Claude Desktop**: Streamable HTTP MCP support
+- **Cherry Studio**: Streamable HTTP support
+- **Cursor IDE**: Streamable HTTP MCP support
+- **Custom implementations**: Streamable HTTP protocol
 
-Configuration for other clients follows a similar pattern. Please refer to the [Chinese README](./README-zh.md) for detailed instructions for Gemini CLI, Claude Desktop, Cursor IDE, and ChatBox.
+For detailed client-specific configuration instructions, see the [Chinese README](./README-zh.md).
 
 ---
 
@@ -129,73 +103,66 @@ Configuration for other clients follows a similar pattern. Please refer to the [
 2.  Install it in Zotero via `Tools -> Add-ons`.
 3.  Enable the server in `Preferences -> Zotero MCP Plugin`.
 
-### Step 2: Install and Configure the MCP Server
-
-**Option 1: Run from Source (Recommended for Development)**
+### Step 2: Development Setup
 
 1.  Clone the repository:
     ```bash
     git clone https://github.com/cookjohn/zotero-mcp.git
     cd zotero-mcp
     ```
-2.  Install dependencies and build the server:
+    
+2.  Set up the plugin development environment:
     ```bash
-    cd zotero-mcp-server
+    cd zotero-mcp-plugin
     npm install
     npm run build
     ```
-3.  Run the development server:
+    
+3.  Load the plugin in Zotero:
     ```bash
-    npm start
-    # Or run the built file directly
-    node build/index.js
+    # For development with auto-reload
+    npm run start
+    
+    # Or install the built .xpi file manually
+    npm run build
     ```
 
-**Option 2: Use the Published NPM Package**
+### Step 3: Connect AI Clients (Development)
 
-```bash
-npm install -g zotero-mcp
-# Then start with the 'zotero-mcp' command
-```
+The plugin includes an integrated MCP server that uses Streamable HTTP:
 
-### Step 3: Integrate with an AI Assistant (e.g., Claude Desktop)
+1.  **Enable the server** in Zotero plugin preferences
+2.  **Generate client configuration** using the plugin's built-in generator
+3.  **Configure your AI client** with the generated Streamable HTTP configuration
 
-1.  Locate the Claude Desktop configuration file (e.g., `%APPDATA%\Claude\claude_desktop_config.json` on Windows).
-2.  Add the Zotero MCP server path:
-    ```json
-    {
-      "mcpServers": {
-        "zotero": {
-          "command": "node",
-          "args": ["/path/to/your/zotero-mcp/zotero-mcp-server/build/index.js"],
-          "env": {}
-        }
-      }
+Example configuration for Claude Desktop:
+```json
+{
+  "mcpServers": {
+    "zotero": {
+      "transport": "streamable_http",
+      "url": "http://localhost:23120/mcp"
     }
-    ```
-    **Note**: Replace `/path/to/your/zotero-mcp/` with your actual project path.
-3.  Restart the Claude Desktop application.
+  }
+}
+```
 
 ---
 
 ## 🧩 Features
 
-### `zotero-mcp-plugin` (Zotero Plugin)
+### `zotero-mcp-plugin` Features
 
--   **Built-in HTTP Server**: Runs a lightweight server inside Zotero.
--   **Data Access API**: Provides endpoints for secure access to Zotero data.
--   **Collection Management**: Browse, search, and retrieve items from specific collections.
--   **Advanced Tag Search**: Supports powerful tag queries (`any`, `all`, `none` modes) with matching options (`exact`, `contains`, `startsWith`).
--   **PDF Text Extraction**: Extracts full text or text from specific pages of PDF attachments.
--   **Configurability**: Easily configure server port and enable/disable the service in Zotero preferences.
-
-### `zotero-mcp-server` (MCP Server)
-
--   **MCP Toolset**: Provides standardized tools (`search_library`, `get_item_details`) for AI assistants.
--   **Smart Search**: Supports full-text search and filtering by title, creator, year, tags, item type, etc.
--   **Identifier Lookup**: Quickly finds items by DOI, ISBN, etc.
--   **Protocol Conversion**: Translates MCP requests into HTTP API calls to the plugin.
--   **Local Operation**: Runs as a local process, ensuring data privacy.
+-   **Integrated MCP Server**: Built-in MCP server using Streamable HTTP protocol
+-   **Streamable HTTP Protocol**: Real-time bidirectional communication with AI clients
+-   **Advanced Search Engine**: Full-text search with filtering by title, creator, year, tags, item type, etc.
+-   **Collection Management**: Browse, search, and retrieve items from specific collections
+-   **Tag Search System**: Powerful tag queries (`any`, `all`, `none` modes) with matching options (`exact`, `contains`, `startsWith`)
+-   **PDF Processing**: Full-text extraction from PDF attachments with page-specific access
+-   **Annotation Retrieval**: Extract highlights, notes, and annotations from PDFs
+-   **Client Configuration Generator**: Automatically generates configuration for various AI clients
+-   **Security**: Local-only operation ensuring complete data privacy
+-   **User-Friendly**: Easy configuration through Zotero preferences interface
 
 ---
 ## 📸 Screenshots
@@ -217,7 +184,7 @@ Here are some screenshots demonstrating the functionality of Zotero MCP:
 
 ## 🔧 API Reference
 
-The `zotero-mcp-server` provides the following tools:
+The integrated MCP server provides the following tools:
 
 ### `search_library`
 
