@@ -2,13 +2,16 @@
  * API Endpoint Handlers for Zotero MCP Plugin
  */
 
-import { formatItem, formatItems } from './itemFormatter';
+import { formatItem, formatItems } from "./itemFormatter";
 import {
   formatCollectionList,
   formatCollectionDetails,
 } from "./collectionFormatter";
-import { handleSearchRequest } from './searchEngine';
-import { PDFService } from './pdfService';
+import { handleSearchRequest } from "./searchEngine";
+import { PDFService } from "./pdfService";
+import { handleAdvancedSearchTest } from "./advancedSearchTest";
+import { AnnotationService } from "./annotationService";
+import { handleAnnotationTest } from "./annotationTest";
 
 declare let ztoolkit: ZToolkit;
 
@@ -27,10 +30,10 @@ interface HttpResponse {
 export async function handlePing(): Promise<HttpResponse> {
   return {
     status: 200,
-    statusText: 'OK',
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    statusText: "OK",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
     body: JSON.stringify({
-      message: 'pong',
+      message: "pong",
       timestamp: new Date().toISOString(),
     }),
   };
@@ -44,38 +47,41 @@ export async function handlePing(): Promise<HttpResponse> {
  */
 export async function handleGetItem(
   params: Record<string, string>,
-  query: URLSearchParams
+  query: URLSearchParams,
 ): Promise<HttpResponse> {
   const itemKey = params[1];
   if (!itemKey) {
     return {
       status: 400,
-      statusText: 'Bad Request',
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({ error: 'Missing itemKey parameter' }),
+      statusText: "Bad Request",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "Missing itemKey parameter" }),
     };
   }
 
   try {
-    const item = Zotero.Items.getByLibraryAndKey(Zotero.Libraries.userLibraryID, itemKey);
+    const item = Zotero.Items.getByLibraryAndKey(
+      Zotero.Libraries.userLibraryID,
+      itemKey,
+    );
 
     if (!item) {
       return {
         status: 404,
-        statusText: 'Not Found',
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({ error: `Item with key ${itemKey} not found` }),
       };
     }
 
-    const fieldsParam = query.get('fields');
-    const fields = fieldsParam ? fieldsParam.split(',') : undefined;
+    const fieldsParam = query.get("fields");
+    const fields = fieldsParam ? fieldsParam.split(",") : undefined;
     const formattedItem = formatItem(item, fields);
 
     return {
       status: 200,
-      statusText: 'OK',
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify(formattedItem),
     };
   } catch (e) {
@@ -83,9 +89,9 @@ export async function handleGetItem(
     Zotero.logError(error);
     return {
       status: 500,
-      statusText: 'Internal Server Error',
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({ error: 'An unexpected error occurred' }),
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "An unexpected error occurred" }),
     };
   }
 }
@@ -95,17 +101,22 @@ export async function handleGetItem(
  * @param query - URL query parameters for the search.
  * @returns A promise that resolves to an HttpResponse.
  */
-export async function handleSearch(query: URLSearchParams): Promise<HttpResponse> {
-  ztoolkit.log('[MCP ApiHandlers] handleSearch called');
-  
+export async function handleSearch(
+  query: URLSearchParams,
+): Promise<HttpResponse> {
+  ztoolkit.log("[MCP ApiHandlers] handleSearch called");
+
   try {
     // Convert URLSearchParams to a plain object for handleSearchRequest
     // Convert URLSearchParams to a plain object, handling tags specifically
     const searchParams: Record<string, any> = {};
     for (const [key, value] of query.entries()) {
-      if (key === 'tags') {
+      if (key === "tags") {
         // Split comma-separated tags into an array
-        searchParams[key] = value.split(',').map(t => t.trim()).filter(Boolean);
+        searchParams[key] = value
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean);
       } else {
         searchParams[key] = value;
       }
@@ -118,45 +129,57 @@ export async function handleSearch(query: URLSearchParams): Promise<HttpResponse
 
     // Set default values for new tag parameters if not provided
     if (searchParams.tags) {
-      searchParams.tagMode = searchParams.tagMode || 'any';
-      searchParams.tagMatch = searchParams.tagMatch || 'exact';
+      searchParams.tagMode = searchParams.tagMode || "any";
+      searchParams.tagMatch = searchParams.tagMatch || "exact";
     }
 
-    ztoolkit.log(`[MCP ApiHandlers] Converted search params: ${JSON.stringify(searchParams)}`);
+    ztoolkit.log(
+      `[MCP ApiHandlers] Converted search params: ${JSON.stringify(searchParams)}`,
+    );
 
     const searchResult = await handleSearchRequest(searchParams);
 
-    ztoolkit.log(`[MCP ApiHandlers] Search engine returned ${searchResult.results?.length || 0} results`);
+    ztoolkit.log(
+      `[MCP ApiHandlers] Search engine returned ${searchResult.results?.length || 0} results`,
+    );
 
     // The search result from searchEngine already contains formatted items.
     const response = {
       status: 200,
-      statusText: 'OK',
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify(searchResult),
     };
-    
-    ztoolkit.log(`[MCP ApiHandlers] Returning response with body length: ${response.body.length}`);
-    
+
+    ztoolkit.log(
+      `[MCP ApiHandlers] Returning response with body length: ${response.body.length}`,
+    );
+
     return response;
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
-    ztoolkit.log(`[MCP ApiHandlers] Error in handleSearch: ${error.message}`, "error");
+    ztoolkit.log(
+      `[MCP ApiHandlers] Error in handleSearch: ${error.message}`,
+      "error",
+    );
     ztoolkit.log(`[MCP ApiHandlers] Error stack: ${error.stack}`, "error");
     Zotero.logError(error);
-    
+
     // Check if it's a custom error with a status code
     const status = (error as any).status || 500;
-    
+
     const errorResponse = {
       status,
-      statusText: status === 400 ? 'Bad Request' : 'Internal Server Error',
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify({ error: error.message }),
     };
-    
-    ztoolkit.log(`[MCP ApiHandlers] Returning error response: ${errorResponse.status} ${errorResponse.statusText}`, "error");
-    
+
+    ztoolkit.log(
+      `[MCP ApiHandlers] Returning error response: ${errorResponse.status} ${errorResponse.statusText}`,
+      "error",
+    );
+
     return errorResponse;
   }
 }
@@ -167,11 +190,12 @@ export async function handleSearch(query: URLSearchParams): Promise<HttpResponse
  * @returns A promise that resolves to an HttpResponse.
  */
 export async function handleGetCollections(
-  query: URLSearchParams
+  query: URLSearchParams,
 ): Promise<HttpResponse> {
   try {
     const libraryID =
-      parseInt(query.get("libraryID") || "", 10) || Zotero.Libraries.userLibraryID;
+      parseInt(query.get("libraryID") || "", 10) ||
+      Zotero.Libraries.userLibraryID;
     const limit = parseInt(query.get("limit") || "100", 10);
     const offset = parseInt(query.get("offset") || "0", 10);
     const sort = query.get("sort") || "name";
@@ -183,7 +207,7 @@ export async function handleGetCollections(
     if (parentCollection) {
       const parent = Zotero.Collections.getByLibraryAndKey(
         libraryID,
-        parentCollection
+        parentCollection,
       );
       if (!parent) {
         return {
@@ -197,10 +221,14 @@ export async function handleGetCollections(
       }
       collectionIDs = parent.getChildCollections(true);
     } else {
-      collectionIDs = Zotero.Collections.getByLibrary(libraryID).map(c => c.id);
+      collectionIDs = Zotero.Collections.getByLibrary(libraryID).map(
+        (c) => c.id,
+      );
     }
 
-    const collections = Zotero.Collections.get(collectionIDs) as Zotero.Collection[];
+    const collections = Zotero.Collections.get(
+      collectionIDs,
+    ) as Zotero.Collection[];
 
     // Sorting
     collections.sort((a: any, b: any) => {
@@ -241,7 +269,7 @@ export async function handleGetCollections(
  * @returns A promise that resolves to an HttpResponse.
  */
 export async function handleSearchCollections(
-  query: URLSearchParams
+  query: URLSearchParams,
 ): Promise<HttpResponse> {
   try {
     const q = query.get("q");
@@ -254,15 +282,17 @@ export async function handleSearchCollections(
       };
     }
     const libraryID =
-      parseInt(query.get("libraryID") || "", 10) || Zotero.Libraries.userLibraryID;
+      parseInt(query.get("libraryID") || "", 10) ||
+      Zotero.Libraries.userLibraryID;
     const limit = parseInt(query.get("limit") || "100", 10);
     const offset = parseInt(query.get("offset") || "0", 10);
 
     const allCollections = Zotero.Collections.getByLibrary(libraryID) || [];
     const lowerCaseQuery = q.toLowerCase();
 
-    const matchedCollections = allCollections.filter((collection: Zotero.Collection) =>
-      collection.name.toLowerCase().includes(lowerCaseQuery)
+    const matchedCollections = allCollections.filter(
+      (collection: Zotero.Collection) =>
+        collection.name.toLowerCase().includes(lowerCaseQuery),
     );
 
     const collections = matchedCollections;
@@ -298,7 +328,7 @@ export async function handleSearchCollections(
  */
 export async function handleGetCollectionDetails(
   params: Record<string, string>,
-  query: URLSearchParams
+  query: URLSearchParams,
 ): Promise<HttpResponse> {
   try {
     const collectionKey = params[1];
@@ -311,11 +341,12 @@ export async function handleGetCollectionDetails(
       };
     }
     const libraryID =
-      parseInt(query.get("libraryID") || "", 10) || Zotero.Libraries.userLibraryID;
+      parseInt(query.get("libraryID") || "", 10) ||
+      Zotero.Libraries.userLibraryID;
 
     const collection = Zotero.Collections.getByLibraryAndKey(
       libraryID,
-      collectionKey
+      collectionKey,
     );
 
     if (!collection) {
@@ -361,7 +392,7 @@ export async function handleGetCollectionDetails(
  */
 export async function handleGetCollectionItems(
   params: Record<string, string>,
-  query: URLSearchParams
+  query: URLSearchParams,
 ): Promise<HttpResponse> {
   try {
     const collectionKey = params[1];
@@ -374,11 +405,12 @@ export async function handleGetCollectionItems(
       };
     }
     const libraryID =
-      parseInt(query.get("libraryID") || "", 10) || Zotero.Libraries.userLibraryID;
+      parseInt(query.get("libraryID") || "", 10) ||
+      Zotero.Libraries.userLibraryID;
 
     const collection = Zotero.Collections.getByLibraryAndKey(
       libraryID,
-      collectionKey
+      collectionKey,
     );
 
     if (!collection) {
@@ -430,20 +462,20 @@ export async function handleGetCollectionItems(
  */
 export async function handleGetPDFContent(
   params: Record<string, string>,
-  query: URLSearchParams
+  query: URLSearchParams,
 ): Promise<HttpResponse> {
   const itemKey = params[1];
   if (!itemKey) {
     return {
       status: 400,
-      statusText: 'Bad Request',
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({ error: 'Missing itemKey parameter' }),
+      statusText: "Bad Request",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "Missing itemKey parameter" }),
     };
   }
 
-  const page = query.get('page');
-  const format = query.get('format') || 'json'; // Default to json
+  const page = query.get("page");
+  const format = query.get("format") || "json"; // Default to json
 
   const pdfService = new PDFService();
 
@@ -453,11 +485,11 @@ export async function handleGetPDFContent(
     const data = await pdfService.getPDFText(itemKey);
 
     let body;
-    let contentType = 'application/json; charset=utf-8';
+    let contentType = "application/json; charset=utf-8";
 
-    if (format === 'text') {
-      body = Array.isArray(data) ? data.join('\n\n') : String(data);
-      contentType = 'text/plain; charset=utf-8';
+    if (format === "text") {
+      body = Array.isArray(data) ? data.join("\n\n") : String(data);
+      contentType = "text/plain; charset=utf-8";
     } else {
       // Default to JSON
       const response = {
@@ -470,8 +502,8 @@ export async function handleGetPDFContent(
 
     return {
       status: 200,
-      statusText: 'OK',
-      headers: { 'Content-Type': contentType },
+      statusText: "OK",
+      headers: { "Content-Type": contentType },
       body,
     };
   } catch (e) {
@@ -479,20 +511,396 @@ export async function handleGetPDFContent(
     Zotero.logError(error);
 
     // Customize error message for not found errors
-    if (error.message.includes('not found')) {
+    if (error.message.includes("not found")) {
       return {
         status: 404,
-        statusText: 'Not Found',
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({ error: error.message }),
       };
     }
 
     return {
       status: 500,
-      statusText: 'Internal Server Error',
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({ error: 'An unexpected error occurred' }),
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "An unexpected error occurred" }),
+    };
+  }
+}
+
+/**
+ * Handles GET /test/advanced-search endpoint.
+ * @returns A promise that resolves to an HttpResponse.
+ */
+export async function handleAdvancedSearchTestEndpoint(): Promise<HttpResponse> {
+  ztoolkit.log("[MCP ApiHandlers] handleAdvancedSearchTestEndpoint called");
+
+  try {
+    const testResult = await handleAdvancedSearchTest();
+
+    ztoolkit.log(`[MCP ApiHandlers] Advanced search test completed`);
+
+    return testResult;
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    ztoolkit.log(
+      `[MCP ApiHandlers] Error in handleAdvancedSearchTestEndpoint: ${error.message}`,
+      "error",
+    );
+    Zotero.logError(error);
+
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: error.message }),
+    };
+  }
+}
+
+/**
+ * Handles GET /annotations/search endpoint.
+ * @param query - URL query parameters.
+ * @returns A promise that resolves to an HttpResponse.
+ */
+export async function handleSearchAnnotations(
+  query: URLSearchParams,
+): Promise<HttpResponse> {
+  ztoolkit.log("[MCP ApiHandlers] handleSearchAnnotations called");
+
+  try {
+    const annotationService = new AnnotationService();
+
+    // Convert URLSearchParams to search parameters
+    const searchParams: any = {};
+    for (const [key, value] of query.entries()) {
+      if (key === "type" || key === "tags") {
+        // Support comma-separated values
+        searchParams[key] = value
+          .split(",")
+          .map((v) => v.trim())
+          .filter(Boolean);
+      } else if (key === "hasComment") {
+        searchParams[key] = value === "true";
+      } else {
+        searchParams[key] = value;
+      }
+    }
+
+    ztoolkit.log(
+      `[MCP ApiHandlers] Annotation search params: ${JSON.stringify(searchParams)}`,
+    );
+
+    const result = await annotationService.searchAnnotations(searchParams);
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify(result),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    ztoolkit.log(
+      `[MCP ApiHandlers] Error in handleSearchAnnotations: ${error.message}`,
+      "error",
+    );
+    Zotero.logError(error);
+
+    const status = (error as any).status || 500;
+    return {
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: error.message }),
+    };
+  }
+}
+
+/**
+ * Handles GET /items/:itemKey/notes endpoint.
+ * @param params - URL parameters, where params[1] is the itemKey.
+ * @param query - URL query parameters.
+ * @returns A promise that resolves to an HttpResponse.
+ */
+export async function handleGetItemNotes(
+  params: Record<string, string>,
+  query: URLSearchParams,
+): Promise<HttpResponse> {
+  const itemKey = params[1];
+  if (!itemKey) {
+    return {
+      status: 400,
+      statusText: "Bad Request",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "Missing itemKey parameter" }),
+    };
+  }
+
+  ztoolkit.log(`[MCP ApiHandlers] Getting notes for item ${itemKey}`);
+
+  try {
+    const annotationService = new AnnotationService();
+    const allNotes = await annotationService.getAllNotes(itemKey);
+
+    // 添加分页支持
+    const limit = Math.min(parseInt(query.get("limit") || "20", 10), 100);
+    const offset = parseInt(query.get("offset") || "0", 10);
+    const totalCount = allNotes.length;
+    const paginatedNotes = allNotes.slice(offset, offset + limit);
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        // 元数据在前
+        pagination: {
+          limit,
+          offset,
+          total: totalCount,
+          hasMore: offset + limit < totalCount,
+        },
+        totalCount,
+        version: "2.0",
+        endpoint: "items/notes",
+        itemKey,
+        // 数据在后
+        notes: paginatedNotes,
+      }),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    ztoolkit.log(
+      `[MCP ApiHandlers] Error in handleGetItemNotes: ${error.message}`,
+      "error",
+    );
+    Zotero.logError(error);
+
+    if (error.message.includes("not found")) {
+      return {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: error.message }),
+      };
+    }
+
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "An unexpected error occurred" }),
+    };
+  }
+}
+
+/**
+ * Handles GET /items/:itemKey/annotations endpoint.
+ * @param params - URL parameters, where params[1] is the itemKey.
+ * @param query - URL query parameters.
+ * @returns A promise that resolves to an HttpResponse.
+ */
+export async function handleGetItemAnnotations(
+  params: Record<string, string>,
+  query: URLSearchParams,
+): Promise<HttpResponse> {
+  const itemKey = params[1];
+  if (!itemKey) {
+    return {
+      status: 400,
+      statusText: "Bad Request",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "Missing itemKey parameter" }),
+    };
+  }
+
+  ztoolkit.log(`[MCP ApiHandlers] Getting annotations for item ${itemKey}`);
+
+  try {
+    const annotationService = new AnnotationService();
+    const annotations = await annotationService.getPDFAnnotations(itemKey);
+
+    // Apply optional filtering
+    let filteredAnnotations = annotations;
+
+    const typeFilter = query.get("type");
+    if (typeFilter) {
+      const types = typeFilter.split(",").map((t) => t.trim());
+      filteredAnnotations = annotations.filter((ann) =>
+        types.includes(ann.type),
+      );
+    }
+
+    const colorFilter = query.get("color");
+    if (colorFilter) {
+      filteredAnnotations = filteredAnnotations.filter(
+        (ann) => ann.color === colorFilter,
+      );
+    }
+
+    // 添加分页支持
+    const limit = Math.min(parseInt(query.get("limit") || "20", 10), 100);
+    const offset = parseInt(query.get("offset") || "0", 10);
+    const totalCount = filteredAnnotations.length;
+    const paginatedAnnotations = filteredAnnotations.slice(offset, offset + limit);
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        // 元数据在前
+        pagination: {
+          limit,
+          offset,
+          total: totalCount,
+          hasMore: offset + limit < totalCount,
+        },
+        totalCount,
+        version: "2.0",
+        endpoint: "items/annotations",
+        itemKey,
+        // 数据在后
+        annotations: paginatedAnnotations,
+      }),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    ztoolkit.log(
+      `[MCP ApiHandlers] Error in handleGetItemAnnotations: ${error.message}`,
+      "error",
+    );
+    Zotero.logError(error);
+
+    if (error.message.includes("not found")) {
+      return {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: error.message }),
+      };
+    }
+
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "An unexpected error occurred" }),
+    };
+  }
+}
+
+
+/**
+ * 根据ID获取注释的完整内容
+ * @param params - URL parameters, where params[1] is the annotation ID
+ * @returns A promise that resolves to an HttpResponse.
+ */
+export async function handleGetAnnotationById(
+  params: Record<string, string>,
+): Promise<HttpResponse> {
+  ztoolkit.log("[MCP ApiHandlers] handleGetAnnotationById called");
+  
+  const annotationId = params[1];
+  if (!annotationId) {
+    return {
+      status: 400,
+      statusText: "Bad Request",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "Annotation ID is required" }),
+    };
+  }
+
+  try {
+    const service = new AnnotationService();
+    const annotation = await service.getAnnotationById(annotationId);
+
+    if (!annotation) {
+      return {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "Annotation not found" }),
+      };
+    }
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify(annotation, null, 2),
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    ztoolkit.log(`[MCP ApiHandlers] Error in handleGetAnnotationById: ${errorMsg}`, "error");
+
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: errorMsg }),
+    };
+  }
+}
+
+/**
+ * 批量获取注释的完整内容
+ * @param body - Request body containing annotation IDs
+ * @returns A promise that resolves to an HttpResponse.
+ */
+export async function handleGetAnnotationsBatch(
+  body: string,
+): Promise<HttpResponse> {
+  ztoolkit.log("[MCP ApiHandlers] handleGetAnnotationsBatch called");
+
+  try {
+    let requestData;
+    try {
+      requestData = JSON.parse(body);
+    } catch (parseError) {
+      return {
+        status: 400,
+        statusText: "Bad Request",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "Invalid JSON in request body" }),
+      };
+    }
+
+    const { ids } = requestData;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return {
+        status: 400,
+        statusText: "Bad Request",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "ids must be a non-empty array" }),
+      };
+    }
+
+    const service = new AnnotationService();
+    const annotations = await service.getAnnotationsByIds(ids);
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        results: annotations,
+        requestedCount: ids.length,
+        foundCount: annotations.length,
+        timestamp: new Date().toISOString(),
+      }, null, 2),
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    ztoolkit.log(`[MCP ApiHandlers] Error in handleGetAnnotationsBatch: ${errorMsg}`, "error");
+
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: errorMsg }),
     };
   }
 }

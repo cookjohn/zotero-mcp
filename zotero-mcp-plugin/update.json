@@ -3,8 +3,8 @@
     "zotero-mcp-plugin@autoagent.my": {
       "updates": [
         {
-          "version": "1.0.0",
-          "update_link": "https://github.com/cookjohn/zotero-mcp/releases/download/v1.0.0/zotero-mcp-plugin-1.0.0.xpi",
+          "version": "1.1.0",
+          "update_link": "https://github.com/cookjohn/zotero-mcp/releases/download/v1.1.0/zotero-mcp-plugin-1.1.0.xpi",
           "applications": {
             "zotero": {
               "strict_min_version": "6.999",

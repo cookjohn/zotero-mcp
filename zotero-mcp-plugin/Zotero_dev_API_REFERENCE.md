@@ -154,7 +154,7 @@
 - **核心方法**: `new ztoolkit.Clipboard()`
 - **函数签名**:
   ```typescript
-  new Clipboard()
+  new Clipboard();
   ```
 
 ### 打开文件选择器
@@ -233,3 +233,4 @@
 - **函数签名**:
   ```typescript
   createZToolkit(): ZoteroToolkit
+  ```

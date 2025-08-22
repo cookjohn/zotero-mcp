@@ -12,7 +12,10 @@ const updateJsonPath = path.join(rootDir, "update.json");
 const updateBetaJsonPath = path.join(rootDir, "update-beta.json");
 
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
-const { version, config: { addonID } } = packageJson;
+const {
+  version,
+  config: { addonID },
+} = packageJson;
 
 const repoUrl = "https://github.com/cookjohn/zotero-mcp";
 
@@ -40,7 +43,15 @@ function generateUpdateJson(isBeta = false) {
   };
 }
 
-fs.writeFileSync(updateJsonPath, JSON.stringify(generateUpdateJson(false), null, 2));
-fs.writeFileSync(updateBetaJsonPath, JSON.stringify(generateUpdateJson(true), null, 2));
+fs.writeFileSync(
+  updateJsonPath,
+  JSON.stringify(generateUpdateJson(false), null, 2),
+);
+fs.writeFileSync(
+  updateBetaJsonPath,
+  JSON.stringify(generateUpdateJson(true), null, 2),
+);
 
-console.log(`Generated update.json and update-beta.json for version ${version}`);
+console.log(
+  `Generated update.json and update-beta.json for version ${version}`,
+);

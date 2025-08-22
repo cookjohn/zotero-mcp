@@ -2,6 +2,47 @@
 .vscode/
 .idea/
 .roo/
+
 # System files
 .DS_Store
 Thumbs.db
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Log files
+*.log
+logs/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Package files
+*.xpi
+*.zip
+*.tar.gz
+
+# Claude Code
+.claude/
+
+# Zotero plugin specific
+zotero-mcp-plugin/addon/
+zotero-mcp-plugin/build/

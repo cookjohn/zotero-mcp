@@ -56,7 +56,7 @@ export function formatCollectionDetails(
     includeItems?: boolean;
     includeSubcollections?: boolean;
     itemsLimit?: number;
-  } = {}
+  } = {},
 ) {
   const details = formatCollection(collection);
   if (!details) {

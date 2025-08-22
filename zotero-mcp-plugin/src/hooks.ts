@@ -1,7 +1,5 @@
-import {
-  BasicExampleFactory,
-} from "./modules/examples";
-import { httpServer } from "./modules/httpServer";  // 使用单例导出
+import { BasicExampleFactory } from "./modules/examples";
+import { httpServer } from "./modules/httpServer"; // 使用单例导出
 import { serverPreferences } from "./modules/serverPreferences";
 import { getString, initLocale } from "./utils/locale";
 import { registerPrefsScripts } from "./modules/preferenceScript";
@@ -21,28 +19,39 @@ async function onStartup() {
     ztoolkit.log(`===MCP=== [hooks.ts] Attempting to get server port...`);
     const port = serverPreferences.getPort();
     const enabled = serverPreferences.isServerEnabled();
-    
-    ztoolkit.log(`===MCP=== [hooks.ts] Port retrieved: ${port} (type: ${typeof port})`);
+
+    ztoolkit.log(
+      `===MCP=== [hooks.ts] Port retrieved: ${port} (type: ${typeof port})`,
+    );
     ztoolkit.log(`===MCP=== [hooks.ts] Server enabled: ${enabled}`);
-    
+
     if (!port || isNaN(port)) {
       throw new Error(`Invalid port value: ${port}`);
     }
-    
-    ztoolkit.log(`===MCP=== [hooks.ts] Starting HTTP server on port ${port}...`);
+
+    ztoolkit.log(
+      `===MCP=== [hooks.ts] Starting HTTP server on port ${port}...`,
+    );
     httpServer.start(port); // No await, let it run in background
-    addon.data.httpServer = httpServer;  // 保存引用以便后续使用
-    ztoolkit.log(`===MCP=== [hooks.ts] HTTP server start initiated on port ${port}`);
+    addon.data.httpServer = httpServer; // 保存引用以便后续使用
+    ztoolkit.log(
+      `===MCP=== [hooks.ts] HTTP server start initiated on port ${port}`,
+    );
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    ztoolkit.log(`===MCP=== [hooks.ts] Failed to start HTTP server: ${err.message}`, "error");
-    Zotero.debug(`===MCP=== [hooks.ts] Server start error details: ${err.stack}`);
+    ztoolkit.log(
+      `===MCP=== [hooks.ts] Failed to start HTTP server: ${err.message}`,
+      "error",
+    );
+    Zotero.debug(
+      `===MCP=== [hooks.ts] Server start error details: ${err.stack}`,
+    );
   }
 
   // 监听偏好设置变化
   serverPreferences.addObserver(async (name) => {
     ztoolkit.log(`[MCP Plugin] Preference changed: ${name}`);
-    
+
     if (name === "mcp.server.port" || name === "mcp.server.enabled") {
       try {
         // 先停止服务器
@@ -51,19 +60,26 @@ async function onStartup() {
           await httpServer.stop();
           ztoolkit.log("[MCP Plugin] HTTP server stopped");
         }
-        
+
         // 如果启用了服务器，重新启动
         if (serverPreferences.isServerEnabled()) {
           const port = serverPreferences.getPort();
-          ztoolkit.log(`[MCP Plugin] Restarting HTTP server on port ${port}...`);
+          ztoolkit.log(
+            `[MCP Plugin] Restarting HTTP server on port ${port}...`,
+          );
           await httpServer.start(port);
-          ztoolkit.log(`[MCP Plugin] HTTP server restarted successfully on port ${port}`);
+          ztoolkit.log(
+            `[MCP Plugin] HTTP server restarted successfully on port ${port}`,
+          );
         } else {
           ztoolkit.log("[MCP Plugin] HTTP server disabled by user preference");
         }
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
-        ztoolkit.log(`[MCP Plugin] Error handling preference change: ${err.message}`, "error");
+        ztoolkit.log(
+          `[MCP Plugin] Error handling preference change: ${err.message}`,
+          "error",
+        );
       }
     }
   });
@@ -86,7 +102,6 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   win.MozXULElement.insertFTLIfNeeded(
     `${addon.data.config.addonRef}-mainWindow.ftl`,
   );
-
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
@@ -95,7 +110,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 
 function onShutdown(): void {
   ztoolkit.log("[MCP Plugin] Shutting down...");
-  
+
   // 停止HTTP服务器
   try {
     if (httpServer.isServerRunning()) {
@@ -104,9 +119,12 @@ function onShutdown(): void {
     }
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    ztoolkit.log(`[MCP Plugin] Error stopping server during shutdown: ${err.message}`, "error");
+    ztoolkit.log(
+      `[MCP Plugin] Error stopping server during shutdown: ${err.message}`,
+      "error",
+    );
   }
-  
+
   serverPreferences.unregister();
   ztoolkit.unregisterAll();
   // Remove addon object
@@ -144,7 +162,6 @@ async function onPrefsEvent(type: string, data: { [key: string]: any }) {
       return;
   }
 }
-
 
 // Add your hooks here. For element click, etc.
 // Keep in mind hooks only do dispatch. Don't add code that does real jobs in hooks.

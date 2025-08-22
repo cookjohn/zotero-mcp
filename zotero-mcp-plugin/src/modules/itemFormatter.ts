@@ -25,7 +25,7 @@ export function formatItemBrief(item: Zotero.Item): Record<string, any> {
  */
 export function formatItem(
   item: Zotero.Item,
-  fields?: string[]
+  fields?: string[],
 ): Record<string, any> {
   let fieldsToExport: string[];
 
@@ -60,33 +60,45 @@ export function formatItem(
     if (!str) return str;
     try {
       // 检查是否是UTF-8编码损坏的字符串
-      if (str.includes('') || /[\x80-\xFF]/.test(str)) {
-        ztoolkit.log(`[ItemFormatter] Detecting encoding issues in string: ${str.substring(0, 50)}`);
-        
+      if (str.includes("") || /[\x80-\xFF]/.test(str)) {
+        ztoolkit.log(
+          `[ItemFormatter] Detecting encoding issues in string: ${str.substring(0, 50)}`,
+        );
+
         // 尝试多种编码修复方法
         try {
           // 方法1: 尝试用TextDecoder重新解码
           const encoder = new TextEncoder();
           const bytes = encoder.encode(str);
-          const decoder = new TextDecoder('utf-8', { fatal: false });
+          const decoder = new TextDecoder("utf-8", { fatal: false });
           const fixed = decoder.decode(bytes);
-          if (fixed !== str && !fixed.includes('')) {
-            ztoolkit.log(`[ItemFormatter] Fixed encoding using TextDecoder: ${fixed.substring(0, 50)}`);
+          if (fixed !== str && !fixed.includes("")) {
+            ztoolkit.log(
+              `[ItemFormatter] Fixed encoding using TextDecoder: ${fixed.substring(0, 50)}`,
+            );
             return fixed;
           }
         } catch (e) {
-          ztoolkit.log(`[ItemFormatter] TextDecoder method failed: ${e}`, "error");
+          ztoolkit.log(
+            `[ItemFormatter] TextDecoder method failed: ${e}`,
+            "error",
+          );
         }
-        
+
         // 方法2: 尝试escape/unescape方法
         try {
           const fixed = decodeURIComponent(escape(str));
-          if (fixed !== str && !fixed.includes('')) {
-            ztoolkit.log(`[ItemFormatter] Fixed encoding using escape/unescape: ${fixed.substring(0, 50)}`);
+          if (fixed !== str && !fixed.includes("")) {
+            ztoolkit.log(
+              `[ItemFormatter] Fixed encoding using escape/unescape: ${fixed.substring(0, 50)}`,
+            );
             return fixed;
           }
         } catch (e) {
-          ztoolkit.log(`[ItemFormatter] Escape/unescape method failed: ${e}`, "error");
+          ztoolkit.log(
+            `[ItemFormatter] Escape/unescape method failed: ${e}`,
+            "error",
+          );
         }
       }
       return str;
@@ -103,24 +115,38 @@ export function formatItem(
           try {
             const attachmentIds = item.getAttachments(false);
             const attachments = Zotero.Items.get(attachmentIds);
-            formattedItem[field] = attachments.map((attachment: Zotero.Item) => {
-              if (!attachment.isAttachment()) {
-                return null;
-              }
-              try {
-                return {
-                  title: fixStringEncoding(attachment.getField("title") || ""),
-                  path: fixStringEncoding(attachment.getFilePath() || ""),
-                  contentType: fixStringEncoding(attachment.attachmentContentType || ""),
-                  filename: fixStringEncoding(attachment.attachmentFilename || ""),
-                };
-              } catch (e) {
-                ztoolkit.log(`[ItemFormatter] Error processing attachment ${attachment.key}: ${e}`, "error");
-                return null;
-              }
-            }).filter((att) => att && att.path); // 确保附件有效且有路径
+            formattedItem[field] = attachments
+              .map((attachment: Zotero.Item) => {
+                if (!attachment.isAttachment()) {
+                  return null;
+                }
+                try {
+                  return {
+                    title: fixStringEncoding(
+                      attachment.getField("title") || "",
+                    ),
+                    path: fixStringEncoding(attachment.getFilePath() || ""),
+                    contentType: fixStringEncoding(
+                      attachment.attachmentContentType || "",
+                    ),
+                    filename: fixStringEncoding(
+                      attachment.attachmentFilename || "",
+                    ),
+                  };
+                } catch (e) {
+                  ztoolkit.log(
+                    `[ItemFormatter] Error processing attachment ${attachment.key}: ${e}`,
+                    "error",
+                  );
+                  return null;
+                }
+              })
+              .filter((att) => att && att.path); // 确保附件有效且有路径
           } catch (e) {
-            ztoolkit.log(`[ItemFormatter] Error getting attachments: ${e}`, "error");
+            ztoolkit.log(
+              `[ItemFormatter] Error getting attachments: ${e}`,
+              "error",
+            );
             formattedItem[field] = [];
           }
           break;
@@ -129,16 +155,23 @@ export function formatItem(
             formattedItem[field] = item.getCreators().map((creator) => ({
               firstName: fixStringEncoding(creator.firstName || ""),
               lastName: fixStringEncoding(creator.lastName || ""),
-              creatorType: fixStringEncoding(Zotero.CreatorTypes.getName(creator.creatorTypeID) || "unknown"),
+              creatorType: fixStringEncoding(
+                Zotero.CreatorTypes.getName(creator.creatorTypeID) || "unknown",
+              ),
             }));
           } catch (e) {
-            ztoolkit.log(`[ItemFormatter] Error getting creators: ${e}`, "error");
+            ztoolkit.log(
+              `[ItemFormatter] Error getting creators: ${e}`,
+              "error",
+            );
             formattedItem[field] = [];
           }
           break;
         case "tags":
           try {
-            formattedItem[field] = item.getTags().map((tag) => fixStringEncoding(tag.tag || ""));
+            formattedItem[field] = item
+              .getTags()
+              .map((tag) => fixStringEncoding(tag.tag || ""));
           } catch (e) {
             ztoolkit.log(`[ItemFormatter] Error getting tags: ${e}`, "error");
             formattedItem[field] = [];
@@ -153,7 +186,10 @@ export function formatItem(
                   const note = Zotero.Items.get(noteId);
                   return note ? fixStringEncoding(note.getNote() || "") : "";
                 } catch (e) {
-                  ztoolkit.log(`[ItemFormatter] Error getting note ${noteId}: ${e}`, "error");
+                  ztoolkit.log(
+                    `[ItemFormatter] Error getting note ${noteId}: ${e}`,
+                    "error",
+                  );
                   return "";
                 }
               })
@@ -165,7 +201,9 @@ export function formatItem(
           break;
         case "date":
           try {
-            formattedItem[field] = fixStringEncoding(item.getField("date") || "");
+            formattedItem[field] = fixStringEncoding(
+              item.getField("date") || "",
+            );
           } catch (e) {
             ztoolkit.log(`[ItemFormatter] Error getting date: ${e}`, "error");
             formattedItem[field] = "";
@@ -182,7 +220,10 @@ export function formatItem(
           break;
       }
     } catch (e) {
-      ztoolkit.log(`[ItemFormatter] Error processing field ${field}: ${e}`, "error");
+      ztoolkit.log(
+        `[ItemFormatter] Error processing field ${field}: ${e}`,
+        "error",
+      );
       formattedItem[field] = null;
     }
   }
@@ -198,7 +239,7 @@ export function formatItem(
  */
 export function formatItems(
   items: Zotero.Item[],
-  fields?: string[]
+  fields?: string[],
 ): Array<Record<string, any>> {
   return items.map((item) => formatItem(item, fields));
 }

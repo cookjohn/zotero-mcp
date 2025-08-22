@@ -5,7 +5,7 @@
  * It abstracts the details of finding attachments and using the PDFProcessor.
  */
 
-import { PDFProcessor } from './pdfProcessor';
+import { PDFProcessor } from "./pdfProcessor";
 
 declare const Zotero: any;
 
@@ -16,7 +16,10 @@ export class PDFService {
    * @returns The Zotero item object for the PDF attachment, or null if not found.
    */
   private async findPDFAttachment(itemKey: string): Promise<any | null> {
-    const item = Zotero.Items.getByLibraryAndKey(Zotero.Libraries.userLibraryID, itemKey);
+    const item = Zotero.Items.getByLibraryAndKey(
+      Zotero.Libraries.userLibraryID,
+      itemKey,
+    );
     if (!item) {
       return null;
     }
@@ -24,7 +27,7 @@ export class PDFService {
     const attachmentIDs = item.getAttachments();
     for (const id of attachmentIDs) {
       const attachment = Zotero.Items.get(id);
-      if (attachment.attachmentContentType === 'application/pdf') {
+      if (attachment.attachmentContentType === "application/pdf") {
         return attachment;
       }
     }
@@ -46,7 +49,9 @@ export class PDFService {
 
     const filePath = attachment.getFilePath();
     if (!filePath) {
-      throw new Error(`File path not found for PDF attachment of item ${itemKey}`);
+      throw new Error(
+        `File path not found for PDF attachment of item ${itemKey}`,
+      );
     }
 
     // Use the new PDFProcessor implementation
