@@ -60,16 +60,12 @@ export class HttpServer {
   }
 
   private initializeMCPServer(): void {
-    if (serverPreferences.isMCPIntegratedEnabled()) {
-      try {
-        this.mcpServer = new StreamableMCPServer();
-        ztoolkit.log(`[HttpServer] Integrated MCP server initialized`);
-      } catch (error) {
-        ztoolkit.log(`[HttpServer] Failed to initialize MCP server: ${error}`);
-        // Don't throw error, HTTP server can still work without MCP
-      }
-    } else {
-      ztoolkit.log(`[HttpServer] Integrated MCP server disabled in preferences`);
+    try {
+      this.mcpServer = new StreamableMCPServer();
+      ztoolkit.log(`[HttpServer] Integrated MCP server initialized`);
+    } catch (error) {
+      ztoolkit.log(`[HttpServer] Failed to initialize MCP server: ${error}`);
+      // Don't throw error, HTTP server can still work without MCP
     }
   }
 

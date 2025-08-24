@@ -1,6 +1,10 @@
-const MCP_SERVER_PORT = "mcp.server.port";
-const MCP_SERVER_ENABLED = "mcp.server.enabled";
-const MCP_INTEGRATED_ENABLED = "mcp.integrated.enabled";
+import { config } from "../../package.json";
+
+declare let ztoolkit: ZToolkit;
+
+const PREFS_PREFIX = config.prefsPrefix;
+const MCP_SERVER_PORT = `${PREFS_PREFIX}.mcp.server.port`;
+const MCP_SERVER_ENABLED = `${PREFS_PREFIX}.mcp.server.enabled`;
 
 type PreferenceObserver = (name: string) => void;
 
@@ -9,7 +13,41 @@ class ServerPreferences {
   private observerID: symbol | null = null;
 
   constructor() {
+    this.initializeDefaults();
     this.register();
+  }
+
+  private initializeDefaults(): void {
+    // Set default values if not defined
+    const currentPort = Zotero.Prefs.get(MCP_SERVER_PORT, true);
+    const currentEnabled = Zotero.Prefs.get(MCP_SERVER_ENABLED, true);
+    
+    if (typeof ztoolkit !== 'undefined') {
+      ztoolkit.log(`[ServerPreferences] Current prefs - port: ${currentPort}, enabled: ${currentEnabled}`);
+    }
+    
+    // Always set port if not set
+    if (currentPort === undefined || currentPort === null) {
+      if (typeof ztoolkit !== 'undefined') {
+        ztoolkit.log(`[ServerPreferences] Setting default port: 23120`);
+      }
+      Zotero.Prefs.set(MCP_SERVER_PORT, 23120, true);
+    }
+    
+    // Set default enabled state if not defined
+    if (currentEnabled === undefined || currentEnabled === null) {
+      if (typeof ztoolkit !== 'undefined') {
+        ztoolkit.log(`[ServerPreferences] Setting default enabled state to true`);
+      }
+      Zotero.Prefs.set(MCP_SERVER_ENABLED, true, true);
+    }
+    
+    // Verify the values were set correctly
+    const verifyPort = Zotero.Prefs.get(MCP_SERVER_PORT, true);
+    const verifyEnabled = Zotero.Prefs.get(MCP_SERVER_ENABLED, true);
+    if (typeof ztoolkit !== 'undefined') {
+      ztoolkit.log(`[ServerPreferences] After initialization - port: ${verifyPort}, enabled: ${verifyEnabled}`);
+    }
   }
 
   public getPort(): number {
@@ -51,68 +89,23 @@ class ServerPreferences {
     try {
       const enabled = Zotero.Prefs.get(MCP_SERVER_ENABLED, true);
 
-      // 添加调试日志
-      if (typeof Zotero !== "undefined" && Zotero.debug) {
-        Zotero.debug(
-          `[ServerPreferences] Server enabled value from prefs: ${enabled} (type: ${typeof enabled})`,
-        );
-      }
+      ztoolkit.log(`[ServerPreferences] Reading ${MCP_SERVER_ENABLED}: ${enabled} (type: ${typeof enabled})`);
 
       // 确保返回有效的布尔值
       if (enabled === undefined || enabled === null) {
-        if (typeof Zotero !== "undefined" && Zotero.debug) {
-          Zotero.debug(
-            `[ServerPreferences] Server enabled value invalid, using default: ${DEFAULT_ENABLED}`,
-          );
-        }
+        ztoolkit.log(`[ServerPreferences] Server enabled value invalid, using default: ${DEFAULT_ENABLED}`);
         return DEFAULT_ENABLED;
       }
 
-      return Boolean(enabled);
+      const result = Boolean(enabled);
+      ztoolkit.log(`[ServerPreferences] isServerEnabled returning: ${result}`);
+      return result;
     } catch (error) {
-      // 如果偏好设置系统还未初始化或发生错误，返回默认值
-      if (typeof Zotero !== "undefined" && Zotero.debug) {
-        Zotero.debug(
-          `[ServerPreferences] Error getting server enabled status: ${error}. Using default: ${DEFAULT_ENABLED}`,
-        );
-      }
+      ztoolkit.log(`[ServerPreferences] Error getting server enabled status: ${error}. Using default: ${DEFAULT_ENABLED}`);
       return DEFAULT_ENABLED;
     }
   }
 
-  public isMCPIntegratedEnabled(): boolean {
-    const DEFAULT_MCP_ENABLED = true; // Integrated MCP is the new default
-    try {
-      const enabled = Zotero.Prefs.get(MCP_INTEGRATED_ENABLED, true);
-
-      // 添加调试日志
-      if (typeof Zotero !== "undefined" && Zotero.debug) {
-        Zotero.debug(
-          `[ServerPreferences] MCP integrated enabled value from prefs: ${enabled} (type: ${typeof enabled})`,
-        );
-      }
-
-      // 确保返回有效的布尔值
-      if (enabled === undefined || enabled === null) {
-        if (typeof Zotero !== "undefined" && Zotero.debug) {
-          Zotero.debug(
-            `[ServerPreferences] MCP integrated enabled value invalid, using default: ${DEFAULT_MCP_ENABLED}`,
-          );
-        }
-        return DEFAULT_MCP_ENABLED;
-      }
-
-      return Boolean(enabled);
-    } catch (error) {
-      // 如果偏好设置系统还未初始化或发生错误，返回默认值
-      if (typeof Zotero !== "undefined" && Zotero.debug) {
-        Zotero.debug(
-          `[ServerPreferences] Error getting MCP integrated enabled status: ${error}. Using default: ${DEFAULT_MCP_ENABLED}`,
-        );
-      }
-      return DEFAULT_MCP_ENABLED;
-    }
-  }
 
   public addObserver(observer: PreferenceObserver): void {
     this.observers.push(observer);
@@ -126,12 +119,30 @@ class ServerPreferences {
   }
 
   private register(): void {
-    this.observerID = Zotero.Prefs.registerObserver(
-      MCP_SERVER_PORT,
-      (name: string) => {
-        this.observers.forEach((observer) => observer(name));
-      },
-    );
+    try {
+      // Register observer for the enabled preference only
+      if (typeof ztoolkit !== 'undefined') {
+        ztoolkit.log(`[ServerPreferences] Registering observer for: ${MCP_SERVER_ENABLED}`);
+      }
+      
+      this.observerID = Zotero.Prefs.registerObserver(
+        MCP_SERVER_ENABLED,
+        (name: string) => {
+          if (typeof ztoolkit !== 'undefined') {
+            ztoolkit.log(`[ServerPreferences] Observer triggered for: ${name}`);
+          }
+          this.observers.forEach((observer) => observer(name));
+        },
+      );
+      
+      if (typeof ztoolkit !== 'undefined') {
+        ztoolkit.log(`[ServerPreferences] Observer registered with ID: ${this.observerID?.toString()}`);
+      }
+    } catch (error) {
+      if (typeof ztoolkit !== 'undefined') {
+        ztoolkit.log(`[ServerPreferences] Error registering observer: ${error}`, 'error');
+      }
+    }
   }
 
   public unregister(): void {

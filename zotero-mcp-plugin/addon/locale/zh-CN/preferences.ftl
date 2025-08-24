@@ -5,6 +5,7 @@ pref-server-enable =
     .label = 启用服务器
 pref-server-port = 端口
 pref-server-port-invalid = 端口号必须在 1024 和 65535 之间。
+pref-server-port-restart-hint = 修改端口后请重启服务器以生效
 
 pref-client-config-title = 客户端配置生成器
 pref-client-config-description = 为主流 AI 客户端生成 MCP 服务器配置文件，方便快速连接到 Zotero MCP 服务器。
@@ -14,9 +15,11 @@ pref-generate-config-button =
     .label = 生成配置
 pref-copy-config-button =
     .label = 复制配置
-pref-copy-guide-button =
-    .label = 复制完整指南
 pref-config-output-label = 生成的配置：
+pref-config-output-placeholder = 点击生成配置按钮来生成客户端配置...
+pref-config-guide-title = 配置指南
+pref-config-guide-placeholder = 选择客户端类型并生成配置后，此处将显示详细的配置指南...
+pref-client-custom-http = 自定义 HTTP 客户端
 
 first-install-title = 欢迎使用 Zotero MCP 插件
 first-install-prompt = 感谢安装 Zotero MCP 插件！为了开始使用，您需要为您的 AI 客户端生成配置文件。是否现在打开设置页面来生成配置？

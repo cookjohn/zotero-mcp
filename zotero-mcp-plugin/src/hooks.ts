@@ -15,13 +15,11 @@ async function onStartup() {
   initLocale();
 
   // Check if this is first installation and show config prompt
-  // For testing: reset the first install flag (remove this line in production)
-  // Zotero.Prefs.clear("mcp.firstInstallPromptShown");
   checkFirstInstallation();
 
-  // 启动HTTP服务器 (Debug: 强制启动)
+  // 启动HTTP服务器
   try {
-    ztoolkit.log(`===MCP=== [hooks.ts] Attempting to get server port...`);
+    ztoolkit.log(`===MCP=== [hooks.ts] Attempting to get server preferences...`);
     const port = serverPreferences.getPort();
     const enabled = serverPreferences.isServerEnabled();
 
@@ -29,6 +27,11 @@ async function onStartup() {
       `===MCP=== [hooks.ts] Port retrieved: ${port} (type: ${typeof port})`,
     );
     ztoolkit.log(`===MCP=== [hooks.ts] Server enabled: ${enabled}`);
+
+    if (!enabled) {
+      ztoolkit.log(`===MCP=== [hooks.ts] Server is disabled, skipping startup`);
+      return;
+    }
 
     if (!port || isNaN(port)) {
       throw new Error(`Invalid port value: ${port}`);
@@ -57,12 +60,12 @@ async function onStartup() {
   serverPreferences.addObserver(async (name) => {
     ztoolkit.log(`[MCP Plugin] Preference changed: ${name}`);
 
-    if (name === "mcp.server.port" || name === "mcp.server.enabled") {
+    if (name === "extensions.zotero.zotero-mcp-plugin.mcp.server.port" || name === "extensions.zotero.zotero-mcp-plugin.mcp.server.enabled") {
       try {
         // 先停止服务器
         if (httpServer.isServerRunning()) {
           ztoolkit.log("[MCP Plugin] Stopping HTTP server for restart...");
-          await httpServer.stop();
+          httpServer.stop();
           ztoolkit.log("[MCP Plugin] HTTP server stopped");
         }
 
@@ -72,7 +75,7 @@ async function onStartup() {
           ztoolkit.log(
             `[MCP Plugin] Restarting HTTP server on port ${port}...`,
           );
-          await httpServer.start(port);
+          httpServer.start(port);
           ztoolkit.log(
             `[MCP Plugin] HTTP server restarted successfully on port ${port}`,
           );
@@ -108,7 +111,10 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
     `${addon.data.config.addonRef}-mainWindow.ftl`,
   );
   
-  // Also load preferences.ftl for first install prompt
+  // Also load addon.ftl and preferences.ftl
+  win.MozXULElement.insertFTLIfNeeded(
+    `${addon.data.config.addonRef}-addon.ftl`,
+  );
   win.MozXULElement.insertFTLIfNeeded(
     `${addon.data.config.addonRef}-preferences.ftl`,
   );

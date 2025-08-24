@@ -1,115 +1,137 @@
 <linkset>
   <html:link rel="localization" href="__addonRef__-preferences.ftl" />
 </linkset>
-<groupbox
-  onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window });"
->
-  <groupbox>
+
+<prefpane id="__addonRef__-preferences" onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window });">
+  <preferences>
+    <preference id="extensions.zotero.zotero-mcp-plugin.mcp.server.enabled" name="extensions.zotero.zotero-mcp-plugin.mcp.server.enabled" type="bool" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.mcp.server.port" name="extensions.zotero.zotero-mcp-plugin.mcp.server.port" type="int" />
+  </preferences>
+
+  <vbox flex="1" style="padding: 10px;">
+    <groupbox style="margin-bottom: 15px;">
     <label><html:h2 data-l10n-id="pref-server-title"></html:h2></label>
     <checkbox
       id="zotero-prefpane-__addonRef__-mcp-server-enabled"
-      preference="mcp.server.enabled"
+      preference="extensions.zotero.zotero-mcp-plugin.mcp.server.enabled"
       data-l10n-id="pref-server-enable"
     ></checkbox>
-    <hbox>
-      <html:label
-        for="zotero-prefpane-__addonRef__-mcp-server-port"
-        data-l10n-id="pref-server-port"
-      ></html:label>
-      <html:input
-        type="number"
-        id="zotero-prefpane-__addonRef__-mcp-server-port"
-        preference="mcp.server.port"
-        min="1024"
-        max="65535"
-      ></html:input>
-    </hbox>
-  </groupbox>
-  
-  <groupbox>
-    <label><html:h2 data-l10n-id="pref-client-config-title"></html:h2></label>
+    <vbox>
+      <hbox align="center" style="margin-bottom: 5px;">
+        <html:label
+          for="zotero-prefpane-__addonRef__-mcp-server-port"
+          data-l10n-id="pref-server-port"
+          style="min-width: 80px;"
+        ></html:label>
+        <html:input
+          type="number"
+          id="zotero-prefpane-__addonRef__-mcp-server-port"
+          preference="extensions.zotero.zotero-mcp-plugin.mcp.server.port"
+          min="1024"
+          max="65535"
+          style="max-width: 100px; margin-right: 10px;"
+        ></html:input>
+      </hbox>
+      <html:div style="margin-left: 80px; font-size: 11px; color: #666; font-style: italic;" data-l10n-id="pref-server-port-restart-hint">
+      </html:div>
+    </vbox>
+    </groupbox>
+    
+    <groupbox style="margin-bottom: 15px;">
+      <label><html:h2 data-l10n-id="pref-client-config-title"></html:h2></label>
     <html:p data-l10n-id="pref-client-config-description"></html:p>
     
-    <hbox align="center">
-      <html:label for="client-type-select" data-l10n-id="pref-client-type-label"></html:label>
-      <html:select id="client-type-select">
-        <html:option value="claude-desktop">Claude Desktop</html:option>
-        <html:option value="cline-vscode">Cline (VS Code)</html:option>
-        <html:option value="continue-dev">Continue.dev</html:option>
-        <html:option value="cursor">Cursor</html:option>
-        <html:option value="cherry-studio">Cherry Studio</html:option>
-        <html:option value="gemini-cli">Gemini CLI</html:option>
-        <html:option value="chatbox">Chatbox</html:option>
-        <html:option value="custom-http">自定义 HTTP 客户端</html:option>
-      </html:select>
-    </hbox>
+    <vbox>
+      <hbox align="center" style="margin-bottom: 10px;">
+        <html:label for="client-type-select" data-l10n-id="pref-client-type-label" style="min-width: 80px;"></html:label>
+        <html:select id="client-type-select" style="flex: 1; max-width: 200px;">
+          <html:option value="claude-desktop">Claude Desktop</html:option>
+          <html:option value="cline-vscode">Cline (VS Code)</html:option>
+          <html:option value="continue-dev">Continue.dev</html:option>
+          <html:option value="cursor">Cursor</html:option>
+          <html:option value="cherry-studio">Cherry Studio</html:option>
+          <html:option value="gemini-cli">Gemini CLI</html:option>
+          <html:option value="chatbox">Chatbox</html:option>
+          <html:option value="trae-ai">Trae AI</html:option>
+          <html:option value="custom-http" data-l10n-id="pref-client-custom-http"></html:option>
+        </html:select>
+      </hbox>
+      
+      <hbox align="center" style="margin-bottom: 15px;">
+        <html:label for="server-name-input" data-l10n-id="pref-server-name-label" style="min-width: 80px;"></html:label>
+        <html:input
+          type="text"
+          id="server-name-input"
+          value="zotero-mcp"
+          placeholder="zotero-mcp"
+          style="flex: 1; max-width: 200px;"
+        />
+      </hbox>
+    </vbox>
     
-    <hbox align="center">
-      <html:label for="server-name-input" data-l10n-id="pref-server-name-label"></html:label>
-      <html:input
-        type="text"
-        id="server-name-input"
-        value="zotero-mcp"
-        placeholder="zotero-mcp"
-      />
-    </hbox>
-    
-    <hbox>
+    <hbox style="margin-bottom: 15px;">
       <button
         id="generate-config-button"
         data-l10n-id="pref-generate-config-button"
+        style="margin-right: 10px;"
       ></button>
       <button
         id="copy-config-button"
         data-l10n-id="pref-copy-config-button"
         disabled="true"
       ></button>
-      <button
-        id="copy-guide-button"  
-        data-l10n-id="pref-copy-guide-button"
-        disabled="true"
-      ></button>
     </hbox>
     
-    <html:div>
-      <html:label data-l10n-id="pref-config-output-label"></html:label>
-      <html:textarea
-        id="config-output"
-        rows="10"
-        readonly="true"
-        style="width: 100%; font-family: monospace; font-size: 12px;"
-        placeholder="点击生成配置按钮来生成客户端配置..."
-      ></html:textarea>
-    </html:div>
-  </groupbox>
-  
-  <hbox class="virtualized-table-container" flex="1" height="300px">
-    <html:div id="__addonRef__-table-container" />
-  </hbox>
-  
-  <groupbox>
-    <label><html:h2 data-l10n-id="pref-contact-title"></html:h2></label>
+    <hbox style="gap: 15px;">
+      <vbox style="flex: 1;">
+        <html:label data-l10n-id="pref-config-output-label" style="margin-bottom: 5px;"></html:label>
+        <html:textarea
+          id="config-output"
+          rows="12"
+          readonly="true"
+          style="width: 100%; font-family: monospace; font-size: 12px; resize: vertical;"
+          data-l10n-id="pref-config-output-placeholder"
+        ></html:textarea>
+      </vbox>
+      
+      <vbox style="flex: 1;">
+        <html:label style="margin-bottom: 5px; font-weight: bold;" data-l10n-id="pref-config-guide-title"></html:label>
+        <html:div
+          id="config-guide"
+          style="border: 1px solid #ccc; border-radius: 4px; padding: 15px; background-color: #f9f9f9; height: 300px; overflow-y: auto; font-size: 12px; line-height: 1.4;"
+        >
+          <html:div style="color: #666; font-style: italic;" data-l10n-id="pref-config-guide-placeholder">
+          </html:div>
+        </html:div>
+      </vbox>
+    </hbox>
+    </groupbox>
+    
+    <groupbox style="margin-bottom: 15px;">
+      <label><html:h2 data-l10n-id="pref-contact-title"></html:h2></label>
+      <vbox>
+        <html:div style="margin: 5px 0;">
+          <html:span data-l10n-id="pref-contact-email" style="user-select: text; cursor: text;"></html:span>
+        </html:div>
+        <html:div style="margin: 5px 0;">
+          <html:a 
+            href="https://github.com/cookjohn/zotero-mcp" 
+            target="_blank"
+            data-l10n-id="pref-contact-github"
+            style="color: #0066cc; text-decoration: underline; user-select: text;"
+          ></html:a>
+        </html:div>
+        <html:div style="margin: 5px 0;">
+          <html:span data-l10n-id="pref-contact-wechat" style="user-select: text; cursor: text;"></html:span>
+        </html:div>
+      </vbox>
+    </groupbox>
+    
     <vbox>
-      <html:div style="margin: 5px 0;">
-        <html:span data-l10n-id="pref-contact-email"></html:span>
-      </html:div>
-      <html:div style="margin: 5px 0;">
-        <html:a 
-          href="https://github.com/cookjohn/zotero-mcp" 
-          target="_blank"
-          data-l10n-id="pref-contact-github"
-          style="color: #0066cc; text-decoration: underline;"
-        ></html:a>
-      </html:div>
-      <html:div style="margin: 5px 0;">
-        <html:span data-l10n-id="pref-contact-wechat"></html:span>
-      </html:div>
+      <html:label
+        data-l10n-id="pref-help"
+        data-l10n-args='{"time": "__buildTime__","name": "__addonName__","version":"__buildVersion__"}'
+      ></html:label>
     </vbox>
-  </groupbox>
-</groupbox>
-<vbox>
-  <html:label
-    data-l10n-id="pref-help"
-    data-l10n-args='{"time": "__buildTime__","name": "__addonName__","version":"__buildVersion__"}'
-  ></html:label>
-</vbox>
+  </vbox>
+</prefpane>
