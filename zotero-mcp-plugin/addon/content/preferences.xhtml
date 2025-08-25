@@ -6,6 +6,14 @@
   <preferences>
     <preference id="extensions.zotero.zotero-mcp-plugin.mcp.server.enabled" name="extensions.zotero.zotero-mcp-plugin.mcp.server.enabled" type="bool" />
     <preference id="extensions.zotero.zotero-mcp-plugin.mcp.server.port" name="extensions.zotero.zotero-mcp-plugin.mcp.server.port" type="int" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.ai.maxTokens" name="extensions.zotero.zotero-mcp-plugin.ai.maxTokens" type="int" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.preset.mode" name="extensions.zotero.zotero-mcp-plugin.preset.mode" type="string" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.preset.custom.defaultOutputMode" name="extensions.zotero.zotero-mcp-plugin.preset.custom.defaultOutputMode" type="string" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.preset.custom.smartTruncateLength" name="extensions.zotero.zotero-mcp-plugin.preset.custom.smartTruncateLength" type="int" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.preset.custom.keywordCount" name="extensions.zotero.zotero-mcp-plugin.preset.custom.keywordCount" type="int" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.preset.custom.searchItemLimit" name="extensions.zotero.zotero-mcp-plugin.preset.custom.searchItemLimit" type="int" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.preset.custom.maxAnnotationsPerRequest" name="extensions.zotero.zotero-mcp-plugin.preset.custom.maxAnnotationsPerRequest" type="int" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.ui.includeMetadata" name="extensions.zotero.zotero-mcp-plugin.ui.includeMetadata" type="bool" />
   </preferences>
 
   <vbox flex="1" style="padding: 10px;">
@@ -38,6 +46,142 @@
     </groupbox>
     
     <groupbox style="margin-bottom: 15px;">
+      <label><html:h2 data-l10n-id="pref-mcp-settings-title"></html:h2></label>
+      <html:p data-l10n-id="pref-mcp-settings-description"></html:p>
+      
+      <vbox>
+        <hbox align="center" style="margin-bottom: 15px;">
+          <html:label
+            for="zotero-prefpane-__addonRef__-max-tokens"
+            data-l10n-id="pref-max-tokens-label"
+            style="min-width: 200px;"
+          ></html:label>
+          <html:input
+            type="number"
+            id="zotero-prefpane-__addonRef__-max-tokens"
+            preference="extensions.zotero.zotero-mcp-plugin.ai.maxTokens"
+            min="1000"
+            max="100000"
+            style="max-width: 100px; margin-right: 10px;"
+          ></html:input>
+        </hbox>
+        
+        <hbox align="center" style="margin-bottom: 15px;">
+          <html:label
+            for="zotero-prefpane-__addonRef__-preset-mode"
+            data-l10n-id="pref-preset-mode-label"
+            style="min-width: 200px;"
+          ></html:label>
+          <html:select
+            id="zotero-prefpane-__addonRef__-preset-mode"
+            preference="extensions.zotero.zotero-mcp-plugin.preset.mode"
+            style="max-width: 200px;"
+            onchange="document.getElementById('custom-settings-group').style.display = this.value === 'custom' ? 'block' : 'none';"
+          >
+            <html:option value="conservative" data-l10n-id="pref-preset-conservative"></html:option>
+            <html:option value="balanced" data-l10n-id="pref-preset-balanced"></html:option>
+            <html:option value="comprehensive" data-l10n-id="pref-preset-comprehensive"></html:option>
+            <html:option value="performance" data-l10n-id="pref-preset-performance"></html:option>
+            <html:option value="custom" data-l10n-id="pref-preset-custom"></html:option>
+          </html:select>
+        </hbox>
+        
+        <vbox id="custom-settings-group" style="display: none; margin-left: 20px; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+          <html:label data-l10n-id="pref-custom-settings-title" style="font-weight: bold; margin-bottom: 10px;"></html:label>
+          
+          <hbox align="center" style="margin-bottom: 10px;">
+            <html:label
+              for="zotero-prefpane-__addonRef__-custom-output-mode"
+              data-l10n-id="pref-output-mode-label"
+              style="min-width: 180px;"
+            ></html:label>
+            <html:select
+              id="zotero-prefpane-__addonRef__-custom-output-mode"
+              preference="extensions.zotero.zotero-mcp-plugin.preset.custom.defaultOutputMode"
+              style="max-width: 120px;"
+            >
+              <html:option value="smart" data-l10n-id="pref-output-mode-smart"></html:option>
+              <html:option value="preview" data-l10n-id="pref-output-mode-preview"></html:option>
+              <html:option value="full" data-l10n-id="pref-output-mode-full"></html:option>
+              <html:option value="minimal" data-l10n-id="pref-output-mode-minimal"></html:option>
+            </html:select>
+          </hbox>
+          
+          <hbox align="center" style="margin-bottom: 10px;">
+            <html:label
+              for="zotero-prefpane-__addonRef__-custom-keyword-count"
+              data-l10n-id="pref-keyword-count-label"
+              style="min-width: 180px;"
+            ></html:label>
+            <html:input
+              type="number"
+              id="zotero-prefpane-__addonRef__-custom-keyword-count"
+              preference="extensions.zotero.zotero-mcp-plugin.preset.custom.keywordCount"
+              min="1"
+              max="20"
+              style="max-width: 80px;"
+            ></html:input>
+          </hbox>
+          
+          <hbox align="center" style="margin-bottom: 10px;">
+            <html:label
+              for="zotero-prefpane-__addonRef__-custom-truncate-length"
+              data-l10n-id="pref-truncate-length-label"
+              style="min-width: 180px;"
+            ></html:label>
+            <html:input
+              type="number"
+              id="zotero-prefpane-__addonRef__-custom-truncate-length"
+              preference="extensions.zotero.zotero-mcp-plugin.preset.custom.smartTruncateLength"
+              min="50"
+              max="1000"
+              style="max-width: 80px;"
+            ></html:input>
+          </hbox>
+          
+          <hbox align="center" style="margin-bottom: 10px;">
+            <html:label
+              for="zotero-prefpane-__addonRef__-custom-search-limit"
+              data-l10n-id="pref-search-limit-label"
+              style="min-width: 180px;"
+            ></html:label>
+            <html:input
+              type="number"
+              id="zotero-prefpane-__addonRef__-custom-search-limit"
+              preference="extensions.zotero.zotero-mcp-plugin.preset.custom.searchItemLimit"
+              min="10"
+              max="1000"
+              style="max-width: 80px;"
+            ></html:input>
+          </hbox>
+          
+          <hbox align="center" style="margin-bottom: 10px;">
+            <html:label
+              for="zotero-prefpane-__addonRef__-custom-max-annotations"
+              data-l10n-id="pref-max-annotations-label"
+              style="min-width: 180px;"
+            ></html:label>
+            <html:input
+              type="number"
+              id="zotero-prefpane-__addonRef__-custom-max-annotations"
+              preference="extensions.zotero.zotero-mcp-plugin.preset.custom.maxAnnotationsPerRequest"
+              min="10"
+              max="200"
+              style="max-width: 80px;"
+            ></html:input>
+          </hbox>
+        </vbox>
+        
+        <checkbox
+          id="zotero-prefpane-__addonRef__-include-metadata"
+          preference="extensions.zotero.zotero-mcp-plugin.ui.includeMetadata"
+          data-l10n-id="pref-include-metadata-label"
+          style="margin: 15px 0 10px 0;"
+        ></checkbox>
+      </vbox>
+    </groupbox>
+    
+    <groupbox style="margin-bottom: 15px;">
       <label><html:h2 data-l10n-id="pref-client-config-title"></html:h2></label>
     <html:p data-l10n-id="pref-client-config-description"></html:p>
     
@@ -45,6 +189,7 @@
       <hbox align="center" style="margin-bottom: 10px;">
         <html:label for="client-type-select" data-l10n-id="pref-client-type-label" style="min-width: 80px;"></html:label>
         <html:select id="client-type-select" style="flex: 1; max-width: 200px;">
+          <html:option value="claude-code">Claude Code</html:option>
           <html:option value="claude-desktop">Claude Desktop</html:option>
           <html:option value="cline-vscode">Cline (VS Code)</html:option>
           <html:option value="continue-dev">Continue.dev</html:option>

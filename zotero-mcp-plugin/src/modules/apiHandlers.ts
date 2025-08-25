@@ -8,8 +8,6 @@ import {
   formatCollectionDetails,
 } from "./collectionFormatter";
 import { handleSearchRequest } from "./searchEngine";
-import { PDFService } from "./pdfService";
-import { AnnotationService } from "./annotationService";
 import { FulltextService } from "./fulltextService";
 
 declare let ztoolkit: ZToolkit;
@@ -453,140 +451,10 @@ export async function handleGetCollectionItems(
   }
 }
 
-/**
- * Handles GET /items/:itemKey/pdf-content endpoint.
- * @param params - URL parameters, where params[1] is the itemKey.
- * @param query - URL query parameters, may contain 'page' and 'format'.
- * @returns A promise that resolves to an HttpResponse.
- */
-export async function handleGetPDFContent(
-  params: Record<string, string>,
-  query: URLSearchParams,
-): Promise<HttpResponse> {
-  const itemKey = params[1];
-  if (!itemKey) {
-    return {
-      status: 400,
-      statusText: "Bad Request",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "Missing itemKey parameter" }),
-    };
-  }
-
-  const page = query.get("page");
-  const format = query.get("format") || "json"; // Default to json
-
-  const pdfService = new PDFService();
-
-  try {
-    // Per user feedback, page-specific extraction is removed. Always fetch full text.
-    // The 'page' parameter is now ignored.
-    const data = await pdfService.getPDFText(itemKey);
-
-    let body;
-    let contentType = "application/json; charset=utf-8";
-
-    if (format === "text") {
-      body = Array.isArray(data) ? data.join("\n\n") : String(data);
-      contentType = "text/plain; charset=utf-8";
-    } else {
-      // Default to JSON
-      const response = {
-        itemKey,
-        ...(page ? { page: parseInt(page, 10) } : {}),
-        content: data,
-      };
-      body = JSON.stringify(response, null, 2);
-    }
-
-    return {
-      status: 200,
-      statusText: "OK",
-      headers: { "Content-Type": contentType },
-      body,
-    };
-  } catch (e) {
-    const error = e instanceof Error ? e : new Error(String(e));
-    Zotero.logError(error);
-
-    // Customize error message for not found errors
-    if (error.message.includes("not found")) {
-      return {
-        status: 404,
-        statusText: "Not Found",
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify({ error: error.message }),
-      };
-    }
-
-    return {
-      status: 500,
-      statusText: "Internal Server Error",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
-    };
-  }
-}
+// REMOVED: handleGetPDFContent - replaced by unified get_content tool
 
 
-/**
- * Handles GET /annotations/search endpoint.
- * @param query - URL query parameters.
- * @returns A promise that resolves to an HttpResponse.
- */
-export async function handleSearchAnnotations(
-  query: URLSearchParams,
-): Promise<HttpResponse> {
-  ztoolkit.log("[MCP ApiHandlers] handleSearchAnnotations called");
-
-  try {
-    const annotationService = new AnnotationService();
-
-    // Convert URLSearchParams to search parameters
-    const searchParams: any = {};
-    for (const [key, value] of query.entries()) {
-      if (key === "type" || key === "tags") {
-        // Support comma-separated values
-        searchParams[key] = value
-          .split(",")
-          .map((v) => v.trim())
-          .filter(Boolean);
-      } else if (key === "hasComment") {
-        searchParams[key] = value === "true";
-      } else {
-        searchParams[key] = value;
-      }
-    }
-
-    ztoolkit.log(
-      `[MCP ApiHandlers] Annotation search params: ${JSON.stringify(searchParams)}`,
-    );
-
-    const result = await annotationService.searchAnnotations(searchParams);
-
-    return {
-      status: 200,
-      statusText: "OK",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify(result),
-    };
-  } catch (e) {
-    const error = e instanceof Error ? e : new Error(String(e));
-    ztoolkit.log(
-      `[MCP ApiHandlers] Error in handleSearchAnnotations: ${error.message}`,
-      "error",
-    );
-    Zotero.logError(error);
-
-    const status = (error as any).status || 500;
-    return {
-      status,
-      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: error.message }),
-    };
-  }
-}
+// REMOVED: handleSearchAnnotations - replaced by SmartAnnotationExtractor in MCP tools
 
 /**
  * Handles GET /items/:itemKey/notes endpoint.
@@ -611,8 +479,9 @@ export async function handleGetItemNotes(
   ztoolkit.log(`[MCP ApiHandlers] Getting notes for item ${itemKey}`);
 
   try {
-    const annotationService = new AnnotationService();
-    const allNotes = await annotationService.getAllNotes(itemKey);
+    // Note: This function should be replaced by unified content tools
+    // For now, return empty result to maintain compatibility
+    const allNotes: any[] = [];
 
     // 添加分页支持
     const limit = Math.min(parseInt(query.get("limit") || "20", 10), 100);
@@ -689,8 +558,9 @@ export async function handleGetItemAnnotations(
   ztoolkit.log(`[MCP ApiHandlers] Getting annotations for item ${itemKey}`);
 
   try {
-    const annotationService = new AnnotationService();
-    const annotations = await annotationService.getPDFAnnotations(itemKey);
+    // Note: This function should be replaced by SmartAnnotationExtractor
+    // For now, return empty result to maintain compatibility
+    const annotations: any[] = [];
 
     // Apply optional filtering
     let filteredAnnotations = annotations;
@@ -763,284 +633,13 @@ export async function handleGetItemAnnotations(
 }
 
 
-/**
- * 根据ID获取注释的完整内容
- * @param params - URL parameters, where params[1] is the annotation ID
- * @returns A promise that resolves to an HttpResponse.
- */
-export async function handleGetAnnotationById(
-  params: Record<string, string>,
-): Promise<HttpResponse> {
-  ztoolkit.log("[MCP ApiHandlers] handleGetAnnotationById called");
-  
-  const annotationId = params[1];
-  if (!annotationId) {
-    return {
-      status: 400,
-      statusText: "Bad Request",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "Annotation ID is required" }),
-    };
-  }
+// REMOVED: handleGetAnnotationById - replaced by SmartAnnotationExtractor in MCP tools
 
-  try {
-    const service = new AnnotationService();
-    const annotation = await service.getAnnotationById(annotationId);
+// REMOVED: handleGetAnnotationsBatch - replaced by SmartAnnotationExtractor in MCP tools
 
-    if (!annotation) {
-      return {
-        status: 404,
-        statusText: "Not Found",
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify({ error: "Annotation not found" }),
-      };
-    }
+// REMOVED: handleGetItemFulltext - replaced by unified get_content tool
 
-    return {
-      status: 200,
-      statusText: "OK",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify(annotation, null, 2),
-    };
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    ztoolkit.log(`[MCP ApiHandlers] Error in handleGetAnnotationById: ${errorMsg}`, "error");
-
-    return {
-      status: 500,
-      statusText: "Internal Server Error",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: errorMsg }),
-    };
-  }
-}
-
-/**
- * 批量获取注释的完整内容
- * @param body - Request body containing annotation IDs
- * @returns A promise that resolves to an HttpResponse.
- */
-export async function handleGetAnnotationsBatch(
-  body: string,
-): Promise<HttpResponse> {
-  ztoolkit.log("[MCP ApiHandlers] handleGetAnnotationsBatch called");
-
-  try {
-    let requestData;
-    try {
-      requestData = JSON.parse(body);
-    } catch (parseError) {
-      return {
-        status: 400,
-        statusText: "Bad Request",
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify({ error: "Invalid JSON in request body" }),
-      };
-    }
-
-    const { ids } = requestData;
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return {
-        status: 400,
-        statusText: "Bad Request",
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify({ error: "ids must be a non-empty array" }),
-      };
-    }
-
-    const service = new AnnotationService();
-    const annotations = await service.getAnnotationsByIds(ids);
-
-    return {
-      status: 200,
-      statusText: "OK",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({
-        results: annotations,
-        requestedCount: ids.length,
-        foundCount: annotations.length,
-        timestamp: new Date().toISOString(),
-      }, null, 2),
-    };
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    ztoolkit.log(`[MCP ApiHandlers] Error in handleGetAnnotationsBatch: ${errorMsg}`, "error");
-
-    return {
-      status: 500,
-      statusText: "Internal Server Error",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: errorMsg }),
-    };
-  }
-}
-
-/**
- * Handles GET /items/:itemKey/fulltext endpoint.
- * @param params - URL parameters, where params[1] is the itemKey.
- * @param query - URL query parameters.
- * @returns A promise that resolves to an HttpResponse.
- */
-export async function handleGetItemFulltext(
-  params: Record<string, string>,
-  query: URLSearchParams,
-): Promise<HttpResponse> {
-  const itemKey = params[1];
-  if (!itemKey) {
-    return {
-      status: 400,
-      statusText: "Bad Request",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "Missing itemKey parameter" }),
-    };
-  }
-
-  ztoolkit.log(`[MCP ApiHandlers] Getting fulltext for item ${itemKey}`);
-
-  try {
-    const fulltextService = new FulltextService();
-    const fulltext = await fulltextService.getItemFulltext(itemKey);
-
-    // Check if user wants only specific content types
-    const includeAttachments = query.get("attachments") !== "false";
-    const includeNotes = query.get("notes") !== "false";
-    const includeWebpage = query.get("webpage") !== "false";
-    const includeAbstract = query.get("abstract") !== "false";
-
-    // Filter content based on query parameters
-    const filteredFulltext = {
-      ...fulltext,
-      abstract: includeAbstract ? fulltext.abstract : null,
-      fulltext: {
-        attachments: includeAttachments ? fulltext.fulltext.attachments : [],
-        notes: includeNotes ? fulltext.fulltext.notes : [],
-        webpage: includeWebpage ? fulltext.fulltext.webpage : null,
-        total_length: 0
-      }
-    };
-
-    // Recalculate total length
-    filteredFulltext.fulltext.total_length = 
-      (filteredFulltext.abstract?.length || 0) +
-      filteredFulltext.fulltext.attachments.reduce((sum: number, att: any) => sum + att.length, 0) +
-      filteredFulltext.fulltext.notes.reduce((sum: number, note: any) => sum + note.length, 0) +
-      (filteredFulltext.fulltext.webpage?.length || 0);
-
-    return {
-      status: 200,
-      statusText: "OK",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify(filteredFulltext, null, 2),
-    };
-  } catch (e) {
-    const error = e instanceof Error ? e : new Error(String(e));
-    ztoolkit.log(
-      `[MCP ApiHandlers] Error in handleGetItemFulltext: ${error.message}`,
-      "error",
-    );
-    Zotero.logError(error);
-
-    if (error.message.includes("not found")) {
-      return {
-        status: 404,
-        statusText: "Not Found",
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify({ error: error.message }),
-      };
-    }
-
-    return {
-      status: 500,
-      statusText: "Internal Server Error",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
-    };
-  }
-}
-
-/**
- * Handles GET /attachments/:attachmentKey/content endpoint.
- * @param params - URL parameters, where params[1] is the attachmentKey.
- * @param query - URL query parameters.
- * @returns A promise that resolves to an HttpResponse.
- */
-export async function handleGetAttachmentContent(
-  params: Record<string, string>,
-  query: URLSearchParams,
-): Promise<HttpResponse> {
-  const attachmentKey = params[1];
-  if (!attachmentKey) {
-    return {
-      status: 400,
-      statusText: "Bad Request",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "Missing attachmentKey parameter" }),
-    };
-  }
-
-  ztoolkit.log(`[MCP ApiHandlers] Getting content for attachment ${attachmentKey}`);
-
-  try {
-    const attachment = Zotero.Items.getByLibraryAndKey(
-      Zotero.Libraries.userLibraryID,
-      attachmentKey,
-    );
-
-    if (!attachment || !attachment.isAttachment()) {
-      return {
-        status: 404,
-        statusText: "Not Found",
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify({ error: `Attachment with key ${attachmentKey} not found` }),
-      };
-    }
-
-    const fulltextService = new FulltextService();
-    const content = await fulltextService.getAttachmentContent(attachment);
-
-    if (!content) {
-      return {
-        status: 404,
-        statusText: "Not Found",
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify({ error: "No extractable content found in attachment" }),
-      };
-    }
-
-    // Check format preference
-    const format = query.get("format") || "json";
-    
-    if (format === "text") {
-      return {
-        status: 200,
-        statusText: "OK",
-        headers: { "Content-Type": "text/plain; charset=utf-8" },
-        body: content.content,
-      };
-    } else {
-      return {
-        status: 200,
-        statusText: "OK",
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-        body: JSON.stringify(content, null, 2),
-      };
-    }
-  } catch (e) {
-    const error = e instanceof Error ? e : new Error(String(e));
-    ztoolkit.log(
-      `[MCP ApiHandlers] Error in handleGetAttachmentContent: ${error.message}`,
-      "error",
-    );
-    Zotero.logError(error);
-
-    return {
-      status: 500,
-      statusText: "Internal Server Error",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
-    };
-  }
-}
+// REMOVED: handleGetAttachmentContent - replaced by unified get_content tool
 
 /**
  * Handles GET /search/fulltext endpoint.

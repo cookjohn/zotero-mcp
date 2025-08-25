@@ -17,6 +17,48 @@ export interface ClientConfig {
 export class ClientConfigGenerator {
   private static readonly CLIENT_CONFIGS: ClientConfig[] = [
     {
+      name: "claude-code",
+      displayName: "Claude Code",
+      description: "Anthropic's Claude Code CLI tool",
+      configTemplate: (port: number, serverName = "zotero-mcp") => ({
+        mcpServers: {
+          [serverName]: {
+            serverUrl: `http://127.0.0.1:${port}/mcp`,
+            headers: {
+              "Content-Type": "application/json",
+              "User-Agent": "Claude-Code-MCP-Client"
+            }
+          }
+        }
+      }),
+      getInstructions: () => [
+        "1. Create or edit your Claude Code configuration file:",
+        "   Global: ~/.claude.json",
+        "   Project: .mcp.json (in your project root)",
+        "",
+        "2. Add the generated configuration to your file",
+        "",
+        "3. Restart Claude Code if it's running",
+        "",
+        "4. Available MCP tools in Claude Code:",
+        "   - search_library: Search your Zotero library",
+        "   - get_annotations: Get annotations and notes",
+        "   - get_content: Extract full content from PDFs",
+        "   - get_collections: Browse your collections",
+        "   - search_fulltext: Search full document content",
+        "   - And 6 more research tools!",
+        "",
+        "5. Claude Code will automatically detect and load the MCP server",
+        "",
+        "Note: Ensure Zotero is running and the MCP plugin server is enabled",
+        "",
+        "Troubleshooting for Proxy Users:",
+        "- If using VPN/proxy with TUN mode, add 127.0.0.1 to bypass list",
+        "- Or temporarily disable TUN mode for local development",
+        "- Configuration uses 127.0.0.1 instead of localhost for better proxy compatibility"
+      ]
+    },
+    {
       name: "claude-desktop",
       displayName: "Claude Desktop",
       description: "Anthropic's Claude Desktop application",
@@ -24,7 +66,7 @@ export class ClientConfigGenerator {
         mcpServers: {
           [serverName]: {
             command: "npx",
-            args: ["mcp-remote", `http://localhost:${port}/mcp`],
+            args: ["mcp-remote", `http://127.0.0.1:${port}/mcp`],
             env: {}
           }
         }
@@ -39,7 +81,7 @@ export class ClientConfigGenerator {
         mcpServers: {
           [serverName]: {
             command: "npx",
-            args: ["mcp-remote", `http://localhost:${port}/mcp`],
+            args: ["mcp-remote", `http://127.0.0.1:${port}/mcp`],
             env: {},
             alwaysAllow: ["*"],
             disabled: false
@@ -76,7 +118,7 @@ export class ClientConfigGenerator {
         mcpServers: {
           [serverName]: {
             command: "npx",
-            args: ["mcp-remote", `http://localhost:${port}/mcp`],
+            args: ["mcp-remote", `http://127.0.0.1:${port}/mcp`],
             env: {}
           }
         }
@@ -91,7 +133,7 @@ export class ClientConfigGenerator {
         mcpServers: {
           [serverName]: {
             type: "streamableHttp",
-            url: `http://localhost:${port}/mcp`,
+            url: `http://127.0.0.1:${port}/mcp`,
             headers: {
               "Content-Type": "application/json"
             }
@@ -126,7 +168,7 @@ export class ClientConfigGenerator {
         mcpServers: {
           [serverName]: {
             command: "npx",
-            args: ["mcp-remote", `http://localhost:${port}/mcp`],
+            args: ["mcp-remote", `http://127.0.0.1:${port}/mcp`],
             env: {}
           }
         }
@@ -141,7 +183,7 @@ export class ClientConfigGenerator {
         mcpServers: {
           [serverName]: {
             command: "npx",
-            args: ["mcp-remote", `http://localhost:${port}/mcp`],
+            args: ["mcp-remote", `http://127.0.0.1:${port}/mcp`],
             env: {}
           }
         }

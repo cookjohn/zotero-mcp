@@ -4,6 +4,7 @@ import { serverPreferences } from "./modules/serverPreferences";
 import { getString, initLocale } from "./utils/locale";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
+import { MCPSettingsService } from "./modules/mcpSettingsService";
 
 async function onStartup() {
   await Promise.all([
@@ -13,6 +14,14 @@ async function onStartup() {
   ]);
 
   initLocale();
+
+  // Initialize MCP settings with defaults
+  try {
+    MCPSettingsService.initializeDefaults();
+    ztoolkit.log(`===MCP=== [hooks.ts] MCP settings initialized successfully`);
+  } catch (error) {
+    ztoolkit.log(`===MCP=== [hooks.ts] Error initializing MCP settings: ${error}`, 'error');
+  }
 
   // Check if this is first installation and show config prompt
   checkFirstInstallation();
