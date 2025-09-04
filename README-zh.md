@@ -72,7 +72,7 @@ AI 客户端 ↔ Streamable HTTP ↔ Zotero 插件（集成 MCP 服务器）
   "mcpServers": {
     "zotero": {
       "transport": "streamable_http",
-      "url": "http://localhost:23120/mcp"
+      "url": "http://127.0.0.1:23120/mcp"
     }
   }
 }
@@ -235,7 +235,7 @@ AI 客户端 ↔ Streamable HTTP ↔ Zotero 插件（集成 MCP 服务器）
      "mcpServers": {
        "zotero": {
          "transport": "streamable_http",
-         "url": "http://localhost:23120/mcp"
+         "url": "http://127.0.0.1:23120/mcp"
        }
      }
    }
@@ -364,7 +364,7 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 **解决方案**:
 - 确保在插件设置中启用了服务器
 - 检查防火墙设置，允许 Zotero 进行网络通信
-- 确认 URL 格式正确：`http://localhost:23120/mcp`
+- 确认 URL 格式正确：`http://127.0.0.1:23120/mcp`
 
 #### 3. Claude Desktop 无法识别工具
 

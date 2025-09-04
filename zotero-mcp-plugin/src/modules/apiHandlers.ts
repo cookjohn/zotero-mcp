@@ -2,6 +2,7 @@
  * API Endpoint Handlers for Zotero MCP Plugin
  */
 
+
 import { formatItem, formatItems } from "./itemFormatter";
 import {
   formatCollectionList,
@@ -393,6 +394,8 @@ export async function handleGetCollectionItems(
 ): Promise<HttpResponse> {
   try {
     const collectionKey = params[1];
+    ztoolkit.log(`[ApiHandlers] Getting collection items for key: ${collectionKey}`);
+    
     if (!collectionKey) {
       return {
         status: 400,
@@ -405,12 +408,15 @@ export async function handleGetCollectionItems(
       parseInt(query.get("libraryID") || "", 10) ||
       Zotero.Libraries.userLibraryID;
 
+    ztoolkit.log(`[ApiHandlers] Using libraryID: ${libraryID}`);
+
     const collection = Zotero.Collections.getByLibraryAndKey(
       libraryID,
       collectionKey,
     );
 
     if (!collection) {
+      ztoolkit.log(`[ApiHandlers] Collection not found: ${collectionKey} in library ${libraryID}`, "error");
       return {
         status: 404,
         statusText: "Not Found",
@@ -421,14 +427,28 @@ export async function handleGetCollectionItems(
       };
     }
 
+    ztoolkit.log(`[ApiHandlers] Found collection: ${collection.name}`);
+
     const limit = parseInt(query.get("limit") || "100", 10);
     const offset = parseInt(query.get("offset") || "0", 10);
     const fields = query.get("fields")?.split(",");
 
+    ztoolkit.log(`[ApiHandlers] Pagination: limit=${limit}, offset=${offset}`);
+    ztoolkit.log(`[ApiHandlers] Fields requested: ${fields?.join(", ") || "default"}`);
+
     const itemIDs = collection.getChildItems(true);
     const total = itemIDs.length;
+    ztoolkit.log(`[ApiHandlers] Collection contains ${total} items, IDs: [${itemIDs.slice(0, 5).join(", ")}${itemIDs.length > 5 ? "..." : ""}]`);
+    
     const paginatedIDs = itemIDs.slice(offset, offset + limit);
+    ztoolkit.log(`[ApiHandlers] Paginated IDs: [${paginatedIDs.join(", ")}]`);
+    
     const items = Zotero.Items.get(paginatedIDs);
+    ztoolkit.log(`[ApiHandlers] Retrieved ${items.length} item objects from Zotero`);
+
+    ztoolkit.log(`[ApiHandlers] Starting formatItems...`);
+    const formattedItems = await formatItems(items, fields);
+    ztoolkit.log(`[ApiHandlers] Formatted ${formattedItems.length} items`);
 
     return {
       status: 200,
@@ -437,10 +457,12 @@ export async function handleGetCollectionItems(
         "Content-Type": "application/json; charset=utf-8",
         "X-Total-Count": total.toString(),
       },
-      body: JSON.stringify(formatItems(items, fields)),
+      body: JSON.stringify(formattedItems),
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    ztoolkit.log(`[ApiHandlers] Error in handleGetCollectionItems: ${error.message}`, "error");
+    ztoolkit.log(`[ApiHandlers] Error stack: ${error.stack}`, "error");
     Zotero.logError(error);
     return {
       status: 500,

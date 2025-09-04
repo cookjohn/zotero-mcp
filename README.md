@@ -141,7 +141,7 @@ Example configuration for Claude Desktop:
   "mcpServers": {
     "zotero": {
       "transport": "streamable_http",
-      "url": "http://localhost:23120/mcp"
+      "url": "http://127.0.0.1:23120/mcp"
     }
   }
 }

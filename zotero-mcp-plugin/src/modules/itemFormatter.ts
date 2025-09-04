@@ -55,57 +55,10 @@ export async function formatItem(
     zoteroUrl: `zotero://select/library/items/${item.key}`,
   };
 
-  // 修复字符串编码的辅助函数
-  function fixStringEncoding(str: string): string {
-    if (!str) return str;
-    try {
-      // 检查是否是UTF-8编码损坏的字符串
-      if (str.includes("") || /[\x80-\xFF]/.test(str)) {
-        ztoolkit.log(
-          `[ItemFormatter] Detecting encoding issues in string: ${str.substring(0, 50)}`,
-        );
-
-        // 尝试多种编码修复方法
-        try {
-          // 方法1: 尝试用TextDecoder重新解码
-          const encoder = new TextEncoder();
-          const bytes = encoder.encode(str);
-          const decoder = new TextDecoder("utf-8", { fatal: false });
-          const fixed = decoder.decode(bytes);
-          if (fixed !== str && !fixed.includes("")) {
-            ztoolkit.log(
-              `[ItemFormatter] Fixed encoding using TextDecoder: ${fixed.substring(0, 50)}`,
-            );
-            return fixed;
-          }
-        } catch (e) {
-          ztoolkit.log(
-            `[ItemFormatter] TextDecoder method failed: ${e}`,
-            "error",
-          );
-        }
-
-        // 方法2: 尝试escape/unescape方法
-        try {
-          const fixed = decodeURIComponent(escape(str));
-          if (fixed !== str && !fixed.includes("")) {
-            ztoolkit.log(
-              `[ItemFormatter] Fixed encoding using escape/unescape: ${fixed.substring(0, 50)}`,
-            );
-            return fixed;
-          }
-        } catch (e) {
-          ztoolkit.log(
-            `[ItemFormatter] Escape/unescape method failed: ${e}`,
-            "error",
-          );
-        }
-      }
-      return str;
-    } catch (e) {
-      ztoolkit.log(`[ItemFormatter] Error fixing encoding: ${e}`, "error");
-      return str;
-    }
+  // 安全的字符串获取函数 - 与其他模块保持一致
+  function safeGetString(value: any): string {
+    if (value === null || value === undefined) return '';
+    return String(value);
   }
 
   for (const field of fieldsToExport) {
@@ -115,38 +68,86 @@ export async function formatItem(
           try {
             const attachmentIds = item.getAttachments(false);
             const attachments = Zotero.Items.get(attachmentIds);
-            formattedItem[field] = await Promise.all(attachments
-              .map(async (attachment: Zotero.Item) => {
-                if (!attachment.isAttachment()) {
-                  return null;
+            const processedAttachments = [];
+            
+            for (const attachment of attachments) {
+              try {
+                if (!attachment || !attachment.isAttachment()) {
+                  continue;
                 }
+                
+                // 安全地获取各个字段
+                const attachmentData: any = {
+                  key: attachment.key || '',
+                  linkMode: attachment.attachmentLinkMode || 0,
+                  hasFulltext: false,
+                  size: 0
+                };
+                
+                // 安全地处理每个字段
                 try {
-                  return {
-                    key: attachment.key,
-                    title: fixStringEncoding(
-                      attachment.getField("title") || "",
-                    ),
-                    path: fixStringEncoding(attachment.getFilePath() || ""),
-                    contentType: fixStringEncoding(
-                      attachment.attachmentContentType || "",
-                    ),
-                    filename: fixStringEncoding(
-                      attachment.attachmentFilename || "",
-                    ),
-                    url: fixStringEncoding(attachment.getField("url") || ""),
-                    linkMode: attachment.attachmentLinkMode,
-                    hasFulltext: hasExtractableText(attachment),
-                    size: await getAttachmentSize(attachment),
-                  };
+                  attachmentData.title = safeGetString(attachment.getField("title"));
                 } catch (e) {
-                  ztoolkit.log(
-                    `[ItemFormatter] Error processing attachment ${attachment.key}: ${e}`,
-                    "error",
-                  );
-                  return null;
+                  attachmentData.title = "";
+                  ztoolkit.log(`[ItemFormatter] Error getting attachment title: ${e}`, "error");
                 }
-              }))
-              .then(results => results.filter((att) => att && att.path)); // 确保附件有效且有路径
+                
+                try {
+                  attachmentData.path = safeGetString(attachment.getFilePath());
+                } catch (e) {
+                  attachmentData.path = "";
+                  ztoolkit.log(`[ItemFormatter] Error getting attachment path: ${e}`, "error");
+                }
+                
+                try {
+                  attachmentData.contentType = safeGetString(attachment.attachmentContentType);
+                } catch (e) {
+                  attachmentData.contentType = "";
+                  ztoolkit.log(`[ItemFormatter] Error getting attachment contentType: ${e}`, "error");
+                }
+                
+                try {
+                  attachmentData.filename = safeGetString(attachment.attachmentFilename);
+                } catch (e) {
+                  attachmentData.filename = "";
+                  ztoolkit.log(`[ItemFormatter] Error getting attachment filename: ${e}`, "error");
+                }
+                
+                try {
+                  attachmentData.url = safeGetString(attachment.getField("url"));
+                } catch (e) {
+                  attachmentData.url = "";
+                  ztoolkit.log(`[ItemFormatter] Error getting attachment url: ${e}`, "error");
+                }
+                
+                try {
+                  attachmentData.hasFulltext = hasExtractableText(attachment);
+                } catch (e) {
+                  ztoolkit.log(`[ItemFormatter] Error checking extractable text: ${e}`, "error");
+                }
+                
+                try {
+                  attachmentData.size = await getAttachmentSize(attachment);
+                } catch (e) {
+                  ztoolkit.log(`[ItemFormatter] Error getting attachment size: ${e}`, "error");
+                }
+                
+                // 只添加有效的附件
+                if (attachmentData.key) {
+                  processedAttachments.push(attachmentData);
+                }
+                
+              } catch (e) {
+                ztoolkit.log(
+                  `[ItemFormatter] Error processing attachment: ${e}`,
+                  "error",
+                );
+                // 继续处理下一个附件，不要因为一个附件的错误影响整个流程
+                continue;
+              }
+            }
+            
+            formattedItem[field] = processedAttachments;
           } catch (e) {
             ztoolkit.log(
               `[ItemFormatter] Error getting attachments: ${e}`,
@@ -158,11 +159,11 @@ export async function formatItem(
         case "creators":
           try {
             formattedItem[field] = item.getCreators().map((creator) => ({
-              firstName: fixStringEncoding(creator.firstName || ""),
-              lastName: fixStringEncoding(creator.lastName || ""),
-              creatorType: fixStringEncoding(
-                Zotero.CreatorTypes.getName(creator.creatorTypeID) || "unknown",
-              ),
+              firstName: safeGetString(creator.firstName),
+              lastName: safeGetString(creator.lastName),
+              creatorType: safeGetString(
+                Zotero.CreatorTypes.getName(creator.creatorTypeID)
+              ) || "unknown",
             }));
           } catch (e) {
             ztoolkit.log(
@@ -176,7 +177,7 @@ export async function formatItem(
           try {
             formattedItem[field] = item
               .getTags()
-              .map((tag) => fixStringEncoding(tag.tag || ""));
+              .map((tag) => safeGetString(tag.tag));
           } catch (e) {
             ztoolkit.log(`[ItemFormatter] Error getting tags: ${e}`, "error");
             formattedItem[field] = [];
@@ -189,7 +190,7 @@ export async function formatItem(
               .map((noteId: number) => {
                 try {
                   const note = Zotero.Items.get(noteId);
-                  return note ? fixStringEncoding(note.getNote() || "") : "";
+                  return note ? safeGetString(note.getNote()) : "";
                 } catch (e) {
                   ztoolkit.log(
                     `[ItemFormatter] Error getting note ${noteId}: ${e}`,
@@ -206,9 +207,7 @@ export async function formatItem(
           break;
         case "date":
           try {
-            formattedItem[field] = fixStringEncoding(
-              item.getField("date") || "",
-            );
+            formattedItem[field] = safeGetString(item.getField("date"));
           } catch (e) {
             ztoolkit.log(`[ItemFormatter] Error getting date: ${e}`, "error");
             formattedItem[field] = "";
@@ -217,7 +216,7 @@ export async function formatItem(
         default:
           try {
             const value = item.getField(field);
-            formattedItem[field] = fixStringEncoding(value || "");
+            formattedItem[field] = safeGetString(value);
           } catch (e) {
             // Field doesn't exist or can't be accessed, skip silently
             formattedItem[field] = "";
@@ -313,5 +312,31 @@ export async function formatItems(
   items: Zotero.Item[],
   fields?: string[],
 ): Promise<Array<Record<string, any>>> {
-  return Promise.all(items.map((item) => formatItem(item, fields)));
+  ztoolkit.log(`[ItemFormatter] formatItems called with ${items.length} items, fields: ${fields?.join(", ") || "default"}`);
+  
+  try {
+    const results = await Promise.all(items.map(async (item, index) => {
+      try {
+        ztoolkit.log(`[ItemFormatter] Processing item ${index + 1}/${items.length}: ${item.key} (${item.getField("title") || "No title"})`);
+        const formatted = await formatItem(item, fields);
+        ztoolkit.log(`[ItemFormatter] Successfully formatted item ${item.key}`);
+        return formatted;
+      } catch (error) {
+        ztoolkit.log(`[ItemFormatter] Error formatting item ${item.key}: ${error}`, "error");
+        // 返回基础信息而不是跳过
+        return {
+          key: item.key || '',
+          title: 'Error formatting item',
+          error: true,
+          errorMessage: error instanceof Error ? error.message : String(error)
+        };
+      }
+    }));
+    
+    ztoolkit.log(`[ItemFormatter] formatItems completed: ${results.length} items formatted`);
+    return results;
+  } catch (error) {
+    ztoolkit.log(`[ItemFormatter] Fatal error in formatItems: ${error}`, "error");
+    throw error;
+  }
 }
