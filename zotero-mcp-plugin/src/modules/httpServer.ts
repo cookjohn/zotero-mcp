@@ -211,7 +211,7 @@ export class HttpServer {
           const requestParts = requestLine.split(" ");
           const method = requestParts[0];
           const urlPath = requestParts[1];
-          const url = new URL(urlPath, "http://localhost");
+          const url = new URL(urlPath, "http://127.0.0.1");
           const query = new URLSearchParams(url.search);
           const path = url.pathname;
           
@@ -421,7 +421,7 @@ private getCapabilities() {
       rest: {
         version: "1.1.0",
         description: "REST API for direct HTTP access",
-        baseUrl: `http://localhost:${this.port}`
+        baseUrl: `http://127.0.0.1:${this.port}`
       }
     },
     capabilities: {

@@ -11,7 +11,7 @@ export interface ClientConfig {
   displayName: string;
   description: string;
   configTemplate: (port: number, serverName?: string) => any;
-  getInstructions?: () => string[];
+  getInstructions?: (port?: number) => string[];
 }
 
 export class ClientConfigGenerator {
@@ -31,14 +31,17 @@ export class ClientConfigGenerator {
           }
         }
       }),
-      getInstructions: () => [
-        "1. Create or edit your Claude Code configuration file:",
-        "   Global: ~/.claude.json",
-        "   Project: .mcp.json (in your project root)",
+      getInstructions: (port: number = 23120) => [
+        "1. Use Claude Code's built-in command to add the MCP server:",
+        `   claude mcp add zotero-mcp http://127.0.0.1:${port}/mcp -t http`,
         "",
-        "2. Add the generated configuration to your file",
+        "2. Alternatively, add with custom headers:",
+        `   claude mcp add zotero-mcp http://127.0.0.1:${port}/mcp -t http \\`,
+        "     -H 'Content-Type: application/json' \\",
+        "     -H 'User-Agent: Claude-Code-MCP-Client'",
         "",
-        "3. Restart Claude Code if it's running",
+        "3. Verify the server was added and connected:",
+        "   claude mcp list",
         "",
         "4. Available MCP tools in Claude Code:",
         "   - search_library: Search your Zotero library",
@@ -48,7 +51,7 @@ export class ClientConfigGenerator {
         "   - search_fulltext: Search full document content",
         "   - And 6 more research tools!",
         "",
-        "5. Claude Code will automatically detect and load the MCP server",
+        "5. Start using the tools immediately - no restart required!",
         "",
         "Note: Ensure Zotero is running and the MCP plugin server is enabled",
         "",
@@ -102,7 +105,7 @@ export class ClientConfigGenerator {
               transport: {
                 type: "stdio",
                 command: "npx",
-                args: ["mcp-remote", `http://localhost:${port}/mcp`]
+                args: ["mcp-remote", `http://127.0.0.1:${port}/mcp`]
               }
             }
           ]
@@ -149,7 +152,7 @@ export class ClientConfigGenerator {
       configTemplate: (port: number, serverName = "zotero-mcp") => ({
         mcpServers: {
           [serverName]: {
-            httpUrl: `http://localhost:${port}/mcp`,
+            httpUrl: `http://127.0.0.1:${port}/mcp`,
             headers: {
               "Content-Type": "application/json"
             },
@@ -191,6 +194,56 @@ export class ClientConfigGenerator {
       getInstructions: () => getString("trae-ai-instructions").split("\n").filter(s => s.trim())
     },
     {
+      name: "qwen-code",
+      displayName: "Qwen Code",
+      description: "Qwen Code CLI - AI-powered coding assistant",
+      configTemplate: (port: number, serverName = "zotero-mcp") => ({
+        mcpServers: {
+          [serverName]: {
+            command: "npx",
+            args: ["mcp-remote", `http://127.0.0.1:${port}/mcp`],
+            env: {}
+          }
+        }
+      }),
+      getInstructions: (port: number = 23120) => [
+        "1. Use Qwen Code's MCP add command:",
+        `   qwen mcp add zotero-mcp http://127.0.0.1:${port}/mcp -t http`,
+        "",
+        "2. Alternatively, add with custom headers and options:",
+        `   qwen mcp add zotero-mcp http://127.0.0.1:${port}/mcp \\`,
+        "     -t http \\",
+        "     -H 'Content-Type: application/json' \\",
+        "     -H 'User-Agent: Qwen-Code-MCP-Client' \\",
+        "     --trust",
+        "",
+        "3. Verify the server was added:",
+        "   qwen mcp list",
+        "",
+        "4. Available MCP tools in Qwen Code:",
+        "   - search_library: Search your Zotero library",
+        "   - get_annotations: Get annotations and notes",
+        "   - get_content: Extract full content from PDFs",
+        "   - get_collections: Browse your collections",
+        "   - search_fulltext: Search full document content",
+        "   - And 6 more research tools!",
+        "",
+        "5. Start using the tools with @ syntax:",
+        "   Example: /analyze @zotero:search_library term:\"machine learning\"",
+        "",
+        "6. Use /mcp command to verify MCP server is active",
+        "",
+        "Note: Ensure Zotero is running and the MCP plugin server is enabled",
+        "",
+        "Configuration file location: ~/.qwen/settings.json or .qwen/settings.json",
+        "",
+        "Troubleshooting:",
+        "- If connection fails, check server status with 'qwen mcp list'",
+        "- Use --trust flag to bypass tool call confirmation prompts",
+        "- Configuration uses 127.0.0.1 instead of localhost for better compatibility"
+      ]
+    },
+    {
       name: "custom-http",
       displayName: "自定义 HTTP 客户端",
       description: "通用 HTTP MCP 客户端配置",
@@ -199,7 +252,7 @@ export class ClientConfigGenerator {
         description: "Zotero MCP Server - Research management and citation tools",
         transport: {
           type: "http",
-          endpoint: `http://localhost:${port}/mcp`,
+          endpoint: `http://127.0.0.1:${port}/mcp`,
           method: "POST",
           headers: {
             "Content-Type": "application/json"
@@ -210,7 +263,7 @@ export class ClientConfigGenerator {
           resources: false,
           prompts: false
         },
-        connectionTest: `curl -X POST http://localhost:${port}/mcp -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}'`
+        connectionTest: `curl -X POST http://127.0.0.1:${port}/mcp -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}'`
       }),
       getInstructions: () => getString("custom-http-instructions").split("\n").filter(s => s.trim())
     }
@@ -230,9 +283,9 @@ export class ClientConfigGenerator {
     return JSON.stringify(config, null, 2);
   }
 
-  static getInstructions(clientName: string): string[] {
+  static getInstructions(clientName: string, port?: number): string[] {
     const client = this.CLIENT_CONFIGS.find(c => c.name === clientName);
-    return client?.getInstructions?.() || [];
+    return client?.getInstructions?.(port) || [];
   }
 
   static generateFullGuide(clientName: string, port: number, serverName?: string): string {
@@ -242,7 +295,7 @@ export class ClientConfigGenerator {
     }
 
     const config = this.generateConfig(clientName, port, serverName);
-    const instructions = this.getInstructions(clientName);
+    const instructions = this.getInstructions(clientName, port);
     const actualServerName = serverName || "zotero-mcp";
 
     return `${getString("config-guide-header", { args: { clientName: client.displayName } })}

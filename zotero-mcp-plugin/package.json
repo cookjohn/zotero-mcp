@@ -1,7 +1,7 @@
 {
   "name": "zotero-mcp-plugin",
   "type": "module",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Zotero MCP Plugin",
   "config": {
     "addonName": "Zotero MCP Plugin",
