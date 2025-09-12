@@ -71,6 +71,16 @@
               "strict_max_version": "8.*"
             }
           }
+        },
+        {
+          "version": "1.2.6",
+          "update_link": "https://github.com/cookjohn/zotero-mcp/releases/download/v1.2.6/zotero-mcp-plugin-1.2.6.xpi",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "6.999",
+              "strict_max_version": "8.*"
+            }
+          }
         }
       ]
     }
