@@ -93,9 +93,9 @@ export class SmartAnnotationExtractor {
       
       const options: SmartAnnotationOptions = {
         maxTokens: params.maxTokens || effectiveSettings.maxTokens,
-        outputMode: params.outputMode || effectiveSettings.defaultOutputMode,
+        outputMode: params.outputMode || MCPSettingsService.get('content.mode'),
         types: params.types || ['note', 'highlight', 'annotation'],
-        limit: params.limit || (effectiveSettings.defaultOutputMode === 'full' ? effectiveSettings.maxAnnotationsPerRequest : 20),
+        limit: params.limit || (MCPSettingsService.get('content.mode') === 'complete' ? effectiveSettings.maxAnnotationsPerRequest : 20),
         offset: params.offset || 0
       };
 
@@ -194,10 +194,10 @@ export class SmartAnnotationExtractor {
 
       const searchOptions: SmartAnnotationOptions = {
         maxTokens: options.maxTokens || effectiveSettings.maxTokens,
-        outputMode: options.outputMode || effectiveSettings.defaultOutputMode,
+        outputMode: options.outputMode || MCPSettingsService.get('content.mode'),
         types: options.types || ['note', 'highlight', 'annotation'],
         minRelevance: options.minRelevance || 0.1,
-        limit: options.limit || (effectiveSettings.defaultOutputMode === 'full' ? effectiveSettings.maxAnnotationsPerRequest : 15),
+        limit: options.limit || (MCPSettingsService.get('content.mode') === 'complete' ? effectiveSettings.maxAnnotationsPerRequest : 15),
         offset: options.offset || 0
       };
 

@@ -136,14 +136,14 @@ function getToolSpecificGuidance(toolName: string): any {
         },
         interpretation: {
           purpose: 'Library search results from user\'s personal Zotero collection',
-          content: 'Each item represents a bibliographic entry with full metadata',
+          content: 'Each item represents a bibliographic entry with complete metadata',
           reliability: 'Direct from user library - treat as authoritative source material'
         },
         usage: [
           'These are research items from the user\'s personal library',
           'You can analyze and discuss these items to help with research',
           'Use the provided metadata for citations when needed',
-          'Use itemKey to get full content with get_content tool'
+          'Use itemKey to get complete content with get_content tool'
         ]
       };
 
@@ -183,12 +183,12 @@ function getToolSpecificGuidance(toolName: string): any {
           reliability: 'Direct extraction - may contain OCR errors or formatting artifacts'
         },
         usage: [
-          'Use for detailed content analysis and full-text research',
+          'Use for detailed content analysis and complete-text research',
           'Content includes user\'s attached PDFs and personal notes',
           'May require cleaning for OCR artifacts in PDF extractions',
           'Combine with annotations for user\'s personal insights on this content',
-          'IMPORTANT: When user specifically asks for "full text" or "complete content", provide the entire extracted text without summarization',
-          'If user requests the full document content, reproduce it in its entirety'
+          'IMPORTANT: When user specifically asks for "complete text" or "complete content", provide the entire extracted text without summarization',
+          'If user requests the complete document content, reproduce it in its entirety'
         ]
       };
 
@@ -234,7 +234,7 @@ function getToolSpecificGuidance(toolName: string): any {
           'Results show where user has relevant materials on specific topics',
           'Combine with other tools for complete context',
           'Good for discovering connections between different documents',
-          'When user asks for full content from search results, use get_content with the itemKey to retrieve complete text'
+          'When user asks for complete content from search results, use get_content with the itemKey to retrieve complete text'
         ]
       };
 
@@ -254,7 +254,7 @@ function getToolSpecificGuidance(toolName: string): any {
         usage: [
           'Use for generating proper citations and references',
           'Contains all bibliographic data needed for academic writing',
-          'Use itemKey to access full content via get_content',
+          'Use itemKey to access complete content via get_content',
           'Check for related items and collections for broader context'
         ]
       };
@@ -276,7 +276,7 @@ function getToolSpecificGuidance(toolName: string): any {
           'Use for quick understanding of paper\'s main contributions',
           'Suitable for literature reviews and research summaries',
           'Abstract represents author\'s own summary of their work',
-          'Combine with full content and annotations for complete understanding'
+          'Combine with complete content and annotations for complete understanding'
         ]
       };
 
@@ -294,6 +294,7 @@ export interface MCPResponse {
     message: string;
     data?: any;
   };
+  sessionId?: string;
 }
 
 export interface MCPNotification {
@@ -317,6 +318,7 @@ export class StreamableMCPServer {
     name: 'zotero-integrated-mcp',
     version: '1.1.0',
   };
+  private clientSessions: Map<string, { initTime: Date; lastActivity: Date; clientInfo?: any }> = new Map();
 
   constructor() {
     // No initialization needed - using direct function calls
@@ -380,8 +382,14 @@ export class StreamableMCPServer {
         case 'tools/call':
           return await this.handleToolCall(request);
 
+        case 'resources/list':
+          return this.handleResourcesList(request);
+
+        case 'prompts/list':
+          return this.handlePromptsList(request);
+
         case 'ping':
-          return this.createResponse(request.id, { status: 'ok' });
+          return this.handlePing(request);
 
         default:
           return this.createError(request.id, -32601, `Method not found: ${request.method}`);
@@ -393,11 +401,25 @@ export class StreamableMCPServer {
   }
 
   private handleInitialize(request: MCPRequest): MCPResponse {
+    // Extract client info from initialize request
+    const clientInfo = request.params?.clientInfo || {};
+    const sessionId = this.generateSessionId();
+    
+    // Store session info
+    this.clientSessions.set(sessionId, {
+      initTime: new Date(),
+      lastActivity: new Date(),
+      clientInfo
+    });
+    
+    ztoolkit.log(`[StreamableMCP] Client initialized with session: ${sessionId}, client: ${clientInfo.name || 'unknown'}`);
+    
+    // Create standard MCP initialize response (no custom fields)
     return this.createResponse(request.id, {
       protocolVersion: '2024-11-05',
       capabilities: {
         tools: {
-          listChanged: false,
+          listChanged: true,
         },
         logging: {},
         prompts: {},
@@ -407,11 +429,31 @@ export class StreamableMCPServer {
     });
   }
 
+  private generateSessionId(): string {
+    return 'mcp-session-' + Date.now().toString(36) + '-' + Math.random().toString(36).substr(2, 9);
+  }
+
+  private handleResourcesList(request: MCPRequest): MCPResponse {
+    // Return empty resources list - we don't currently support resources
+    return this.createResponse(request.id, { resources: [] });
+  }
+
+  private handlePromptsList(request: MCPRequest): MCPResponse {
+    // Return empty prompts list - we don't currently support prompts
+    return this.createResponse(request.id, { prompts: [] });
+  }
+
+  private handlePing(request: MCPRequest): MCPResponse {
+    // Standard MCP ping response - just return empty result
+    return this.createResponse(request.id, {});
+  }
+
+
   private handleToolsList(request: MCPRequest): MCPResponse {
     const tools = [
       {
         name: 'search_library',
-        description: 'Search the Zotero library with advanced parameters including boolean operators, relevance scoring, and pagination. Returns results with attachment filePath information.',
+        description: 'Search the Zotero library with advanced parameters, boolean operators, relevance scoring, pagination, and intelligent mode control.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -423,13 +465,18 @@ export class StreamableMCPServer {
               description: 'Title search operator' 
             },
             yearRange: { type: 'string', description: 'Year range (e.g., "2020-2023")' },
+            mode: {
+              type: 'string',
+              enum: ['minimal', 'preview', 'standard', 'complete'],
+              description: 'Processing mode: minimal (30 results), preview (100), standard (adaptive), complete (500+). Uses user default if not specified.'
+            },
             relevanceScoring: { type: 'boolean', description: 'Enable relevance scoring' },
             sort: { 
               type: 'string', 
               enum: ['relevance', 'date', 'title', 'year'],
               description: 'Sort order' 
             },
-            limit: { type: 'number', description: 'Maximum results to return' },
+            limit: { type: 'number', description: 'Maximum results to return (overrides mode default)' },
             offset: { type: 'number', description: 'Pagination offset' },
           },
         },
@@ -454,9 +501,9 @@ export class StreamableMCPServer {
               },
               description: 'Types of annotations to search'
             },
-            outputMode: {
+            mode: {
               type: 'string',
-              enum: ['smart', 'preview', 'full', 'minimal'],
+              enum: ['standard', 'preview', 'complete', 'minimal'],
               description: 'Content processing mode (uses user setting default if not specified)'
             },
             maxTokens: {
@@ -478,11 +525,16 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_item_details',
-        description: 'Get detailed information for a specific item including metadata, abstract, attachments, notes, and tags but not fulltext content',
+        description: 'Get detailed information for a specific item with intelligent mode control (metadata, abstract, attachments, notes, tags but not fulltext content)',
         inputSchema: {
           type: 'object',
           properties: {
             itemKey: { type: 'string', description: 'Unique item key' },
+            mode: {
+              type: 'string',
+              enum: ['minimal', 'preview', 'standard', 'complete'],
+              description: 'Processing mode: minimal (basic info), preview (key fields), standard (comprehensive), complete (all fields). Uses user default if not specified.'
+            },
           },
           required: ['itemKey'],
         },
@@ -509,9 +561,9 @@ export class StreamableMCPServer {
               default: ['note', 'highlight', 'annotation'],
               description: 'Types of annotations to include'
             },
-            outputMode: {
+            mode: {
               type: 'string',
-              enum: ['smart', 'preview', 'full', 'minimal'],
+              enum: ['standard', 'preview', 'complete', 'minimal'],
               description: 'Content processing mode (uses user setting default if not specified)'
             },
             maxTokens: {
@@ -521,21 +573,22 @@ export class StreamableMCPServer {
             limit: { type: 'number', default: 20, description: 'Maximum results' },
             offset: { type: 'number', default: 0, description: 'Pagination offset' }
           },
-          anyOf: [
-            { required: ['itemKey'] },
-            { required: ['annotationId'] },
-            { required: ['annotationIds'] }
-          ]
+          description: 'Requires either itemKey, annotationId, or annotationIds parameter'
         },
       },
       {
         name: 'get_content',
-        description: 'Unified content extraction tool: get PDF, attachments, notes, abstract etc. from items or specific attachments',
+        description: 'Unified content extraction tool: get PDF, attachments, notes, abstract etc. from items or specific attachments with intelligent processing',
         inputSchema: {
           type: 'object',
           properties: {
             itemKey: { type: 'string', description: 'Item key to get all content from this item' },
             attachmentKey: { type: 'string', description: 'Attachment key to get content from specific attachment' },
+            mode: {
+              type: 'string',
+              enum: ['minimal', 'preview', 'standard', 'complete'],
+              description: 'Content processing mode: minimal (500 chars, fastest), preview (1.5K chars, quick scan), standard (3K chars, balanced), complete (unlimited, complete content). Uses user default if not specified.'
+            },
             include: {
               type: 'object',
               properties: {
@@ -543,30 +596,57 @@ export class StreamableMCPServer {
                 attachments: { type: 'boolean', default: true, description: 'Include other attachments content' },
                 notes: { type: 'boolean', default: true, description: 'Include notes content' },
                 abstract: { type: 'boolean', default: true, description: 'Include abstract' },
-                webpage: { type: 'boolean', default: false, description: 'Include webpage snapshots' }
+                webpage: { type: 'boolean', default: false, description: 'Include webpage snapshots (auto-enabled in standard/complete modes)' }
               },
               description: 'Content types to include (only applies to itemKey)'
+            },
+            contentControl: {
+              type: 'object',
+              properties: {
+                preserveOriginal: { type: 'boolean', default: true, description: 'Always preserve original text structure when processing' },
+                allowExtended: { type: 'boolean', default: false, description: 'Allow retrieving more content than mode default when important' },
+                expandIfImportant: { type: 'boolean', default: false, description: 'Expand content length for high-importance content' },
+                maxContentLength: { type: 'number', description: 'Override maximum content length for this request' },
+                prioritizeCompleteness: { type: 'boolean', default: false, description: 'Prioritize complete sentences/paragraphs over strict length limits' },
+                standardExpansion: {
+                  type: 'object',
+                  properties: {
+                    enabled: { type: 'boolean', default: false, description: 'Enable standard content expansion' },
+                    trigger: { 
+                      type: 'string', 
+                      enum: ['high_importance', 'user_query', 'context_needed'],
+                      default: 'high_importance',
+                      description: 'Trigger condition for standard expansion'
+                    },
+                    maxExpansionRatio: { type: 'number', default: 2.0, minimum: 1.0, maximum: 10.0, description: 'Maximum expansion ratio (1.0 = no expansion, 2.0 = double)' }
+                  },
+                  description: 'Smart expansion configuration'
+                }
+              },
+              description: 'Advanced content control parameters to override mode defaults'
             },
             format: { 
               type: 'string', 
               enum: ['json', 'text'],
               default: 'json',
-              description: 'Output format: json (structured) or text (plain text)' 
+              description: 'Output format: json (structured with metadata) or text (plain text)' 
             }
           },
-          anyOf: [
-            { required: ['itemKey'] },
-            { required: ['attachmentKey'] }
-          ]
+          description: 'Requires either itemKey or attachmentKey parameter'
         },
       },
       {
         name: 'get_collections',
-        description: 'Get list of all collections in the library',
+        description: 'Get list of all collections in the library with intelligent mode control',
         inputSchema: {
           type: 'object',
           properties: {
-            limit: { type: 'number', description: 'Maximum results to return' },
+            mode: {
+              type: 'string',
+              enum: ['minimal', 'preview', 'standard', 'complete'],
+              description: 'Processing mode: minimal (20 collections), preview (50), standard (100), complete (500+). Uses user default if not specified.'
+            },
+            limit: { type: 'number', description: 'Maximum results to return (overrides mode default)' },
             offset: { type: 'number', description: 'Pagination offset' },
           },
         },
@@ -608,7 +688,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'search_fulltext',
-        description: 'Search within fulltext content of items with context and relevance scoring',
+        description: 'Search within fulltext content of items with context, relevance scoring, and intelligent mode control',
         inputSchema: {
           type: 'object',
           properties: {
@@ -618,8 +698,13 @@ export class StreamableMCPServer {
               items: { type: 'string' },
               description: 'Limit search to specific items (optional)' 
             },
-            contextLength: { type: 'number', description: 'Context length around matches (default: 200)' },
-            maxResults: { type: 'number', description: 'Maximum results to return (default: 50)' },
+            mode: {
+              type: 'string',
+              enum: ['minimal', 'preview', 'standard', 'complete'],
+              description: 'Processing mode: minimal (100 context), preview (200), standard (adaptive), complete (400+). Uses user default if not specified.'
+            },
+            contextLength: { type: 'number', description: 'Context length around matches (overrides mode default)' },
+            maxResults: { type: 'number', description: 'Maximum results to return (overrides mode default)' },
             caseSensitive: { type: 'boolean', description: 'Case sensitive search (default: false)' },
           },
           required: ['q'],
@@ -668,7 +753,7 @@ export class StreamableMCPServer {
           if (!args?.itemKey) {
             throw new Error('itemKey is required');
           }
-          result = await this.callGetItemDetails(args.itemKey);
+          result = await this.callGetItemDetails(args);
           break;
 
         case 'get_annotations':
@@ -725,39 +810,53 @@ export class StreamableMCPServer {
           throw new Error(`Unknown tool: ${name}`);
       }
 
-      return this.createResponse(request.id, {
-        content: [
-          {
-            type: 'text',
-            text: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
-          },
-        ],
-        isError: false,
-      });
+      // Return structured JSON data directly
+      return this.createResponse(request.id, result);
 
     } catch (error) {
       ztoolkit.log(`[StreamableMCP] Tool call error for ${name}: ${error}`);
-      return this.createResponse(request.id, {
-        content: [
-          {
-            type: 'text',
-            text: `Error executing ${name}: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      });
+      return this.createError(request.id, -32603, 
+        `Error executing ${name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   private async callSearchLibrary(args: any): Promise<any> {
+    // Apply mode-based defaults before creating search params
+    const effectiveMode = args.mode || MCPSettingsService.get('content.mode');
+    const modeConfig = this.getSearchModeConfiguration(effectiveMode);
+    
+    // Apply mode defaults if not explicitly provided
+    const processedArgs = {
+      ...args,
+      limit: args.limit || modeConfig.limit
+    };
+    
     const searchParams = new URLSearchParams();
-    for (const [key, value] of Object.entries(args || {})) {
+    for (const [key, value] of Object.entries(processedArgs)) {
       if (value !== undefined && value !== null) {
-        searchParams.append(key, String(value));
+        if (key !== 'mode') { // Don't pass mode to API
+          searchParams.append(key, String(value));
+        }
       }
     }
+    
     const response = await handleSearch(searchParams);
-    const result = response.body ? JSON.parse(response.body) : response;
+    let result = response.body ? JSON.parse(response.body) : response;
+    
+    // Add mode information to metadata
+    if (result && typeof result === 'object') {
+      result.metadata = {
+        ...result.metadata,
+        mode: effectiveMode,
+        appliedModeConfig: modeConfig
+      };
+      
+      // Remove any unwanted content array if it's empty
+      if (Array.isArray(result.content) && result.content.length === 0) {
+        delete result.content;
+      }
+    }
+    
     return applyGlobalAIInstructions(result, 'search_library');
   }
 
@@ -768,13 +867,38 @@ export class StreamableMCPServer {
     return applyGlobalAIInstructions(result, 'search_annotations');
   }
 
-  private async callGetItemDetails(itemKey: string): Promise<any> {
+  private async callGetItemDetails(args: any): Promise<any> {
+    const { itemKey, mode } = args;
+    
     // Import the specific handler for item details
     const { handleGetItem } = await import('./apiHandlers');
     
+    // Get effective mode
+    const effectiveMode = mode || MCPSettingsService.get('content.mode');
+    
+    // Create query params with mode-based field selection
+    const queryParams = new URLSearchParams();
+    if (effectiveMode !== 'complete') {
+      // Apply field filtering based on mode (this could be enhanced in apiHandlers)
+      const modeConfig = this.getItemDetailsModeConfiguration(effectiveMode);
+      if (modeConfig.fields) {
+        queryParams.append('fields', modeConfig.fields.join(','));
+      }
+    }
+    
     // Call the dedicated item details handler
-    const response = await handleGetItem({ 1: itemKey }, new URLSearchParams());
-    const result = response.body ? JSON.parse(response.body) : response;
+    const response = await handleGetItem({ 1: itemKey }, queryParams);
+    let result = response.body ? JSON.parse(response.body) : response;
+    
+    // Add mode information to metadata
+    if (result && typeof result === 'object') {
+      result.metadata = {
+        ...result.metadata,
+        mode: effectiveMode,
+        appliedModeConfig: this.getItemDetailsModeConfiguration(effectiveMode)
+      };
+    }
+    
     return applyGlobalAIInstructions(result, 'get_item_details');
   }
 
@@ -785,18 +909,18 @@ export class StreamableMCPServer {
   }
 
   private async callGetContent(args: any): Promise<any> {
-    const { itemKey, attachmentKey, include, format } = args;
+    const { itemKey, attachmentKey, include, format, mode, contentControl } = args;
     const extractor = new UnifiedContentExtractor();
     
     try {
       let result;
       
       if (itemKey) {
-        // Get content from item
-        result = await extractor.getItemContent(itemKey, include || {});
+        // Get content from item with unified mode control and content control parameters
+        result = await extractor.getItemContent(itemKey, include || {}, mode, contentControl);
       } else if (attachmentKey) {
-        // Get content from specific attachment
-        result = await extractor.getAttachmentContent(attachmentKey);
+        // Get content from specific attachment with unified mode control and content control parameters
+        result = await extractor.getAttachmentContent(attachmentKey, mode, contentControl);
       } else {
         throw new Error('Either itemKey or attachmentKey must be provided');
       }
@@ -816,14 +940,37 @@ export class StreamableMCPServer {
   }
 
   private async callGetCollections(args: any): Promise<any> {
+    // Apply mode-based defaults before creating search params
+    const effectiveMode = args.mode || MCPSettingsService.get('content.mode');
+    const modeConfig = this.getCollectionModeConfiguration(effectiveMode);
+    
+    // Apply mode defaults if not explicitly provided
+    const processedArgs = {
+      ...args,
+      limit: args.limit || modeConfig.limit
+    };
+    
     const collectionParams = new URLSearchParams();
-    for (const [key, value] of Object.entries(args || {})) {
+    for (const [key, value] of Object.entries(processedArgs)) {
       if (value !== undefined && value !== null) {
-        collectionParams.append(key, String(value));
+        if (key !== 'mode') { // Don't pass mode to API
+          collectionParams.append(key, String(value));
+        }
       }
     }
+    
     const response = await handleGetCollections(collectionParams);
-    const result = response.body ? JSON.parse(response.body) : response;
+    let result = response.body ? JSON.parse(response.body) : response;
+    
+    // Add mode information to metadata
+    if (result && typeof result === 'object') {
+      result.metadata = {
+        ...result.metadata,
+        mode: effectiveMode,
+        appliedModeConfig: modeConfig
+      };
+    }
+    
     return applyGlobalAIInstructions(result, 'get_collections');
   }
 
@@ -860,18 +1007,40 @@ export class StreamableMCPServer {
 
 
   private async callSearchFulltext(args: any): Promise<any> {
+    // Apply mode-based defaults before creating search params
+    const effectiveMode = args.mode || MCPSettingsService.get('content.mode');
+    const modeConfig = this.getFulltextModeConfiguration(effectiveMode);
+    
+    // Apply mode defaults if not explicitly provided
+    const processedArgs = {
+      ...args,
+      contextLength: args.contextLength || modeConfig.contextLength,
+      maxResults: args.maxResults || modeConfig.maxResults
+    };
+    
     const searchParams = new URLSearchParams();
-    for (const [key, value] of Object.entries(args || {})) {
+    for (const [key, value] of Object.entries(processedArgs)) {
       if (value !== undefined && value !== null) {
         if (key === 'itemKeys' && Array.isArray(value)) {
           searchParams.append(key, value.join(','));
-        } else {
+        } else if (key !== 'mode') { // Don't pass mode to API
           searchParams.append(key, String(value));
         }
       }
     }
+    
     const response = await handleSearchFulltext(searchParams);
-    const result = response.body ? JSON.parse(response.body) : response;
+    let result = response.body ? JSON.parse(response.body) : response;
+    
+    // Add mode information to metadata
+    if (result && typeof result === 'object') {
+      result.metadata = {
+        ...result.metadata,
+        mode: effectiveMode,
+        appliedModeConfig: modeConfig
+      };
+    }
+    
     return applyGlobalAIInstructions(result, 'search_fulltext');
   }
 
@@ -886,6 +1055,157 @@ export class StreamableMCPServer {
     const response = await handleGetItemAbstract({ 1: itemKey }, abstractParams);
     const result = response.body ? JSON.parse(response.body) : response;
     return applyGlobalAIInstructions(result, 'get_item_abstract');
+  }
+
+  /**
+   * Format tool result for MCP response with intelligent content type detection
+   */
+  private formatToolResult(result: any, toolName: string, args: any): any {
+    // Check if client explicitly requested text format
+    const requestedTextFormat = args?.format === 'text';
+    
+    // If result is already a string (text format), wrap it in MCP content format
+    if (typeof result === 'string') {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: result,
+          },
+        ],
+        isError: false,
+      };
+    }
+    
+    // For structured data, provide both JSON and formatted options
+    if (typeof result === 'object' && result !== null) {
+      // If explicitly requested text format, convert to readable text
+      if (requestedTextFormat) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: this.formatObjectAsText(result, toolName),
+            },
+          ],
+          isError: false,
+        };
+      }
+      
+      // Default: provide structured JSON with formatted preview
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+        isError: false,
+        // Include raw structured data for programmatic access
+        _structuredData: result,
+        _contentType: 'application/json'
+      };
+    }
+    
+    // Fallback for other types
+    return {
+      content: [
+        {
+          type: 'text',
+          text: String(result),
+        },
+      ],
+      isError: false,
+    };
+  }
+
+  /**
+   * Format object as human-readable text based on tool type
+   */
+  private formatObjectAsText(obj: any, toolName: string): string {
+    switch (toolName) {
+      case 'get_content':
+        return this.formatContentAsText(obj);
+      case 'search_library':
+        return this.formatSearchResultsAsText(obj);
+      case 'get_annotations':
+        return this.formatAnnotationsAsText(obj);
+      default:
+        return JSON.stringify(obj, null, 2);
+    }
+  }
+
+  private formatContentAsText(contentResult: any): string {
+    const parts = [];
+    
+    if (contentResult.title) {
+      parts.push(`TITLE: ${contentResult.title}\n`);
+    }
+    
+    if (contentResult.content) {
+      if (contentResult.content.abstract) {
+        parts.push(`ABSTRACT:\n${contentResult.content.abstract.content}\n`);
+      }
+      
+      if (contentResult.content.attachments) {
+        for (const att of contentResult.content.attachments) {
+          parts.push(`ATTACHMENT (${att.filename || att.type}):\n${att.content}\n`);
+        }
+      }
+      
+      if (contentResult.content.notes) {
+        for (const note of contentResult.content.notes) {
+          parts.push(`NOTE (${note.title}):\n${note.content}\n`);
+        }
+      }
+    }
+    
+    return parts.join('\n---\n\n');
+  }
+
+  private formatSearchResultsAsText(searchResult: any): string {
+    if (!searchResult.results || !Array.isArray(searchResult.results)) {
+      return JSON.stringify(searchResult, null, 2);
+    }
+    
+    const parts = [`SEARCH RESULTS (${searchResult.results.length} items):\n`];
+    
+    searchResult.results.forEach((item: any, index: number) => {
+      parts.push(`${index + 1}. ${item.title || 'Untitled'}`);
+      if (item.creators && item.creators.length > 0) {
+        parts.push(`   Authors: ${item.creators.map((c: any) => c.name || `${c.firstName} ${c.lastName}`).join(', ')}`);
+      }
+      if (item.date) {
+        parts.push(`   Date: ${item.date}`);
+      }
+      if (item.itemKey) {
+        parts.push(`   Key: ${item.itemKey}`);
+      }
+      parts.push('');
+    });
+    
+    return parts.join('\n');
+  }
+
+  private formatAnnotationsAsText(annotationResult: any): string {
+    if (!annotationResult.data || !Array.isArray(annotationResult.data)) {
+      return JSON.stringify(annotationResult, null, 2);
+    }
+    
+    const parts = [`ANNOTATIONS (${annotationResult.data.length} items):\n`];
+    
+    annotationResult.data.forEach((ann: any, index: number) => {
+      parts.push(`${index + 1}. [${ann.type.toUpperCase()}] ${ann.content}`);
+      if (ann.page) {
+        parts.push(`   Page: ${ann.page}`);
+      }
+      if (ann.dateModified) {
+        parts.push(`   Modified: ${ann.dateModified}`);
+      }
+      parts.push('');
+    });
+    
+    return parts.join('\n');
   }
 
   private createResponse(id: string | number, result: any): MCPResponse {
@@ -917,6 +1237,8 @@ export class StreamableMCPServer {
         'initialized', 
         'tools/list',
         'tools/call',
+        'resources/list',
+        'prompts/list',
         'ping'
       ],
       availableTools: [
@@ -931,7 +1253,104 @@ export class StreamableMCPServer {
         'get_collection_items',
         'search_fulltext',
         'get_item_abstract'
-      ]
+      ],
+      transport: {
+        type: "streamable-http",
+        keepAliveSupported: true,
+        maxConnections: 100
+      }
     };
+  }
+
+  /**
+   * Get fulltext search mode configuration
+   */
+  private getFulltextModeConfiguration(mode: string): any {
+    const modeConfigs = {
+      'minimal': {
+        contextLength: 100,
+        maxResults: 20
+      },
+      'preview': {
+        contextLength: 200,
+        maxResults: 50  
+      },
+      'standard': {
+        contextLength: 250,
+        maxResults: 100
+      },
+      'complete': {
+        contextLength: 400,
+        maxResults: 200
+      }
+    };
+
+    return modeConfigs[mode as keyof typeof modeConfigs] || modeConfigs['standard'];
+  }
+
+  /**
+   * Get search mode configuration
+   */
+  private getSearchModeConfiguration(mode: string): any {
+    const modeConfigs = {
+      'minimal': {
+        limit: 30
+      },
+      'preview': {
+        limit: 100
+      },
+      'standard': {
+        limit: 200
+      },
+      'complete': {
+        limit: 500
+      }
+    };
+
+    return modeConfigs[mode as keyof typeof modeConfigs] || modeConfigs['standard'];
+  }
+
+  /**
+   * Get collection mode configuration
+   */
+  private getCollectionModeConfiguration(mode: string): any {
+    const modeConfigs = {
+      'minimal': {
+        limit: 20
+      },
+      'preview': {
+        limit: 50
+      },
+      'standard': {
+        limit: 100
+      },
+      'complete': {
+        limit: 500
+      }
+    };
+
+    return modeConfigs[mode as keyof typeof modeConfigs] || modeConfigs['standard'];
+  }
+
+  /**
+   * Get item details mode configuration
+   */
+  private getItemDetailsModeConfiguration(mode: string): any {
+    const modeConfigs = {
+      'minimal': {
+        fields: ['key', 'title', 'creators', 'date', 'itemType']
+      },
+      'preview': {
+        fields: ['key', 'title', 'creators', 'date', 'itemType', 'abstractNote', 'tags', 'collections']
+      },
+      'standard': {
+        fields: null // Include most fields (default behavior)
+      },
+      'complete': {
+        fields: null // Include all fields
+      }
+    };
+
+    return modeConfigs[mode as keyof typeof modeConfigs] || modeConfigs['standard'];
   }
 }

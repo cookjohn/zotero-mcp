@@ -112,12 +112,14 @@ export class FulltextService {
         // Use PDFProcessor directly for PDF files
         try {
           const { PDFProcessor } = await import('./pdfProcessor');
+          const { TextFormatter } = await import('./textFormatter');
           const processor = new PDFProcessor(ztoolkit);
           
           const filePath = attachment.getFilePath();
           if (filePath) {
             try {
-              content = await processor.extractText(filePath);
+              const rawText = await processor.extractText(filePath);
+              content = TextFormatter.formatPDFText(rawText);
               extractionMethod = 'pdf_processor';
             } catch (fileError) {
               ztoolkit.log(`[FulltextService] PDF file not accessible at path: ${filePath} - ${fileError}`, "warn");

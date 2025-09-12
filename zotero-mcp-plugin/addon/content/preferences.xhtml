@@ -7,12 +7,16 @@
     <preference id="extensions.zotero.zotero-mcp-plugin.mcp.server.enabled" name="extensions.zotero.zotero-mcp-plugin.mcp.server.enabled" type="bool" />
     <preference id="extensions.zotero.zotero-mcp-plugin.mcp.server.port" name="extensions.zotero.zotero-mcp-plugin.mcp.server.port" type="int" />
     <preference id="extensions.zotero.zotero-mcp-plugin.ai.maxTokens" name="extensions.zotero.zotero-mcp-plugin.ai.maxTokens" type="int" />
-    <preference id="extensions.zotero.zotero-mcp-plugin.preset.mode" name="extensions.zotero.zotero-mcp-plugin.preset.mode" type="string" />
-    <preference id="extensions.zotero.zotero-mcp-plugin.preset.custom.defaultOutputMode" name="extensions.zotero.zotero-mcp-plugin.preset.custom.defaultOutputMode" type="string" />
-    <preference id="extensions.zotero.zotero-mcp-plugin.preset.custom.smartTruncateLength" name="extensions.zotero.zotero-mcp-plugin.preset.custom.smartTruncateLength" type="int" />
-    <preference id="extensions.zotero.zotero-mcp-plugin.preset.custom.keywordCount" name="extensions.zotero.zotero-mcp-plugin.preset.custom.keywordCount" type="int" />
-    <preference id="extensions.zotero.zotero-mcp-plugin.preset.custom.searchItemLimit" name="extensions.zotero.zotero-mcp-plugin.preset.custom.searchItemLimit" type="int" />
-    <preference id="extensions.zotero.zotero-mcp-plugin.preset.custom.maxAnnotationsPerRequest" name="extensions.zotero.zotero-mcp-plugin.preset.custom.maxAnnotationsPerRequest" type="int" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.content.mode" name="extensions.zotero.zotero-mcp-plugin.content.mode" type="string" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.custom.maxContentLength" name="extensions.zotero.zotero-mcp-plugin.custom.maxContentLength" type="int" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.custom.maxAttachments" name="extensions.zotero.zotero-mcp-plugin.custom.maxAttachments" type="int" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.custom.maxNotes" name="extensions.zotero.zotero-mcp-plugin.custom.maxNotes" type="int" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.custom.keywordCount" name="extensions.zotero.zotero-mcp-plugin.custom.keywordCount" type="int" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.custom.smartTruncateLength" name="extensions.zotero.zotero-mcp-plugin.custom.smartTruncateLength" type="int" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.custom.searchItemLimit" name="extensions.zotero.zotero-mcp-plugin.custom.searchItemLimit" type="int" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.custom.maxAnnotationsPerRequest" name="extensions.zotero.zotero-mcp-plugin.custom.maxAnnotationsPerRequest" type="int" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.custom.includeWebpage" name="extensions.zotero.zotero-mcp-plugin.custom.includeWebpage" type="bool" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.custom.enableCompression" name="extensions.zotero.zotero-mcp-plugin.custom.enableCompression" type="bool" />
     <preference id="extensions.zotero.zotero-mcp-plugin.ui.includeMetadata" name="extensions.zotero.zotero-mcp-plugin.ui.includeMetadata" type="bool" />
   </preferences>
 
@@ -68,21 +72,21 @@
         
         <hbox align="center" style="margin-bottom: 15px;">
           <html:label
-            for="zotero-prefpane-__addonRef__-preset-mode"
-            data-l10n-id="pref-preset-mode-label"
+            for="zotero-prefpane-__addonRef__-content-mode"
+            data-l10n-id="pref-content-mode-label"
             style="min-width: 200px;"
           ></html:label>
           <html:select
-            id="zotero-prefpane-__addonRef__-preset-mode"
-            preference="extensions.zotero.zotero-mcp-plugin.preset.mode"
+            id="zotero-prefpane-__addonRef__-content-mode"
+            preference="extensions.zotero.zotero-mcp-plugin.content.mode"
             style="max-width: 200px;"
             onchange="document.getElementById('custom-settings-group').style.display = this.value === 'custom' ? 'block' : 'none';"
           >
-            <html:option value="conservative" data-l10n-id="pref-preset-conservative"></html:option>
-            <html:option value="balanced" data-l10n-id="pref-preset-balanced"></html:option>
-            <html:option value="comprehensive" data-l10n-id="pref-preset-comprehensive"></html:option>
-            <html:option value="performance" data-l10n-id="pref-preset-performance"></html:option>
-            <html:option value="custom" data-l10n-id="pref-preset-custom"></html:option>
+            <html:option value="minimal" data-l10n-id="pref-mode-minimal"></html:option>
+            <html:option value="preview" data-l10n-id="pref-mode-preview"></html:option>
+            <html:option value="standard" data-l10n-id="pref-mode-standard"></html:option>
+            <html:option value="complete" data-l10n-id="pref-mode-complete"></html:option>
+            <html:option value="custom" data-l10n-id="pref-mode-custom"></html:option>
           </html:select>
         </hbox>
         
@@ -91,20 +95,50 @@
           
           <hbox align="center" style="margin-bottom: 10px;">
             <html:label
-              for="zotero-prefpane-__addonRef__-custom-output-mode"
-              data-l10n-id="pref-output-mode-label"
+              for="zotero-prefpane-__addonRef__-custom-content-length"
+              data-l10n-id="pref-content-length-label"
               style="min-width: 180px;"
             ></html:label>
-            <html:select
-              id="zotero-prefpane-__addonRef__-custom-output-mode"
-              preference="extensions.zotero.zotero-mcp-plugin.preset.custom.defaultOutputMode"
-              style="max-width: 120px;"
-            >
-              <html:option value="smart" data-l10n-id="pref-output-mode-smart"></html:option>
-              <html:option value="preview" data-l10n-id="pref-output-mode-preview"></html:option>
-              <html:option value="full" data-l10n-id="pref-output-mode-full"></html:option>
-              <html:option value="minimal" data-l10n-id="pref-output-mode-minimal"></html:option>
-            </html:select>
+            <html:input
+              type="number"
+              id="zotero-prefpane-__addonRef__-custom-content-length"
+              preference="extensions.zotero.zotero-mcp-plugin.custom.maxContentLength"
+              min="100"
+              max="50000"
+              style="max-width: 80px;"
+            ></html:input>
+          </hbox>
+          
+          <hbox align="center" style="margin-bottom: 10px;">
+            <html:label
+              for="zotero-prefpane-__addonRef__-custom-max-attachments"
+              data-l10n-id="pref-max-attachments-label"
+              style="min-width: 180px;"
+            ></html:label>
+            <html:input
+              type="number"
+              id="zotero-prefpane-__addonRef__-custom-max-attachments"
+              preference="extensions.zotero.zotero-mcp-plugin.custom.maxAttachments"
+              min="1"
+              max="50"
+              style="max-width: 80px;"
+            ></html:input>
+          </hbox>
+          
+          <hbox align="center" style="margin-bottom: 10px;">
+            <html:label
+              for="zotero-prefpane-__addonRef__-custom-max-notes"
+              data-l10n-id="pref-max-notes-label"
+              style="min-width: 180px;"
+            ></html:label>
+            <html:input
+              type="number"
+              id="zotero-prefpane-__addonRef__-custom-max-notes"
+              preference="extensions.zotero.zotero-mcp-plugin.custom.maxNotes"
+              min="1"
+              max="100"
+              style="max-width: 80px;"
+            ></html:input>
           </hbox>
           
           <hbox align="center" style="margin-bottom: 10px;">
@@ -116,7 +150,7 @@
             <html:input
               type="number"
               id="zotero-prefpane-__addonRef__-custom-keyword-count"
-              preference="extensions.zotero.zotero-mcp-plugin.preset.custom.keywordCount"
+              preference="extensions.zotero.zotero-mcp-plugin.custom.keywordCount"
               min="1"
               max="20"
               style="max-width: 80px;"
@@ -132,7 +166,7 @@
             <html:input
               type="number"
               id="zotero-prefpane-__addonRef__-custom-truncate-length"
-              preference="extensions.zotero.zotero-mcp-plugin.preset.custom.smartTruncateLength"
+              preference="extensions.zotero.zotero-mcp-plugin.custom.smartTruncateLength"
               min="50"
               max="1000"
               style="max-width: 80px;"
@@ -148,7 +182,7 @@
             <html:input
               type="number"
               id="zotero-prefpane-__addonRef__-custom-search-limit"
-              preference="extensions.zotero.zotero-mcp-plugin.preset.custom.searchItemLimit"
+              preference="extensions.zotero.zotero-mcp-plugin.custom.searchItemLimit"
               min="10"
               max="1000"
               style="max-width: 80px;"
@@ -164,11 +198,27 @@
             <html:input
               type="number"
               id="zotero-prefpane-__addonRef__-custom-max-annotations"
-              preference="extensions.zotero.zotero-mcp-plugin.preset.custom.maxAnnotationsPerRequest"
+              preference="extensions.zotero.zotero-mcp-plugin.custom.maxAnnotationsPerRequest"
               min="10"
               max="200"
               style="max-width: 80px;"
             ></html:input>
+          </hbox>
+          
+          <hbox align="center" style="margin-bottom: 10px;">
+            <checkbox
+              id="zotero-prefpane-__addonRef__-custom-include-webpage"
+              preference="extensions.zotero.zotero-mcp-plugin.custom.includeWebpage"
+              data-l10n-id="pref-include-webpage-label"
+            ></checkbox>
+          </hbox>
+          
+          <hbox align="center" style="margin-bottom: 10px;">
+            <checkbox
+              id="zotero-prefpane-__addonRef__-custom-enable-compression"
+              preference="extensions.zotero.zotero-mcp-plugin.custom.enableCompression"
+              data-l10n-id="pref-enable-compression-label"
+            ></checkbox>
           </hbox>
         </vbox>
         

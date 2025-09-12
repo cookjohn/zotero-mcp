@@ -5,6 +5,8 @@
 
 declare let ztoolkit: ZToolkit;
 
+import { TextFormatter } from './textFormatter';
+
 // 注释内容接口
 export interface AnnotationContent {
   id: string;
@@ -394,8 +396,13 @@ export class AnnotationService {
         return null;
       }
 
-      // 提取纯文本内容
-      const textContent = noteText.replace(/<[^>]*>/g, "").trim();
+      // 提取格式化的文本内容 - 对注释保持简单格式化
+      const textContent = TextFormatter.htmlToText(noteText, {
+        preserveParagraphs: true,
+        preserveHeadings: false, // 注释中通常不需要标题格式
+        preserveLists: true,
+        preserveEmphasis: false
+      });
 
       return {
         id: item.key,

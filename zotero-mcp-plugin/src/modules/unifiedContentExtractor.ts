@@ -8,6 +8,9 @@
  */
 
 import { PDFProcessor } from "./pdfProcessor";
+import { MCPSettingsService } from "./mcpSettingsService";
+import { IntelligentContentProcessor, ContentControl, ProcessingResult } from "./intelligentContentProcessor";
+import { TextFormatter } from "./textFormatter";
 
 declare let Zotero: any;
 declare let ztoolkit: ZToolkit;
@@ -29,15 +32,31 @@ export interface ContentResult {
     extractedAt: string;
     sources: string[];
     totalLength: number;
+    mode?: string;
+    appliedLimits?: {
+      maxContentLength?: number;
+      maxAttachments?: number;
+      maxNotes?: number;
+      truncated?: boolean;
+    };
+    intelligentProcessing?: {
+      enabled: boolean;
+      processingMethod: string;
+      preservationRatio: number;
+      averageImportance: number;
+      expansionTriggered: boolean;
+    };
   };
 }
 
 export class UnifiedContentExtractor {
 
+  private intelligentProcessor = new IntelligentContentProcessor();
+
   /**
-   * Extract content from an item (replaces get_item_fulltext + get_item_pdf_content)
+   * Extract content from an item with mode control and intelligent processing
    */
-  async getItemContent(itemKey: string, include: ContentIncludeOptions = {}): Promise<ContentResult> {
+  async getItemContent(itemKey: string, include: ContentIncludeOptions = {}, mode?: string, contentControl?: ContentControl): Promise<ContentResult> {
     try {
       const item = Zotero.Items.getByLibraryAndKey(Zotero.Libraries.userLibraryID, itemKey);
       if (!item) {
@@ -46,13 +65,19 @@ export class UnifiedContentExtractor {
 
       ztoolkit.log(`[UnifiedContentExtractor] Getting content for item ${itemKey}`);
 
-      // Default include all content types
+      // Get effective mode and settings
+      const effectiveMode = mode || MCPSettingsService.get('content.mode');
+      const modeConfig = this.getModeConfiguration(effectiveMode);
+      
+      ztoolkit.log(`[UnifiedContentExtractor] Using output mode: ${effectiveMode}`);
+
+      // Default include all content types, but apply mode-based filtering
       const options = {
         pdf: true,
         attachments: true,
         notes: true,
         abstract: true,
-        webpage: false,
+        webpage: modeConfig.includeWebpage,
         ...include
       };
 
@@ -63,7 +88,14 @@ export class UnifiedContentExtractor {
         metadata: {
           extractedAt: new Date().toISOString(),
           sources: [],
-          totalLength: 0
+          totalLength: 0,
+          mode: effectiveMode,
+          appliedLimits: {
+            maxContentLength: modeConfig.maxContentLength,
+            maxAttachments: modeConfig.maxAttachments,
+            maxNotes: modeConfig.maxNotes,
+            truncated: false
+          }
         }
       };
 
@@ -81,9 +113,9 @@ export class UnifiedContentExtractor {
         }
       }
 
-      // Extract attachments (PDF and others)
+      // Extract attachments (PDF and others) with intelligent processing
       if (options.pdf || options.attachments) {
-        const attachments = await this.extractAttachments(item, options);
+        const attachments = await this.extractAttachments(item, options, modeConfig, effectiveMode, contentControl);
         if (attachments.length > 0) {
           result.content.attachments = attachments;
           result.metadata.sources.push('attachments');
@@ -91,9 +123,9 @@ export class UnifiedContentExtractor {
         }
       }
 
-      // Extract notes
+      // Extract notes with intelligent processing
       if (options.notes) {
-        const notes = this.extractNotes(item);
+        const notes = await this.extractNotes(item, modeConfig, effectiveMode, contentControl);
         if (notes.length > 0) {
           result.content.notes = notes;
           result.metadata.sources.push('notes');
@@ -121,9 +153,9 @@ export class UnifiedContentExtractor {
   }
 
   /**
-   * Extract content from a specific attachment (replaces get_attachment_content)
+   * Extract content from a specific attachment with mode control (replaces get_attachment_content)
    */
-  async getAttachmentContent(attachmentKey: string): Promise<any> {
+  async getAttachmentContent(attachmentKey: string, mode?: string, contentControl?: ContentControl): Promise<any> {
     try {
       const attachment = Zotero.Items.getByLibraryAndKey(Zotero.Libraries.userLibraryID, attachmentKey);
       if (!attachment?.isAttachment()) {
@@ -132,7 +164,11 @@ export class UnifiedContentExtractor {
 
       ztoolkit.log(`[UnifiedContentExtractor] Processing attachment: ${attachmentKey}`);
 
-      return await this.processAttachment(attachment);
+      // Get effective mode and configuration
+      const effectiveMode = mode || MCPSettingsService.get('content.mode');
+      const modeConfig = this.getModeConfiguration(effectiveMode);
+
+      return await this.processAttachment(attachment, modeConfig, effectiveMode, contentControl);
 
     } catch (error) {
       ztoolkit.log(`[UnifiedContentExtractor] Error in getAttachmentContent: ${error}`, "error");
@@ -153,13 +189,18 @@ export class UnifiedContentExtractor {
   }
 
   /**
-   * Extract content from all attachments
+   * Extract content from all attachments with intelligent processing
    */
-  private async extractAttachments(item: any, options: ContentIncludeOptions): Promise<any[]> {
+  private async extractAttachments(item: any, options: ContentIncludeOptions, modeConfig: any, mode: string, contentControl?: ContentControl): Promise<any[]> {
     const attachments = [];
     const attachmentIDs = item.getAttachments();
 
-    for (const attachmentID of attachmentIDs) {
+    // Apply attachment limit based on mode
+    const limitedAttachmentIDs = modeConfig.maxAttachments > 0 
+      ? attachmentIDs.slice(0, modeConfig.maxAttachments)
+      : attachmentIDs;
+
+    for (const attachmentID of limitedAttachmentIDs) {
       try {
         const attachment = Zotero.Items.get(attachmentID);
         const contentType = attachment.attachmentContentType;
@@ -169,7 +210,7 @@ export class UnifiedContentExtractor {
         if (isPDF && !options.pdf) continue;
         if (!isPDF && !options.attachments) continue;
 
-        const attachmentContent = await this.processAttachment(attachment);
+        const attachmentContent = await this.processAttachment(attachment, modeConfig, mode, contentControl);
         if (attachmentContent && attachmentContent.content) {
           attachments.push(attachmentContent);
         }
@@ -182,16 +223,21 @@ export class UnifiedContentExtractor {
   }
 
   /**
-   * Extract notes content
+   * Extract notes content with intelligent processing
    */
-  private extractNotes(item: any): any[] {
+  private async extractNotes(item: any, modeConfig: any, mode: string, contentControl?: ContentControl): Promise<any[]> {
     const notes = [];
     const noteIDs = item.getNotes();
 
-    for (const noteID of noteIDs) {
+    // Apply notes limit based on mode
+    const limitedNoteIDs = modeConfig.maxNotes > 0 
+      ? noteIDs.slice(0, modeConfig.maxNotes)
+      : noteIDs;
+
+    for (const noteID of limitedNoteIDs) {
       try {
         const note = Zotero.Items.get(noteID);
-        const noteContent = this.extractNoteContent(note);
+        const noteContent = await this.extractNoteContent(note, modeConfig, mode, contentControl);
         if (noteContent) {
           notes.push(noteContent);
         }
@@ -204,9 +250,9 @@ export class UnifiedContentExtractor {
   }
 
   /**
-   * Extract single note content
+   * Extract single note content with intelligent processing
    */
-  private extractNoteContent(note: any): any {
+  private async extractNoteContent(note: any, modeConfig: any, mode: string, contentControl?: ContentControl): Promise<any> {
     try {
       if (!note || !note.isNote()) {
         return null;
@@ -217,18 +263,60 @@ export class UnifiedContentExtractor {
         return null;
       }
 
-      // Strip HTML tags for plain text
-      const plainText = noteText.replace(/<[^>]*>/g, '').trim();
+      // Convert HTML to well-formatted text using user settings
+      const settings = MCPSettingsService.getEffectiveSettings();
+      let plainText = TextFormatter.htmlToText(noteText, {
+        preserveParagraphs: settings.preserveFormatting,
+        preserveHeadings: settings.preserveHeadings,
+        preserveLists: settings.preserveLists,
+        preserveEmphasis: settings.preserveEmphasis
+      });
+      
+      // Apply intelligent processing if content is long enough
+      let processedResult: ProcessingResult | null = null;
+      let finalContent = plainText;
+      
+      if (plainText.length > 200 && mode !== 'complete') { // Use intelligent processing for longer notes
+        try {
+          processedResult = await this.intelligentProcessor.processContent(plainText, mode, contentControl);
+          finalContent = processedResult.processedText;
+        } catch (error) {
+          ztoolkit.log(`[UnifiedContentExtractor] Intelligent processing failed for note, falling back: ${error}`, "warn");
+          // Fallback to simple truncation
+          if (modeConfig.maxContentLength > 0 && plainText.length > modeConfig.maxContentLength) {
+            finalContent = this.smartTruncate(plainText, modeConfig.maxContentLength);
+          }
+        }
+      } else if (modeConfig.maxContentLength > 0 && plainText.length > modeConfig.maxContentLength) {
+        // Simple truncation for short content or full mode
+        finalContent = this.smartTruncate(plainText, modeConfig.maxContentLength);
+      }
 
-      return {
+      const result = {
         noteKey: note.key,
         title: note.getNoteTitle() || 'Untitled Note',
-        content: plainText,
+        content: finalContent,
         htmlContent: noteText,
-        length: plainText.length,
+        length: finalContent.length,
+        originalLength: plainText.length,
+        truncated: finalContent.length < plainText.length,
         dateModified: note.dateModified,
         type: 'note'
       };
+
+      // Add intelligent processing metadata if used
+      if (processedResult) {
+        (result as any).intelligentProcessing = {
+          enabled: true,
+          processingMethod: processedResult.metadata.processingMethod,
+          preservationRatio: processedResult.metadata.preservationRatio,
+          averageImportance: processedResult.metadata.averageImportance,
+          selectedSentences: processedResult.metadata.selectedSentences,
+          totalSentences: processedResult.metadata.totalSentences
+        };
+      }
+
+      return result;
     } catch (error) {
       ztoolkit.log(`[UnifiedContentExtractor] Error extracting note content: ${error}`, "error");
       return null;
@@ -273,9 +361,9 @@ export class UnifiedContentExtractor {
   }
 
   /**
-   * Process a single attachment (unified logic)
+   * Process a single attachment with intelligent processing (unified logic)
    */
-  private async processAttachment(attachment: any): Promise<any> {
+  private async processAttachment(attachment: any, modeConfig: any, mode: string, contentControl?: ContentControl): Promise<any> {
     const filePath = attachment.getFilePath();
     const contentType = attachment.attachmentContentType;
     const filename = attachment.attachmentFilename;
@@ -307,17 +395,54 @@ export class UnifiedContentExtractor {
         return null;
       }
 
-      return {
+      // Apply intelligent processing if content is substantial
+      let processedResult: ProcessingResult | null = null;
+      let finalContent = content.trim();
+      const originalLength = finalContent.length;
+      
+      if (finalContent.length > 500 && mode !== 'complete') { // Use intelligent processing for longer content
+        try {
+          processedResult = await this.intelligentProcessor.processContent(finalContent, mode, contentControl);
+          finalContent = processedResult.processedText;
+        } catch (error) {
+          ztoolkit.log(`[UnifiedContentExtractor] Intelligent processing failed for attachment, falling back: ${error}`, "warn");
+          // Fallback to simple truncation
+          if (modeConfig.maxContentLength > 0 && finalContent.length > modeConfig.maxContentLength) {
+            finalContent = this.smartTruncate(finalContent, modeConfig.maxContentLength);
+          }
+        }
+      } else if (modeConfig.maxContentLength > 0 && finalContent.length > modeConfig.maxContentLength) {
+        // Simple truncation for shorter content or full mode
+        finalContent = this.smartTruncate(finalContent, modeConfig.maxContentLength);
+      }
+
+      const result = {
         attachmentKey: attachment.key,
         filename,
         filePath,
         contentType,
         type: this.categorizeAttachmentType(contentType),
-        content: content.trim(),
-        length: content.length,
+        content: finalContent,
+        length: finalContent.length,
+        originalLength,
+        truncated: finalContent.length < originalLength,
         extractionMethod,
         extractedAt: new Date().toISOString()
       };
+
+      // Add intelligent processing metadata if used
+      if (processedResult) {
+        (result as any).intelligentProcessing = {
+          enabled: true,
+          processingMethod: processedResult.metadata.processingMethod,
+          preservationRatio: processedResult.metadata.preservationRatio,
+          averageImportance: processedResult.metadata.averageImportance,
+          selectedSentences: processedResult.metadata.selectedSentences,
+          totalSentences: processedResult.metadata.totalSentences
+        };
+      }
+
+      return result;
 
     } catch (error) {
       ztoolkit.log(`[UnifiedContentExtractor] Error processing attachment ${attachment.key}: ${error}`, "error");
@@ -326,12 +451,14 @@ export class UnifiedContentExtractor {
   }
 
   /**
-   * Extract text from PDF using PDFProcessor
+   * Extract text from PDF using PDFProcessor with formatting
    */
   private async extractPDFText(filePath: string): Promise<string> {
     const processor = new PDFProcessor(ztoolkit);
     try {
-      return await processor.extractText(filePath);
+      const rawText = await processor.extractText(filePath);
+      // Apply PDF-specific text formatting
+      return TextFormatter.formatPDFText(rawText);
     } finally {
       processor.terminate();
     }
@@ -345,7 +472,13 @@ export class UnifiedContentExtractor {
       if (!filePath) return '';
       
       const htmlContent = await Zotero.File.getContentsAsync(filePath);
-      return htmlContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      const settings = MCPSettingsService.getEffectiveSettings();
+      return TextFormatter.htmlToText(htmlContent, {
+        preserveParagraphs: settings.preserveFormatting,
+        preserveHeadings: settings.preserveHeadings,
+        preserveLists: settings.preserveLists,
+        preserveEmphasis: settings.preserveEmphasis
+      });
     } catch (error) {
       ztoolkit.log(`[UnifiedContentExtractor] Error reading HTML file ${filePath}: ${error}`, "error");
       return '';
@@ -445,5 +578,77 @@ export class UnifiedContentExtractor {
     }
 
     return textParts.join('\n---\n\n');
+  }
+
+  /**
+   * Get mode-specific configuration
+   */
+  private getModeConfiguration(mode: string): any {
+    const presets = MCPSettingsService.getEffectiveSettings();
+    
+    // Mode-specific configurations based on SmartAnnotationExtractor patterns
+    const modeConfigs = {
+      'minimal': {
+        maxContentLength: 500,
+        maxAttachments: 2,
+        maxNotes: 3,
+        includeWebpage: false,
+        enableCompression: true
+      },
+      'preview': {
+        maxContentLength: 1500,
+        maxAttachments: 5,
+        maxNotes: 8,
+        includeWebpage: false,
+        enableCompression: true
+      },
+      'standard': {
+        maxContentLength: 3000,
+        maxAttachments: 10,
+        maxNotes: 15,
+        includeWebpage: true,
+        enableCompression: true
+      },
+      'complete': {
+        maxContentLength: -1, // No limit
+        maxAttachments: -1,   // No limit
+        maxNotes: -1,         // No limit
+        includeWebpage: true,
+        enableCompression: false
+      }
+    };
+
+    return modeConfigs[mode as keyof typeof modeConfigs] || modeConfigs['standard'];
+  }
+
+  /**
+   * Smart truncation that preserves sentence boundaries and meaning
+   */
+  private smartTruncate(content: string, maxLength: number): string {
+    if (!content || content.length <= maxLength) {
+      return content;
+    }
+
+    // Try to cut at sentence boundaries
+    const truncated = content.substring(0, maxLength);
+    const lastSentence = Math.max(
+      truncated.lastIndexOf('.'),
+      truncated.lastIndexOf('!'),
+      truncated.lastIndexOf('?')
+    );
+    
+    // If we found a sentence boundary in the last 30% of the text, use it
+    if (lastSentence > maxLength * 0.7) {
+      return truncated.substring(0, lastSentence + 1);
+    }
+    
+    // Otherwise, try to cut at word boundary
+    const lastSpace = truncated.lastIndexOf(' ');
+    if (lastSpace > maxLength * 0.8) {
+      return truncated.substring(0, lastSpace) + '...';
+    }
+    
+    // Fallback: hard truncate
+    return truncated + '...';
   }
 }

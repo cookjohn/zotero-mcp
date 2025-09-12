@@ -12,6 +12,9 @@ export class HttpServer {
   private isRunning: boolean = false;
   private mcpServer: StreamableMCPServer | null = null;
   private port: number = 8080;
+  private activeSessions: Map<string, { createdAt: Date; lastActivity: Date; }> = new Map();
+  private keepAliveTimeout: number = 30000; // 30 seconds
+  private sessionTimeout: number = 300000; // 5 minutes
 
   public isServerRunning(): boolean {
     return this.isRunning;
@@ -51,6 +54,9 @@ export class HttpServer {
 
       // Initialize integrated MCP server if enabled
       this.initializeMCPServer();
+      
+      // Start session cleanup timer
+      this.startSessionCleanup();
     } catch (e) {
       const errorMsg = `[HttpServer] Failed to start server on port ${port}: ${e}`;
       Zotero.debug(errorMsg);
@@ -95,6 +101,81 @@ export class HttpServer {
     }
   }
 
+  /**
+   * Generate a unique session ID for MCP connections
+   */
+  private generateSessionId(): string {
+    return 'mcp-' + Date.now().toString(36) + '-' + Math.random().toString(36).substr(2, 9);
+  }
+
+  /**
+   * Start session cleanup timer to remove expired sessions
+   */
+  private startSessionCleanup(): void {
+    setInterval(() => {
+      const now = new Date();
+      for (const [sessionId, session] of this.activeSessions.entries()) {
+        if (now.getTime() - session.lastActivity.getTime() > this.sessionTimeout) {
+          this.activeSessions.delete(sessionId);
+          ztoolkit.log(`[HttpServer] Cleaned up expired session: ${sessionId}`);
+        }
+      }
+    }, 60000); // Check every minute
+  }
+
+  /**
+   * Update session activity
+   */
+  private updateSessionActivity(sessionId: string): void {
+    const session = this.activeSessions.get(sessionId);
+    if (session) {
+      session.lastActivity = new Date();
+    }
+  }
+
+  /**
+   * Determine if connection should be kept alive based on request
+   */
+  private shouldKeepAlive(requestText: string, path: string): boolean {
+    // Keep alive for MCP endpoints
+    if (path === "/mcp" || path.startsWith("/mcp/")) {
+      return true;
+    }
+    
+    // Check for Connection header in request
+    const connectionHeader = requestText.match(/Connection:\s*([^\r\n]+)/i);
+    if (connectionHeader && connectionHeader[1].toLowerCase().includes('keep-alive')) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Build appropriate HTTP headers with session and connection management
+   */
+  private buildHttpHeaders(result: any, keepAlive: boolean, sessionId?: string): string {
+    const baseHeaders = `HTTP/1.1 ${result.status} ${result.statusText}\r\n` +
+      `Content-Type: ${result.headers?.["Content-Type"] || "application/json; charset=utf-8"}\r\n`;
+    
+    let headers = baseHeaders;
+    
+    // Add session ID for MCP requests
+    if (sessionId) {
+      headers += `Mcp-Session-Id: ${sessionId}\r\n`;
+    }
+    
+    // Add connection management headers
+    if (keepAlive) {
+      headers += `Connection: keep-alive\r\n` +
+        `Keep-Alive: timeout=${this.keepAliveTimeout / 1000}, max=100\r\n`;
+    } else {
+      headers += `Connection: close\r\n`;
+    }
+    
+    return headers;
+  }
+
   private listener = {
     onSocketAccepted: async (_socket: any, transport: any) => {
       let input: any = null;
@@ -102,6 +183,8 @@ export class HttpServer {
       let sin: any = null;
       const converterStream: any = null;
 
+      ztoolkit.log(`[HttpServer] New connection accepted from transport: ${transport.host || 'unknown'}:${transport.port || 'unknown'}`);
+      
       try {
         input = transport.openInputStream(0, 0, 0);
         output = transport.openOutputStream(0, 0, 0);
@@ -121,16 +204,25 @@ export class HttpServer {
         let requestText = "";
         let totalBytesRead = 0;
         const maxRequestSize = 4096; // 增加最大请求大小
+        let waitAttempts = 0;
+        const maxWaitAttempts = 10;
 
         try {
           // 尝试读取完整的HTTP请求直到遇到空行
           while (totalBytesRead < maxRequestSize) {
             const bytesToRead = Math.min(1024, maxRequestSize - totalBytesRead);
-            if (input.available() === 0) {
+            const available = input.available();
+            
+            if (available === 0) {
               // 等待数据到达
+              waitAttempts++;
+              if (waitAttempts > maxWaitAttempts) {
+                ztoolkit.log(`[HttpServer] Timeout waiting for data after ${waitAttempts} attempts, TotalBytes: ${totalBytesRead}`, "warn");
+                break;
+              }
               await new Promise((resolve) => setTimeout(resolve, 10));
               if (input.available() === 0) {
-                break; // 没有更多数据
+                continue; // 继续等待
               }
             }
 
@@ -161,11 +253,13 @@ export class HttpServer {
           }
         } catch (readError) {
           ztoolkit.log(
-            `[HttpServer] Error reading request: ${readError}`,
+            `[HttpServer] Error reading request: ${readError}, BytesRead: ${totalBytesRead}, InputStream available: ${input?.available ? input.available() : 'N/A'}`,
             "error",
           );
           requestText = requestText || "INVALID_REQUEST";
         }
+
+        ztoolkit.log(`[HttpServer] Total bytes read: ${totalBytesRead}, request text length: ${requestText.length}`);
 
         try {
           if (converterStream) converterStream.close();
@@ -178,6 +272,15 @@ export class HttpServer {
 
         if (sin) sin.close();
 
+        // Handle empty connections (likely health checks or probes)
+        if (totalBytesRead === 0 && requestText.length === 0) {
+          ztoolkit.log(
+            `[HttpServer] Empty connection detected - likely health check/probe. Closing gracefully.`,
+            "info",
+          );
+          return; // Gracefully close without sending error response
+        }
+
         const requestLine = requestText.split("\r\n")[0];
         ztoolkit.log(
           `[HttpServer] Received request: ${requestLine} (${requestText.length} bytes)`,
@@ -186,17 +289,19 @@ export class HttpServer {
         // 验证请求格式
         if (!requestLine || !requestLine.includes("HTTP/")) {
           ztoolkit.log(
-            `[HttpServer] Invalid request format: ${requestLine}`,
+            `[HttpServer] Invalid request format - RequestLine: "${requestLine || '<empty>'}", TotalBytes: ${totalBytesRead}, RequestLength: ${requestText.length}, RequestPreview: "${requestText.substring(0, 100).replace(/\r?\n/g, '\\n')}"`,
             "error",
           );
           try {
-            const errorResponse =
-              "HTTP/1.1 400 Bad Request\r\n" +
-              "Content-Type: text/plain; charset=utf-8\r\n" +
+            const badRequestResult = {
+              status: 400,
+              statusText: "Bad Request",
+              headers: { "Content-Type": "text/plain; charset=utf-8" }
+            };
+            const badRequestHeaders = this.buildHttpHeaders(badRequestResult, false) +
               "Content-Length: 11\r\n" +
-              "Connection: close\r\n" +
-              "\r\n" +
-              "Bad Request";
+              "\r\n";
+            const errorResponse = badRequestHeaders + "Bad Request";
             output.write(errorResponse, errorResponse.length);
           } catch (e) {
             ztoolkit.log(
@@ -204,6 +309,10 @@ export class HttpServer {
               "error",
             );
           }
+          ztoolkit.log(
+            `[HttpServer] Returned 400 Bad Request due to invalid format. Connection will be closed.`,
+            "warn",
+          );
           return;
         }
 
@@ -224,18 +333,76 @@ export class HttpServer {
             }
           }
 
+          // Extract existing session ID or create new one for MCP requests
+          let sessionId: string | undefined;
+          const mcpSessionHeader = requestText.match(/Mcp-Session-Id:\s*([^\r\n]+)/i);
+          
+          if (path === "/mcp" || path.startsWith("/mcp/")) {
+            if (mcpSessionHeader && mcpSessionHeader[1]) {
+              sessionId = mcpSessionHeader[1].trim();
+              this.updateSessionActivity(sessionId);
+              ztoolkit.log(`[HttpServer] Using existing MCP session: ${sessionId}`);
+            } else {
+              sessionId = this.generateSessionId();
+              this.activeSessions.set(sessionId, {
+                createdAt: new Date(),
+                lastActivity: new Date()
+              });
+              ztoolkit.log(`[HttpServer] Created new MCP session: ${sessionId}`);
+            }
+          }
+
+          // Determine if connection should be kept alive
+          const keepAlive = this.shouldKeepAlive(requestText, path);
+          ztoolkit.log(`[HttpServer] Keep-alive for ${path}: ${keepAlive}`);
+
           let result;
 
-          if (path === "/mcp" && method === "POST") {
-            // Handle MCP requests via streamable HTTP
-            if (this.mcpServer) {
-              result = await this.mcpServer.handleMCPRequest(requestBody);
+          if (path === "/mcp") {
+            if (method === "POST") {
+              // Handle MCP requests via streamable HTTP
+              if (this.mcpServer) {
+                result = await this.mcpServer.handleMCPRequest(requestBody);
+              } else {
+                result = {
+                  status: 503,
+                  statusText: "Service Unavailable",
+                  headers: { "Content-Type": "application/json; charset=utf-8" },
+                  body: JSON.stringify({ error: "MCP server not enabled" }),
+                };
+              }
+            } else if (method === "GET") {
+              // Handle GET request to MCP endpoint - show endpoint info
+              result = {
+                status: 200,
+                statusText: "OK",
+                headers: { "Content-Type": "application/json; charset=utf-8" },
+                body: JSON.stringify({
+                  endpoint: "/mcp",
+                  protocol: "MCP (Model Context Protocol)",
+                  transport: "Streamable HTTP",
+                  version: "2024-11-05",
+                  description: "This endpoint accepts MCP protocol requests via POST method",
+                  usage: {
+                    method: "POST",
+                    contentType: "application/json",
+                    body: "MCP JSON-RPC 2.0 formatted requests"
+                  },
+                  status: this.mcpServer ? "available" : "disabled",
+                  documentation: "Send POST requests with MCP protocol messages to interact with Zotero data"
+                }),
+              };
             } else {
               result = {
-                status: 503,
-                statusText: "Service Unavailable",
-                headers: { "Content-Type": "application/json; charset=utf-8" },
-                body: JSON.stringify({ error: "MCP server not enabled" }),
+                status: 405,
+                statusText: "Method Not Allowed",
+                headers: { 
+                  "Content-Type": "application/json; charset=utf-8",
+                  "Allow": "GET, POST"
+                },
+                body: JSON.stringify({ 
+                  error: `Method ${method} not allowed. Use GET for info or POST for MCP requests.` 
+                }),
               };
             }
           } else if (path === "/mcp/status") {
@@ -272,23 +439,27 @@ export class HttpServer {
               body: JSON.stringify(testResult),
             };
           } else if (path.startsWith("/ping")) {
-            const response =
-              "HTTP/1.1 200 OK\r\n" +
-              "Content-Type: text/plain\r\n" +
+            const pingResult = {
+              status: 200,
+              statusText: "OK",
+              headers: { "Content-Type": "text/plain; charset=utf-8" }
+            };
+            const pingHeaders = this.buildHttpHeaders(pingResult, keepAlive) +
               "Content-Length: 4\r\n" +
-              "Connection: close\r\n" +
-              "\r\n" +
-              "pong";
+              "\r\n";
+            const response = pingHeaders + "pong";
             output.write(response, response.length);
             return;
           } else {
-            const response =
-              "HTTP/1.1 404 Not Found\r\n" +
-              "Content-Type: text/plain\r\n" +
+            const notFoundResult = {
+              status: 404,
+              statusText: "Not Found",
+              headers: { "Content-Type": "text/plain; charset=utf-8" }
+            };
+            const notFoundHeaders = this.buildHttpHeaders(notFoundResult, false) +
               "Content-Length: 9\r\n" +
-              "Connection: close\r\n" +
-              "\r\n" +
-              "Not Found";
+              "\r\n";
+            const response = notFoundHeaders + "Not Found";
             output.write(response, response.length);
             return;
           }
@@ -310,15 +481,14 @@ export class HttpServer {
           storageConverter.writeString(body);
           storageConverter.close();
           const byteLength = storageStream.length;
-          const finalHeaders =
-            `HTTP/1.1 ${result.status} ${result.statusText}\r\n` +
-            `Content-Type: ${
-              result.headers?.["Content-Type"] ||
-              "application/json; charset=utf-8"
-            }\r\n` +
+          
+          // Build headers with session and connection management
+          const finalHeaders = this.buildHttpHeaders(result, keepAlive, sessionId) +
             `Content-Length: ${byteLength}\r\n` +
-            "Connection: close\r\n" +
             "\r\n";
+          
+          ztoolkit.log(`[HttpServer] Sending response with headers: ${finalHeaders.split('\r\n').slice(0, -2).join(', ')}`);
+          
           output.write(finalHeaders, finalHeaders.length);
           if (byteLength > 0) {
             const inputStream = storageStream.newInputStream(0);
@@ -331,13 +501,15 @@ export class HttpServer {
             "error",
           );
           const errorBody = JSON.stringify({ error: error.message });
-          const errorResponse =
-            `HTTP/1.1 500 Internal Server Error\r\n` +
-            `Content-Type: application/json\r\n` +
+          const errorResult = {
+            status: 500,
+            statusText: "Internal Server Error",
+            headers: { "Content-Type": "application/json; charset=utf-8" }
+          };
+          const errorHeaders = this.buildHttpHeaders(errorResult, false) +
             `Content-Length: ${errorBody.length}\r\n` +
-            "Connection: close\r\n" +
-            "\r\n" +
-            errorBody;
+            "\r\n";
+          const errorResponse = errorHeaders + errorBody;
           output.write(errorResponse, errorResponse.length);
         }
       } catch (e) {
@@ -351,13 +523,15 @@ export class HttpServer {
           if (!output) {
             output = transport.openOutputStream(0, 0, 0);
           }
-          const errorResponse =
-            "HTTP/1.1 500 Internal Server Error\r\n" +
-            "Content-Type: text/plain\r\n" +
+          const criticalErrorResult = {
+            status: 500,
+            statusText: "Internal Server Error",
+            headers: { "Content-Type": "text/plain; charset=utf-8" }
+          };
+          const criticalErrorHeaders = this.buildHttpHeaders(criticalErrorResult, false) +
             "Content-Length: 21\r\n" +
-            "Connection: close\r\n" +
-            "\r\n" +
-            "Internal Server Error";
+            "\r\n";
+          const errorResponse = criticalErrorHeaders + "Internal Server Error";
           output.write(errorResponse, errorResponse.length);
           ztoolkit.log(`[HttpServer] Error response sent`);
         } catch (closeError) {

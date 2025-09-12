@@ -6,6 +6,7 @@
  */
 
 import { PDFProcessor } from "./pdfProcessor";
+import { TextFormatter } from "./textFormatter";
 
 declare const Zotero: any;
 
@@ -54,11 +55,12 @@ export class PDFService {
       );
     }
 
-    // Use the new PDFProcessor implementation
+    // Use the new PDFProcessor implementation with formatting
     const processor = new PDFProcessor(ztoolkit);
     try {
-      // extractText returns the full text as a single string
-      return await processor.extractText(filePath);
+      const rawText = await processor.extractText(filePath);
+      // Apply PDF-specific text formatting
+      return TextFormatter.formatPDFText(rawText);
     } finally {
       processor.terminate();
     }
