@@ -622,7 +622,7 @@ private getCapabilities() {
     tools: [
       {
         name: "search_library",
-        description: "Search the Zotero library with advanced parameters including boolean operators, relevance scoring, and pagination. Returns: {query, pagination, searchTime, results: [{key, title, creators, date, attachments: [{key, filename, filePath, contentType, linkMode}]}], searchFeatures, version}",
+        description: "Search the Zotero library with advanced parameters including boolean operators, relevance scoring, fulltext search, and pagination. Returns: {query, pagination, searchTime, results: [{key, title, creators, date, attachments: [{key, filename, filePath, contentType, linkMode}], fulltextMatch: {query, mode, attachments: [{snippet, score}], notes: [{snippet, score}]}}], searchFeatures, version}",
         category: "search",
         parameters: {
           q: { type: "string", description: "General search query", required: false },
@@ -634,6 +634,19 @@ private getCapabilities() {
             required: false
           },
           yearRange: { type: "string", description: "Year range (e.g., '2020-2023')", required: false },
+          fulltext: { type: "string", description: "Full-text search in attachments and notes", required: false },
+          fulltextMode: { 
+            type: "string", 
+            enum: ["attachment", "note", "both"],
+            description: "Full-text search mode: 'attachment' (PDFs only), 'note' (notes only), 'both' (default)",
+            required: false 
+          },
+          fulltextOperator: { 
+            type: "string", 
+            enum: ["contains", "exact", "regex"],
+            description: "Full-text search operator (default: 'contains')",
+            required: false 
+          },
           relevanceScoring: { type: "boolean", description: "Enable relevance scoring", required: false },
           sort: { 
             type: "string", 
@@ -647,7 +660,9 @@ private getCapabilities() {
         examples: [
           { query: { q: "machine learning" }, description: "Basic text search" },
           { query: { title: "deep learning", titleOperator: "contains" }, description: "Title-specific search" },
-          { query: { yearRange: "2020-2023", sort: "relevance" }, description: "Year-filtered search with relevance sorting" }
+          { query: { yearRange: "2020-2023", sort: "relevance" }, description: "Year-filtered search with relevance sorting" },
+          { query: { fulltext: "neural networks", fulltextMode: "attachment" }, description: "Full-text search in PDF attachments only" },
+          { query: { fulltext: "methodology", fulltextMode: "both", fulltextOperator: "exact" }, description: "Exact full-text search in both attachments and notes" }
         ]
       },
       {

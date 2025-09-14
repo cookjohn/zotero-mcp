@@ -26,8 +26,19 @@ async function onStartup() {
   // Check if this is first installation and show config prompt
   checkFirstInstallation();
 
-  // 启动HTTP服务器
+  // 启动HTTP服务器前增加详细诊断
   try {
+    ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Starting server initialization...`);
+    
+    // 记录初始化环境信息
+    ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Zotero version: ${Zotero.version || 'unknown'}`);
+    try {
+      ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Platform: ${(globalThis as any).navigator?.platform || 'unknown'}`);
+      ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] User agent: ${(globalThis as any).navigator?.userAgent || 'unknown'}`);
+    } catch (e) {
+      ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Platform info unavailable`);
+    }
+    
     ztoolkit.log(`===MCP=== [hooks.ts] Attempting to get server preferences...`);
     const port = serverPreferences.getPort();
     const enabled = serverPreferences.isServerEnabled();
@@ -35,12 +46,39 @@ async function onStartup() {
     ztoolkit.log(
       `===MCP=== [hooks.ts] Port retrieved: ${port} (type: ${typeof port})`,
     );
-    ztoolkit.log(`===MCP=== [hooks.ts] Server enabled: ${enabled}`);
-
-    if (!enabled) {
-      ztoolkit.log(`===MCP=== [hooks.ts] Server is disabled, skipping startup`);
+    ztoolkit.log(`===MCP=== [hooks.ts] Server enabled: ${enabled} (type: ${typeof enabled})`);
+    
+    // 额外检查：直接查询底层偏好设置
+    try {
+      const directEnabled = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.mcp.server.enabled", true);
+      const directPort = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.mcp.server.port", true);
+      ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Direct pref check - enabled: ${directEnabled}, port: ${directPort}`);
+      
+      if (enabled !== directEnabled) {
+        ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] WARNING: Enabled state mismatch! serverPreferences: ${enabled}, direct: ${directEnabled}`);
+      }
+    } catch (error) {
+      ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Error in direct preference check: ${error}`, 'error');
+    }
+    
+    // 检查是否有任何外部因素重置了设置
+    if (enabled === false) {
+      ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Server is disabled - investigating reason...`);
+      
+      // 尝试检测是否是首次启动后被重置
+      const hasBeenEnabled = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.debug.hasBeenEnabled", false);
+      if (!hasBeenEnabled) {
+        ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] First time setup - server was never enabled before`);
+      } else {
+        ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] WARNING: Server was previously enabled but is now disabled!`);
+      }
+      
+      ztoolkit.log(`===MCP=== [hooks.ts] Server is disabled, skipping startup 插件无法启动`);
       return;
     }
+    
+    // 记录服务器曾经被启用过
+    Zotero.Prefs.set("extensions.zotero.zotero-mcp-plugin.debug.hasBeenEnabled", true, true);
 
     if (!port || isNaN(port)) {
       throw new Error(`Invalid port value: ${port}`);
@@ -179,8 +217,48 @@ async function onNotify(
  * @param data event data
  */
 async function onPrefsEvent(type: string, data: { [key: string]: any }) {
+  ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Preferences event: ${type}`);
+  
   switch (type) {
     case "load":
+      ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Loading preference scripts...`);
+      
+      // 诊断设置面板加载环境
+      try {
+        if (data.window) {
+          ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Preference window available`);
+          
+          // 检查当前偏好设置状态
+          const currentEnabled = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.mcp.server.enabled", true);
+          const currentPort = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.mcp.server.port", true);
+          ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Current prefs at panel load - enabled: ${currentEnabled}, port: ${currentPort}`);
+          
+          // 检查preference元素是否存在
+          setTimeout(() => {
+            try {
+              const doc = data.window.document;
+              const enabledElement = doc?.querySelector('#zotero-prefpane-zotero-mcp-plugin-mcp-server-enabled');
+              const portElement = doc?.querySelector('#zotero-prefpane-zotero-mcp-plugin-mcp-server-port');
+              
+              ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Preference elements - enabled: ${!!enabledElement}, port: ${!!portElement}`);
+              
+              if (enabledElement) {
+                const hasChecked = enabledElement.hasAttribute('checked');
+                ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Enabled checkbox state: ${hasChecked}`);
+              }
+              
+            } catch (error) {
+              ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Error checking preference elements: ${error}`, 'error');
+            }
+          }, 500);
+          
+        } else {
+          ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] WARNING: No preference window in data`, 'error');
+        }
+      } catch (error) {
+        ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Error in preference load diagnostic: ${error}`, 'error');
+      }
+      
       registerPrefsScripts(data.window);
       break;
     default:

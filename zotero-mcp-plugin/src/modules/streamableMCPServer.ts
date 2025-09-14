@@ -465,6 +465,17 @@ export class StreamableMCPServer {
               description: 'Title search operator' 
             },
             yearRange: { type: 'string', description: 'Year range (e.g., "2020-2023")' },
+            fulltext: { type: 'string', description: 'Full-text search in attachments and notes' },
+            fulltextMode: { 
+              type: 'string', 
+              enum: ['attachment', 'note', 'both'],
+              description: 'Full-text search mode: attachment (PDFs only), note (notes only), both (default)' 
+            },
+            fulltextOperator: { 
+              type: 'string', 
+              enum: ['contains', 'exact', 'regex'],
+              description: 'Full-text search operator (default: contains)' 
+            },
             mode: {
               type: 'string',
               enum: ['minimal', 'preview', 'standard', 'complete'],
@@ -810,8 +821,15 @@ export class StreamableMCPServer {
           throw new Error(`Unknown tool: ${name}`);
       }
 
-      // Return structured JSON data directly
-      return this.createResponse(request.id, result);
+      // Wrap result in MCP content format with proper text type
+      return this.createResponse(request.id, { 
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      });
 
     } catch (error) {
       ztoolkit.log(`[StreamableMCP] Tool call error for ${name}: ${error}`);

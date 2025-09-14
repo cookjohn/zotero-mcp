@@ -36,6 +36,11 @@ interface SearchParams {
   includeAttachments?: string; // 是否包含附件
   includeNotes?: string; // 是否包含笔记
 
+  // 全文搜索专用参数
+  fulltext?: string; // 全文搜索内容
+  fulltextMode?: "attachment" | "note" | "both"; // 全文搜索模式：仅附件、仅笔记、或两者
+  fulltextOperator?: "contains" | "exact" | "regex"; // 全文搜索操作符
+
   // 高级搜索参数
   titleOperator?: "contains" | "exact" | "startsWith" | "endsWith" | "regex";
   creatorOperator?: "contains" | "exact" | "startsWith" | "endsWith";
@@ -289,6 +294,148 @@ function calculateRelevanceScore(
 }
 
 /**
+ * 执行全文搜索
+ * @param query 搜索词
+ * @param libraryID 库ID
+ * @param mode 搜索模式
+ * @param operator 操作符
+ * @returns 匹配的项目ID列表
+ */
+async function performFulltextSearch(
+  query: string,
+  libraryID: number,
+  mode: "attachment" | "note" | "both" = "both",
+  operator: "contains" | "exact" | "regex" = "contains"
+): Promise<{ itemIDs: number[], matchDetails: Map<number, any> }> {
+  const matchDetails = new Map<number, any>();
+  let itemIDs: number[] = [];
+
+  try {
+    if (mode === "attachment" || mode === "both") {
+      // 使用Zotero.Search搜索附件全文
+      const attachmentSearch = new Zotero.Search();
+      (attachmentSearch as any).libraryID = libraryID;
+      
+      // 搜索附件内容
+      const searchOperator = operator === "exact" ? "is" : "contains";
+      attachmentSearch.addCondition("fulltextContent", searchOperator, query);
+      attachmentSearch.addCondition("itemType", "is", "attachment");
+      
+      const attachmentIDs = await attachmentSearch.search();
+      
+      for (const attachmentID of attachmentIDs) {
+        const attachment = Zotero.Items.get(attachmentID);
+        if (attachment && attachment.isAttachment()) {
+          const parentItem = attachment.parentItem;
+          const targetID = parentItem ? parentItem.id : attachment.id;
+          
+          if (parentItem && !itemIDs.includes(parentItem.id)) {
+            itemIDs.push(parentItem.id);
+          } else if (!parentItem && !itemIDs.includes(attachment.id)) {
+            itemIDs.push(attachment.id);
+          }
+          
+          // 记录匹配详情
+          if (!matchDetails.has(targetID)) {
+            matchDetails.set(targetID, {
+              attachments: [],
+              notes: [],
+              score: 0
+            });
+          }
+          
+          const details = matchDetails.get(targetID);
+          
+          // 尝试获取匹配片段
+          let snippet = '';
+          try {
+            const content = await attachment.attachmentText || '';
+            if (content) {
+              const queryPos = content.toLowerCase().indexOf(query.toLowerCase());
+              if (queryPos >= 0) {
+                const start = Math.max(0, queryPos - 50);
+                const end = Math.min(content.length, queryPos + query.length + 50);
+                snippet = '...' + content.substring(start, end) + '...';
+              }
+            }
+          } catch (e) {
+            // 获取片段失败，使用空字符串
+            snippet = '';
+          }
+          
+          details.attachments.push({
+            attachmentID: attachment.id,
+            filename: attachment.attachmentFilename || '',
+            snippet: snippet,
+            score: 1
+          });
+          details.score += 1;
+        }
+      }
+    }
+
+    if (mode === "note" || mode === "both") {
+      // 搜索笔记内容
+      const s = new Zotero.Search();
+      (s as any).libraryID = libraryID;
+      s.addCondition("itemType", "is", "note");
+      
+      // 根据操作符设置搜索条件
+      const searchOperator = operator === "exact" ? "is" : "contains";
+      s.addCondition("note", searchOperator, query);
+      
+      const noteIDs = await s.search();
+      
+      for (const noteID of noteIDs) {
+        const note = Zotero.Items.get(noteID);
+        if (note && note.isNote()) {
+          const parentItem = note.parentItem;
+          if (parentItem && !itemIDs.includes(parentItem.id)) {
+            itemIDs.push(parentItem.id);
+          }
+          
+          const targetID = parentItem ? parentItem.id : note.id;
+          if (!matchDetails.has(targetID)) {
+            matchDetails.set(targetID, {
+              attachments: [],
+              notes: [],
+              score: 0
+            });
+          }
+          
+          const details = matchDetails.get(targetID);
+          const noteContent = note.getNote();
+          let snippet = '';
+          
+          // 提取匹配片段
+          if (noteContent) {
+            const cleanContent = noteContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+            const queryPos = cleanContent.toLowerCase().indexOf(query.toLowerCase());
+            if (queryPos >= 0) {
+              const start = Math.max(0, queryPos - 50);
+              const end = Math.min(cleanContent.length, queryPos + query.length + 50);
+              snippet = '...' + cleanContent.substring(start, end) + '...';
+            }
+          }
+          
+          details.notes.push({
+            noteID: note.id,
+            snippet: snippet,
+            score: 1
+          });
+          details.score += 1;
+        }
+      }
+    }
+
+    return { itemIDs: [...new Set(itemIDs)], matchDetails };
+  } catch (error) {
+    ztoolkit.log(`[SearchEngine] Fulltext search error: ${error}`, "error");
+    return { itemIDs: [], matchDetails };
+  }
+}
+
+/**
  * 应用高级过滤条件到项目列表
  * @param items 项目列表
  * @param params 搜索参数
@@ -452,11 +599,36 @@ export async function handleSearchRequest(
     };
   }
 
-  // --- 3. 构建 Zotero 搜索条件 (除标签外) ---
+  // --- 3. 处理全文搜索 (优先级高) ---
+  let fulltextItemIDs: number[] = [];
+  let fulltextMatchDetails = new Map<number, any>();
+
+  if (params.fulltext) {
+    const mode = params.fulltextMode || "both";
+    const operator = params.fulltextOperator || "contains";
+    const fulltextResult = await performFulltextSearch(params.fulltext, libraryID, mode, operator);
+    fulltextItemIDs = fulltextResult.itemIDs;
+    fulltextMatchDetails = fulltextResult.matchDetails;
+
+    if (fulltextItemIDs.length === 0) {
+      return {
+        query: params,
+        pagination: { limit, offset, total: 0, hasMore: false },
+        searchTime: `${Date.now() - startTime}ms`,
+        results: [],
+        searchFeatures: ["fulltext"]
+      };
+    }
+  }
+
+  // --- 4. 构建 Zotero 搜索条件 (除标签外) ---
   const s = new Zotero.Search();
   (s as any).libraryID = libraryID;
 
-  if (params.q) s.addCondition("quicksearch-everything", "contains", params.q);
+  // 普通搜索条件
+  if (params.q) {
+    s.addCondition("quicksearch-everything", "contains", params.q);
+  }
 
   const fieldMappings: { [key in keyof SearchParams]?: string } = {
     title: "title",
@@ -509,7 +681,16 @@ export async function handleSearchRequest(
     s.addCondition("itemType", "isNot", "note");
 
   // --- 4. 执行初步搜索 ---
-  const initialItemIDs = await s.search();
+  let initialItemIDs: number[];
+  
+  if (params.fulltext && fulltextItemIDs.length > 0) {
+    // 如果指定了全文搜索，使用全文搜索结果
+    initialItemIDs = fulltextItemIDs;
+  } else {
+    // 否则执行常规搜索
+    initialItemIDs = await s.search();
+  }
+  
   if (initialItemIDs.length === 0) {
     return {
       query: params,
@@ -719,6 +900,18 @@ export async function handleSearchRequest(
         formatted.relevanceScore = scoredItem.relevanceScore;
         formatted.matchedFields = scoredItem.matchedFields;
       }
+    }
+
+    // 添加全文搜索匹配详情
+    if (params.fulltext && fulltextMatchDetails.has(item.id)) {
+      const matchDetails = fulltextMatchDetails.get(item.id);
+      formatted.fulltextMatch = {
+        query: params.fulltext,
+        mode: params.fulltextMode || "both",
+        attachments: matchDetails.attachments || [],
+        notes: matchDetails.notes || [],
+        totalScore: matchDetails.score || 0
+      };
     }
 
     return formatted;

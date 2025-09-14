@@ -5,7 +5,36 @@ import { ClientConfigGenerator } from "./clientConfigGenerator";
 export async function registerPrefsScripts(_window: Window) {
   // This function is called when the prefs window is opened
   // See addon/content/preferences.xhtml onpaneload
+  ztoolkit.log(`[PreferenceScript] [DIAGNOSTIC] Registering preference scripts...`);
+  
   addon.data.prefs = { window: _window };
+  
+  // 诊断当前偏好设置状态
+  try {
+    const currentEnabled = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.mcp.server.enabled", true);
+    const currentPort = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.mcp.server.port", true);
+    ztoolkit.log(`[PreferenceScript] [DIAGNOSTIC] Current preferences - enabled: ${currentEnabled}, port: ${currentPort}`);
+    
+    // 检查是否是环境兼容性问题
+    const doc = _window.document;
+    ztoolkit.log(`[PreferenceScript] [DIAGNOSTIC] Document available: ${!!doc}`);
+    
+    if (doc) {
+      const prefElements = doc.querySelectorAll('[preference]');
+      ztoolkit.log(`[PreferenceScript] [DIAGNOSTIC] Found ${prefElements.length} preference-bound elements`);
+      
+      // 特别检查服务器启用元素
+      const serverEnabledElement = doc.querySelector('#zotero-prefpane-zotero-mcp-plugin-mcp-server-enabled');
+      if (serverEnabledElement) {
+        ztoolkit.log(`[PreferenceScript] [DIAGNOSTIC] Server enabled element found, initial checked state: ${serverEnabledElement.hasAttribute('checked')}`);
+      } else {
+        ztoolkit.log(`[PreferenceScript] [DIAGNOSTIC] WARNING: Server enabled element NOT found`);
+      }
+    }
+  } catch (error) {
+    ztoolkit.log(`[PreferenceScript] [DIAGNOSTIC] Error in preference diagnostic: ${error}`, 'error');
+  }
+  
   bindPrefEvents();
 }
 
