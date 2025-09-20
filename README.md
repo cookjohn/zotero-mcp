@@ -11,7 +11,8 @@ _This README is also available in: [:cn: 简体中文](./README-zh.md) | :gb: En
 [![中文文档](https://img.shields.io/badge/文档-中文-blue.svg)](README-zh.md)
 
 ---
-
+## Fork us on Wechat
+ ![Reading PDF](./IMG/MP.jpg)
 ## 📚 Project Overview
 
 The Zotero MCP server is a tool server based on the Model Context Protocol that provides seamless integration with the Zotero reference management system for AI applications like Claude Desktop. Through this server, AI assistants can:
