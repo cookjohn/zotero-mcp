@@ -473,6 +473,124 @@ export async function handleGetCollectionItems(
   }
 }
 
+/**
+ * Handles GET /collections/:collectionKey/subcollections endpoint.
+ * @param params - URL parameters.
+ * @param query - URL query parameters.
+ * @returns A promise that resolves to an HttpResponse.
+ */
+export async function handleGetSubcollections(
+  params: Record<string, string>,
+  query: URLSearchParams,
+): Promise<HttpResponse> {
+  try {
+    const collectionKey = params[1];
+    ztoolkit.log(`[ApiHandlers] Getting subcollections for key: ${collectionKey}`);
+    
+    if (!collectionKey) {
+      return {
+        status: 400,
+        statusText: "Bad Request",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "Missing collectionKey parameter" }),
+      };
+    }
+    
+    const libraryID =
+      parseInt(query.get("libraryID") || "", 10) ||
+      Zotero.Libraries.userLibraryID;
+
+    ztoolkit.log(`[ApiHandlers] Using libraryID: ${libraryID}`);
+
+    const collection = Zotero.Collections.getByLibraryAndKey(
+      libraryID,
+      collectionKey,
+    );
+
+    if (!collection) {
+      ztoolkit.log(`[ApiHandlers] Collection not found: ${collectionKey} in library ${libraryID}`, "error");
+      return {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({
+          error: `Collection with key ${collectionKey} not found`,
+        }),
+      };
+    }
+
+    ztoolkit.log(`[ApiHandlers] Found collection: ${collection.name}`);
+
+    const limit = parseInt(query.get("limit") || "100", 10);
+    const offset = parseInt(query.get("offset") || "0", 10);
+    const includeRecursive = query.get("recursive") === "true";
+
+    ztoolkit.log(`[ApiHandlers] Pagination: limit=${limit}, offset=${offset}, recursive=${includeRecursive}`);
+
+    // Get subcollections IDs (second parameter is includeTrashed)
+    const subcollectionIDs = collection.getChildCollections(true, false);
+    const total = subcollectionIDs.length;
+    ztoolkit.log(`[ApiHandlers] Collection contains ${total} subcollections, IDs: [${subcollectionIDs.slice(0, 5).join(", ")}${subcollectionIDs.length > 5 ? "..." : ""}]`);
+    
+    const paginatedIDs = subcollectionIDs.slice(offset, offset + limit);
+    ztoolkit.log(`[ApiHandlers] Paginated IDs: [${paginatedIDs.join(", ")}]`);
+    
+    const subcollections = Zotero.Collections.get(paginatedIDs) as Zotero.Collection[];
+    ztoolkit.log(`[ApiHandlers] Retrieved ${subcollections.length} subcollection objects from Zotero`);
+
+    // Format subcollections
+    const formattedSubcollections = formatCollectionList(subcollections);
+    
+    // If recursive is enabled, add subcollection count for each
+    if (includeRecursive) {
+      const enrichedSubcollections = formattedSubcollections.map((sc: any) => {
+        const fullCollection = subcollections.find(c => c.key === sc.key);
+        if (fullCollection) {
+          const childCount = fullCollection.getChildCollections(true, false).length;
+          return {
+            ...sc,
+            numSubcollections: childCount,
+          };
+        }
+        return sc;
+      });
+      
+      return {
+        status: 200,
+        statusText: "OK",
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Total-Count": total.toString(),
+        },
+        body: JSON.stringify(enrichedSubcollections),
+      };
+    }
+
+    ztoolkit.log(`[ApiHandlers] Formatted ${formattedSubcollections.length} subcollections`);
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "X-Total-Count": total.toString(),
+      },
+      body: JSON.stringify(formattedSubcollections),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    ztoolkit.log(`[ApiHandlers] Error in handleGetSubcollections: ${error.message}`, "error");
+    ztoolkit.log(`[ApiHandlers] Error stack: ${error.stack}`, "error");
+    Zotero.logError(error);
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "An unexpected error occurred" }),
+    };
+  }
+}
+
 // REMOVED: handleGetPDFContent - replaced by unified get_content tool
 
 
