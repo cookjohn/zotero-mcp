@@ -5,6 +5,7 @@ import {
   handleSearchCollections,
   handleGetCollectionDetails,
   handleGetCollectionItems,
+  handleGetSubcollections,
   handleSearchFulltext,
   handleGetItemAbstract
 } from './apiHandlers';
@@ -196,6 +197,7 @@ function getToolSpecificGuidance(toolName: string): any {
     case 'search_collections':
     case 'get_collection_details':
     case 'get_collection_items':
+    case 'get_subcollections':
       return {
         ...baseGuidance,
         dataStructure: {
@@ -698,6 +700,23 @@ export class StreamableMCPServer {
         },
       },
       {
+        name: 'get_subcollections',
+        description: 'Get subcollections (child collections) of a specific collection',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            collectionKey: { type: 'string', description: 'Parent collection key' },
+            limit: { type: 'number', description: 'Maximum results to return (default: 100)' },
+            offset: { type: 'number', description: 'Pagination offset (default: 0)' },
+            recursive: { 
+              type: 'boolean', 
+              description: 'Include subcollection count for each subcollection (default: false)' 
+            },
+          },
+          required: ['collectionKey'],
+        },
+      },
+      {
         name: 'search_fulltext',
         description: 'Search within fulltext content of items with context, relevance scoring, and intelligent mode control',
         inputSchema: {
@@ -801,6 +820,13 @@ export class StreamableMCPServer {
             throw new Error('collectionKey is required');
           }
           result = await this.callGetCollectionItems(args);
+          break;
+
+        case 'get_subcollections':
+          if (!args?.collectionKey) {
+            throw new Error('collectionKey is required');
+          }
+          result = await this.callGetSubcollections(args);
           break;
 
         case 'search_fulltext':
@@ -1021,6 +1047,19 @@ export class StreamableMCPServer {
     const response = await handleGetCollectionItems({ 1: collectionKey }, itemParams);
     const result = response.body ? JSON.parse(response.body) : response;
     return applyGlobalAIInstructions(result, 'get_collection_items');
+  }
+
+  private async callGetSubcollections(args: any): Promise<any> {
+    const { collectionKey, ...otherArgs } = args;
+    const subcollectionParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(otherArgs)) {
+      if (value !== undefined && value !== null) {
+        subcollectionParams.append(key, String(value));
+      }
+    }
+    const response = await handleGetSubcollections({ 1: collectionKey }, subcollectionParams);
+    const result = response.body ? JSON.parse(response.body) : response;
+    return applyGlobalAIInstructions(result, 'get_subcollections');
   }
 
 
