@@ -15,7 +15,7 @@ _This README is also available in: [:gb: English](./README.md) | :cn: 简体中�
  
  | 公众号 | 加入群聊 |
 | :--- | :---: |
-| ![Reading PDF](./IMG/MP.jpg) | ![Contact us](./49609b282729b0e264749de0d225b429.jpg) |
+| ![Reading PDF](./IMG/MP.jpg) | ![Contact us](./微信图片_20251203090747_93_285.jpg) |
 ## 📚 项目概述
 
 Zotero MCP 服务器是一个基于 Model Context Protocol 的工具服务器，它为 Claude Desktop 等 AI 应用提供了与 Zotero 文献管理系统的无缝集成。通过此服务器，AI 助手可以：
