@@ -39,6 +39,9 @@ export {
 export {
   TextChunker,
   getTextChunker,
+  resetTextChunker,
+  TextQualityPreprocessor,
   type ChunkerOptions,
-  type TextChunk
+  type TextChunk,
+  type SemanticChunk
 } from './textChunker';

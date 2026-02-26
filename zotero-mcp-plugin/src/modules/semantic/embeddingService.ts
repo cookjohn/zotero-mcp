@@ -138,7 +138,7 @@ export interface RateLimitConfig {
 /**
  * API provider type for auto-detection
  */
-export type ApiProviderType = 'auto' | 'openai' | 'ollama' | 'ollama-openai';
+export type ApiProviderType = 'auto' | 'openai' | 'dashscope' | 'ollama' | 'ollama-openai';
 
 /**
  * Configuration for embedding API
@@ -240,6 +240,12 @@ export class EmbeddingService {
       return 'ollama';
     }
 
+    // Check for DashScope (Alibaba Cloud) patterns
+    if (lowerUrl.includes('dashscope.aliyuncs.com')) {
+      ztoolkit.log(`[EmbeddingService] detectApiProvider: detected dashscope`);
+      return 'dashscope';
+    }
+
     // Check for OpenAI patterns
     if (lowerUrl.includes('openai.com') || lowerUrl.includes('/v1')) {
       ztoolkit.log(`[EmbeddingService] detectApiProvider: detected openai`);
@@ -287,6 +293,17 @@ export class EmbeddingService {
           endpoint = `${baseUrl}/embeddings`;
         } else {
           endpoint = `${baseUrl}/v1/embeddings`;
+        }
+        break;
+
+      case 'dashscope':
+        // DashScope (Alibaba Cloud) OpenAI-compatible endpoint
+        if (baseUrl.endsWith('/v1')) {
+          endpoint = `${baseUrl}/embeddings`;
+        } else if (baseUrl.includes('/compatible-mode')) {
+          endpoint = `${baseUrl}/v1/embeddings`;
+        } else {
+          endpoint = `${baseUrl}/compatible-mode/v1/embeddings`;
         }
         break;
 
@@ -438,7 +455,29 @@ export class EmbeddingService {
    * Check if the model supports custom dimensions parameter
    */
   supportsCustomDimensions(): boolean {
-    return this.config.model.includes('text-embedding-3');
+    const model = this.config.model.toLowerCase();
+    // OpenAI text-embedding-3-* models
+    if (model.includes('text-embedding-3')) return true;
+    // DashScope text-embedding-v3/v4 models
+    if (model.includes('text-embedding-v3') || model.includes('text-embedding-v4')) return true;
+    return false;
+  }
+
+  /**
+   * Get provider-specific max batch size
+   */
+  private getProviderMaxBatchSize(): number {
+    const provider = this.getEffectiveProvider();
+    switch (provider) {
+      case 'dashscope':
+        return 10;  // DashScope limit: max 10 texts per request
+      case 'ollama':
+      case 'ollama-openai':
+        return 50;  // Ollama is local, can handle larger batches
+      case 'openai':
+      default:
+        return 2048; // OpenAI supports up to 2048
+    }
   }
 
   /**
@@ -808,8 +847,9 @@ export class EmbeddingService {
       throw error;
     }
 
-    // Adaptive batch size - start with configured size, reduce on 413 errors
-    let currentBatchSize = this.config.maxBatchSize;
+    // Adaptive batch size - start with provider-specific limit, reduce on errors
+    const providerMaxBatch = this.getProviderMaxBatchSize();
+    let currentBatchSize = Math.min(this.config.maxBatchSize, providerMaxBatch);
     let itemIndex = 0;
 
     while (itemIndex < items.length) {
@@ -900,7 +940,7 @@ export class EmbeddingService {
    */
   private detectErrorType(error: any): { type: EmbeddingErrorType; retryAfterMs?: number } {
     const errorMsg = String(error.message || error).toLowerCase();
-    const statusCode = error.status || error.statusCode;
+    const statusCode = error.status || error.statusCode || error.xmlhttp?.status;
 
     // Network errors - check error message patterns
     const networkErrorPatterns = [
@@ -959,6 +999,20 @@ export class EmbeddingService {
    * @throws {EmbeddingAPIError} When API call fails after all retries
    */
   private async callEmbeddingAPI(texts: string[]): Promise<number[][]> {
+    // Validate and clean input texts
+    const cleanTexts = texts.map(t => t.trim()).filter(t => t.length > 0);
+    if (cleanTexts.length === 0) {
+      throw new EmbeddingAPIError(
+        'No valid texts to embed (all empty after trimming)',
+        'invalid_request',
+        { retryable: false }
+      );
+    }
+    if (cleanTexts.length !== texts.length) {
+      ztoolkit.log(`[EmbeddingService] Filtered ${texts.length - cleanTexts.length} empty texts, ${cleanTexts.length} remaining`, 'warn');
+    }
+    texts = cleanTexts;
+
     const provider = this.getEffectiveProvider();
     const url = this.getEmbeddingEndpoint();
 
@@ -989,8 +1043,8 @@ export class EmbeddingService {
         input: texts
       };
 
-      // Add dimensions if supported (OpenAI text-embedding-3-* models support this)
-      if (this.config.dimensions && this.config.model.includes('text-embedding-3')) {
+      // Add dimensions if supported by the model
+      if (this.config.dimensions && this.supportsCustomDimensions()) {
         requestBody.dimensions = this.config.dimensions;
       }
     }
@@ -1106,7 +1160,10 @@ export class EmbeddingService {
         // Log raw error details for debugging
         let responseBody = '';
         try {
-          if (error.responseText) {
+          // Zotero.HTTP errors have xmlhttp property with the full XMLHttpRequest object
+          if (error.xmlhttp?.responseText) {
+            responseBody = error.xmlhttp.responseText.substring(0, 1000);
+          } else if (error.responseText) {
             responseBody = error.responseText.substring(0, 1000);
           } else if (error.response) {
             responseBody = typeof error.response === 'string'
@@ -1117,9 +1174,11 @@ export class EmbeddingService {
           responseBody = '[Unable to parse response body]';
         }
 
+        const statusCode = error.status || error.statusCode || error.xmlhttp?.status;
+
         ztoolkit.log(`[EmbeddingService] Raw error details:`, 'error');
         ztoolkit.log(`[EmbeddingService]   - message: ${error.message}`, 'error');
-        ztoolkit.log(`[EmbeddingService]   - status: ${error.status || error.statusCode}`, 'error');
+        ztoolkit.log(`[EmbeddingService]   - status: ${statusCode}`, 'error');
         ztoolkit.log(`[EmbeddingService]   - name: ${error.name}`, 'error');
         if (responseBody) {
           ztoolkit.log(`[EmbeddingService]   - responseBody: ${responseBody}`, 'error');
@@ -1131,7 +1190,6 @@ export class EmbeddingService {
         } else {
           // Detect error type and create EmbeddingAPIError
           const { type, retryAfterMs } = this.detectErrorType(error);
-          const statusCode = error.status || error.statusCode;
 
           // Try to extract error details from response body
           let errorDetails = '';
