@@ -24,7 +24,16 @@ codex-cli-instructions =
     ──────────────────────────────────────────────────────────
        1. Open ~/.codex/config.toml
        2. Add the generated TOML snippet under [mcp_servers]
-       3. Save and restart Codex CLI session
+       3. Keep the headers block:
+          [mcp_servers."zotero-mcp".headers]
+          "Content-Type" = "application/json"
+       4. Save and restart Codex CLI session
+
+    ▶ Method 3: Unified config with Claude Code / cc-switch
+    ──────────────────────────────────────────────────────────
+       1. Keep the same HTTP endpoint and Content-Type header
+       2. Claude Code style JSON with headers is also compatible
+       3. Use one shared zotero-mcp server definition across clients
 
     ▶ Verification
     ──────────────────────────────────────────────────────────

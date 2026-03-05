@@ -26,7 +26,10 @@ export class ClientConfigGenerator {
         mcp_servers: {
           [serverName]: {
             type: "http",
-            url: `http://127.0.0.1:${port}/mcp`
+            url: `http://127.0.0.1:${port}/mcp`,
+            headers: {
+              "Content-Type": "application/json"
+            }
           }
         }
       }),
@@ -34,7 +37,10 @@ export class ClientConfigGenerator {
         const safeServerName = ClientConfigGenerator.escapeTomlBasicString(serverName);
         return `[mcp_servers."${safeServerName}"]
 type = "http"
-url = "http://127.0.0.1:${port}/mcp"`;
+url = "http://127.0.0.1:${port}/mcp"
+
+[mcp_servers."${safeServerName}".headers]
+"Content-Type" = "application/json"`;
       },
       configLanguage: "toml",
       getInstructions: () => getString("codex-cli-instructions").split("\n").filter(s => s.trim())
