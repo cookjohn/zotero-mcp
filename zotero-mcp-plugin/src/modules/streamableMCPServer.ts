@@ -1862,7 +1862,7 @@ export class StreamableMCPServer {
       ],
       transport: {
         type: "streamable-http",
-        keepAliveSupported: true,
+        keepAliveSupported: false,
         maxConnections: 100
       }
     };

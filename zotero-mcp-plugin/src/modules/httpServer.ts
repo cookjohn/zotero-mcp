@@ -211,9 +211,10 @@ export class HttpServer {
    * Determine if connection should be kept alive based on request
    */
   private shouldKeepAlive(requestText: string, path: string): boolean {
-    // Keep alive for MCP endpoints
+    // Current listener lifecycle handles one request per socket and closes
+    // streams in finally. Do not advertise keep-alive for MCP endpoints.
     if (path === "/mcp" || path.startsWith("/mcp/")) {
-      return true;
+      return false;
     }
     
     // Check for Connection header in request
@@ -447,7 +448,21 @@ export class HttpServer {
           if (method === "POST") {
             const bodyStart = requestText.indexOf("\r\n\r\n");
             if (bodyStart !== -1) {
-              requestBody = requestText.substring(bodyStart + 4);
+              const rawBody = requestText.substring(bodyStart + 4);
+
+              // Only consume the current request body. Extra bytes may belong to
+              // a pipelined next request on the same socket.
+              if (contentLength > 0) {
+                requestBody = rawBody.substring(0, contentLength);
+                if (rawBody.length > contentLength) {
+                  ztoolkit.log(
+                    `[HttpServer] Detected trailing bytes after request body (${rawBody.length - contentLength} bytes), ignoring extra data for this request`,
+                    "warn",
+                  );
+                }
+              } else {
+                requestBody = rawBody;
+              }
             }
           }
 
