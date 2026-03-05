@@ -481,9 +481,10 @@ export class StreamableMCPServer {
         };
       }
 
+      const status = this.getHttpStatusForResponse(response);
       return {
-        status: 200,
-        statusText: "OK",
+        status,
+        statusText: status === 400 ? "Bad Request" : "OK",
         headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify(response)
       };
@@ -612,6 +613,19 @@ export class StreamableMCPServer {
   private handlePing(request: MCPRequest): MCPResponse {
     // Standard MCP ping response - just return empty result
     return this.createResponse(request.id ?? null, {});
+  }
+
+  private getHttpStatusForResponse(response: MCPResponse): number {
+    if (!response.error) {
+      return 200;
+    }
+
+    // Align transport status for structural request errors.
+    if (response.error.code === -32600 || response.error.code === -32700) {
+      return 400;
+    }
+
+    return 200;
   }
 
 

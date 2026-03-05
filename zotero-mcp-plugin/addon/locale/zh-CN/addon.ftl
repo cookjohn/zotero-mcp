@@ -11,6 +11,34 @@ tabpanel-lib-tab-label = 库标签
 tabpanel-reader-tab-label = 阅读器标签
 
 # 客户端配置说明
+codex-cli-instructions =
+    ══════════════════════════════════════════════════════════
+      Codex CLI MCP 配置指南
+    ══════════════════════════════════════════════════════════
+
+    ▶ 方法 1：CLI 命令（推荐）
+    ──────────────────────────────────────────────────────────
+       codex mcp add zotero-mcp http://127.0.0.1:23120/mcp -t http
+
+    ▶ 方法 2：TOML 配置文件
+    ──────────────────────────────────────────────────────────
+       1. 打开 ~/.codex/config.toml
+       2. 将生成的 TOML 片段添加到 [mcp_servers] 下
+       3. 保存后重启 Codex CLI 会话
+
+    ▶ 验证
+    ──────────────────────────────────────────────────────────
+       1. 使用 `codex mcp list` 确认服务已注册
+       2. 执行一次会调用 tools/list 或 Zotero 工具的请求
+
+    ▶ 前提条件
+    ──────────────────────────────────────────────────────────
+       ✓ Zotero 正在运行
+       ✓ MCP 插件服务已启用
+       ✓ 127.0.0.1 端点可访问
+
+    ══════════════════════════════════════════════════════════
+
 claude-desktop-instructions =
     ══════════════════════════════════════════════════════════
       Claude Desktop MCP 配置指南
@@ -242,7 +270,7 @@ config-guide-server-name = - **服务器名称**: {$serverName}
 config-guide-server-port = - **端口**: {$port}
 config-guide-server-endpoint = - **端点**: http://localhost:{$port}/mcp
 
-config-guide-json-header = ## 配置 JSON
+config-guide-json-header = ## 配置片段
 config-guide-steps-header = ## 配置步骤
 config-guide-tools-header = ## 可用工具
 config-guide-tools-list = 

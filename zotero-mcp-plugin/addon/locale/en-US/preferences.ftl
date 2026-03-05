@@ -46,6 +46,7 @@ pref-config-output-label = Generated Configuration:
 pref-config-output-placeholder = Click Generate Config button to generate client configuration...
 pref-config-guide-title = Configuration Guide
 pref-config-guide-placeholder = Select client type and generate configuration to display detailed setup guide here...
+pref-client-codex-cli = Codex CLI
 pref-client-custom-http = Custom HTTP Client
 
 pref-embedding-title = Semantic Search (Embedding API)

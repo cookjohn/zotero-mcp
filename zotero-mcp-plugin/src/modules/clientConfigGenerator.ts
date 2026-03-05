@@ -11,11 +11,34 @@ export interface ClientConfig {
   displayName: string;
   description: string;
   configTemplate: (port: number, serverName?: string) => any;
+  renderConfig?: (port: number, serverName?: string) => string;
+  configLanguage?: string;
   getInstructions?: (port?: number) => string[];
 }
 
 export class ClientConfigGenerator {
   private static readonly CLIENT_CONFIGS: ClientConfig[] = [
+    {
+      name: "codex",
+      displayName: "Codex CLI",
+      description: "OpenAI Codex command line interface",
+      configTemplate: (port: number, serverName = "zotero-mcp") => ({
+        mcp_servers: {
+          [serverName]: {
+            type: "http",
+            url: `http://127.0.0.1:${port}/mcp`
+          }
+        }
+      }),
+      renderConfig: (port: number, serverName = "zotero-mcp") => {
+        const safeServerName = ClientConfigGenerator.escapeTomlBasicString(serverName);
+        return `[mcp_servers."${safeServerName}"]
+type = "http"
+url = "http://127.0.0.1:${port}/mcp"`;
+      },
+      configLanguage: "toml",
+      getInstructions: () => getString("codex-cli-instructions").split("\n").filter(s => s.trim())
+    },
     {
       name: "claude-code",
       displayName: "Claude Code",
@@ -305,6 +328,10 @@ export class ClientConfigGenerator {
       throw new Error(`Unsupported client: ${clientName}`);
     }
 
+    if (client.renderConfig) {
+      return client.renderConfig(port, serverName || "zotero-mcp");
+    }
+
     const config = client.configTemplate(port, serverName || "zotero-mcp");
     return JSON.stringify(config, null, 2);
   }
@@ -323,6 +350,7 @@ export class ClientConfigGenerator {
     const config = this.generateConfig(clientName, port, serverName);
     const instructions = this.getInstructions(clientName, port);
     const actualServerName = serverName || "zotero-mcp";
+    const codeLanguage = client.configLanguage || "json";
 
     return `${getString("config-guide-header", { args: { clientName: client.displayName } })}
 
@@ -332,7 +360,7 @@ ${getString("config-guide-server-port", { args: { port: port.toString() } })}
 ${getString("config-guide-server-endpoint", { args: { port: port.toString() } })}
 
 ${getString("config-guide-json-header")}
-\`\`\`json
+\`\`\`${codeLanguage}
 ${config}
 \`\`\`
 
@@ -347,6 +375,10 @@ ${getString("config-guide-troubleshooting-list")}
 
 ${getString("config-guide-generated-time", { args: { time: new Date().toLocaleString() } })}
 `;
+  }
+
+  private static escapeTomlBasicString(value: string): string {
+    return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   }
 
   static async copyToClipboard(text: string): Promise<boolean> {
