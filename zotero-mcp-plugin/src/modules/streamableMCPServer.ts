@@ -17,7 +17,7 @@ import { getSemanticSearchService, SemanticSearchService } from './semantic';
 
 export interface MCPRequest {
   jsonrpc: '2.0';
-  id: string | number;
+  id?: string | number | null;
   method: string;
   params?: any;
 }
@@ -371,7 +371,7 @@ function getToolSpecificGuidance(toolName: string): any {
 
 export interface MCPResponse {
   jsonrpc: '2.0';
-  id: string | number;
+  id: string | number | null;
   result?: any;
   error?: {
     code: number;
@@ -412,15 +412,79 @@ export class StreamableMCPServer {
    * Handle incoming MCP requests and return HTTP response
    */
   async handleMCPRequest(requestBody: string): Promise<{ status: number; statusText: string; headers: any; body: string }> {
+    let parsedRequest: unknown;
+
     try {
-      const request = JSON.parse(requestBody) as MCPRequest;
+      parsedRequest = JSON.parse(requestBody);
+    } catch (error) {
+      ztoolkit.log(`[StreamableMCP] Parse error: ${error}`);
+
+      const errorResponse: MCPResponse = {
+        jsonrpc: '2.0',
+        id: null,
+        error: {
+          code: -32700,
+          message: 'Parse error'
+        }
+      };
+
+      return {
+        status: 400,
+        statusText: "Bad Request",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify(errorResponse)
+      };
+    }
+
+    try {
+      if (Array.isArray(parsedRequest)) {
+        const batchError = this.createError(null, -32600, 'Invalid Request: batch requests are not supported');
+        return {
+          status: 400,
+          statusText: "Bad Request",
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify(batchError)
+        };
+      }
+
+      if (!parsedRequest || typeof parsedRequest !== 'object') {
+        const invalidRequest = this.createError(null, -32600, 'Invalid Request');
+        return {
+          status: 400,
+          statusText: "Bad Request",
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify(invalidRequest)
+        };
+      }
+
+      const request = parsedRequest as MCPRequest;
+      if (typeof request.method !== 'string' || !request.method.trim()) {
+        const invalidRequest = this.createError(null, -32600, 'Invalid Request: method is required');
+        return {
+          status: 400,
+          statusText: "Bad Request",
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify(invalidRequest)
+        };
+      }
+
       ztoolkit.log(`[StreamableMCP] Received: ${request.method}`);
 
       const response = await this.processRequest(request);
-      
+
+      if (response === null) {
+        return {
+          status: 202,
+          statusText: "Accepted",
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: ''
+        };
+      }
+
+      const status = this.getHttpStatusForResponse(response);
       return {
-        status: 200,
-        statusText: "OK",
+        status,
+        statusText: status === 400 ? "Bad Request" : "OK",
         headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify(response)
       };
@@ -430,10 +494,10 @@ export class StreamableMCPServer {
       
       const errorResponse: MCPResponse = {
         jsonrpc: '2.0',
-        id: 'unknown',
+        id: null,
         error: {
-          code: -32700,
-          message: 'Parse error'
+          code: -32603,
+          message: 'Internal error'
         }
       };
       
@@ -449,16 +513,35 @@ export class StreamableMCPServer {
   /**
    * Process individual MCP requests
    */
-  private async processRequest(request: MCPRequest): Promise<MCPResponse> {
+  private async processRequest(request: MCPRequest): Promise<MCPResponse | null> {
+    const isNotification = this.isNotificationRequest(request);
+
+    if (isNotification) {
+      switch (request.method) {
+        case 'initialized':
+        case 'notifications/initialized':
+          this.isInitialized = true;
+          ztoolkit.log('[StreamableMCP] Client initialized (notification)');
+          return null;
+        default:
+          if (request.method.startsWith('notifications/')) {
+            ztoolkit.log(`[StreamableMCP] Ignoring unsupported notification: ${request.method}`);
+            return null;
+          }
+          return this.createError(null, -32600, `Invalid Request: id is required for method ${request.method}`);
+      }
+    }
+
     try {
       switch (request.method) {
         case 'initialize':
           return this.handleInitialize(request);
 
         case 'initialized':
+        case 'notifications/initialized':
           this.isInitialized = true;
           ztoolkit.log('[StreamableMCP] Client initialized');
-          return this.createResponse(request.id, { success: true });
+          return this.createResponse(request.id ?? null, { success: true });
 
         case 'tools/list':
           return this.handleToolsList(request);
@@ -476,11 +559,11 @@ export class StreamableMCPServer {
           return this.handlePing(request);
 
         default:
-          return this.createError(request.id, -32601, `Method not found: ${request.method}`);
+          return this.createError(request.id ?? null, -32601, `Method not found: ${request.method}`);
       }
     } catch (error) {
       ztoolkit.log(`[StreamableMCP] Error processing ${request.method}: ${error}`);
-      return this.createError(request.id, -32603, 'Internal error');
+      return this.createError(request.id ?? null, -32603, 'Internal error');
     }
   }
 
@@ -499,7 +582,7 @@ export class StreamableMCPServer {
     ztoolkit.log(`[StreamableMCP] Client initialized with session: ${sessionId}, client: ${clientInfo.name || 'unknown'}`);
     
     // Create standard MCP initialize response (no custom fields)
-    return this.createResponse(request.id, {
+    return this.createResponse(request.id ?? null, {
       protocolVersion: '2024-11-05',
       capabilities: {
         tools: {
@@ -519,17 +602,30 @@ export class StreamableMCPServer {
 
   private handleResourcesList(request: MCPRequest): MCPResponse {
     // Return empty resources list - we don't currently support resources
-    return this.createResponse(request.id, { resources: [] });
+    return this.createResponse(request.id ?? null, { resources: [] });
   }
 
   private handlePromptsList(request: MCPRequest): MCPResponse {
     // Return empty prompts list - we don't currently support prompts
-    return this.createResponse(request.id, { prompts: [] });
+    return this.createResponse(request.id ?? null, { prompts: [] });
   }
 
   private handlePing(request: MCPRequest): MCPResponse {
     // Standard MCP ping response - just return empty result
-    return this.createResponse(request.id, {});
+    return this.createResponse(request.id ?? null, {});
+  }
+
+  private getHttpStatusForResponse(response: MCPResponse): number {
+    if (!response.error) {
+      return 200;
+    }
+
+    // Align transport status for structural request errors.
+    if (response.error.code === -32600 || response.error.code === -32700) {
+      return 400;
+    }
+
+    return 200;
   }
 
 
@@ -951,7 +1047,7 @@ export class StreamableMCPServer {
       }
     ];
 
-    return this.createResponse(request.id, { tools });
+    return this.createResponse(request.id ?? null, { tools });
   }
 
   private async handleToolCall(request: MCPRequest): Promise<MCPResponse> {
@@ -1068,7 +1164,7 @@ export class StreamableMCPServer {
       }
 
       // Wrap result in MCP content format with proper text type
-      return this.createResponse(request.id, { 
+      return this.createResponse(request.id ?? null, { 
         content: [
           {
             type: "text",
@@ -1079,7 +1175,7 @@ export class StreamableMCPServer {
 
     } catch (error) {
       ztoolkit.log(`[StreamableMCP] Tool call error for ${name}: ${error}`);
-      return this.createError(request.id, -32603, 
+      return this.createError(request.id ?? null, -32603, 
         `Error executing ${name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -1707,7 +1803,7 @@ export class StreamableMCPServer {
     return parts.join('\n');
   }
 
-  private createResponse(id: string | number, result: any): MCPResponse {
+  private createResponse(id: string | number | null, result: any): MCPResponse {
     return {
       jsonrpc: '2.0',
       id,
@@ -1715,12 +1811,16 @@ export class StreamableMCPServer {
     };
   }
 
-  private createError(id: string | number, code: number, message: string, data?: any): MCPResponse {
+  private createError(id: string | number | null, code: number, message: string, data?: any): MCPResponse {
     return {
       jsonrpc: '2.0',
       id,
       error: { code, message, data },
     };
+  }
+
+  private isNotificationRequest(request: MCPRequest): boolean {
+    return !Object.prototype.hasOwnProperty.call(request, 'id') || request.id === null || request.id === undefined;
   }
 
   /**
@@ -1734,6 +1834,7 @@ export class StreamableMCPServer {
       supportedMethods: [
         'initialize',
         'initialized', 
+        'notifications/initialized',
         'tools/list',
         'tools/call',
         'resources/list',
@@ -1761,7 +1862,7 @@ export class StreamableMCPServer {
       ],
       transport: {
         type: "streamable-http",
-        keepAliveSupported: true,
+        keepAliveSupported: false,
         maxConnections: 100
       }
     };

@@ -149,6 +149,97 @@ export async function testMCPIntegration(): Promise<{
     }
   }, tests);
 
+  // Test 6: notifications/initialized (no id) should return 202 with empty body
+  await runTest('Initialized Notification (no id)', async () => {
+    const { StreamableMCPServer } = await import('./streamableMCPServer');
+    const mcpServer = new StreamableMCPServer();
+
+    const response = await mcpServer.handleMCPRequest(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'notifications/initialized',
+      params: {}
+    }));
+
+    if (response.status === 202 && response.body === '') {
+      return { success: true, response };
+    } else {
+      throw new Error(`Expected 202 with empty body, got status=${response.status}, bodyLength=${response.body.length}`);
+    }
+  }, tests);
+
+  // Test 7: Legacy initialized request with id remains compatible
+  await runTest('Legacy initialized with id', async () => {
+    const { StreamableMCPServer } = await import('./streamableMCPServer');
+    const mcpServer = new StreamableMCPServer();
+
+    const response = await mcpServer.handleMCPRequest(JSON.stringify({
+      jsonrpc: '2.0',
+      id: 'test-7',
+      method: 'initialized',
+      params: {}
+    }));
+
+    if (response.status !== 200) {
+      throw new Error(`Expected status 200, got ${response.status}`);
+    }
+
+    const payload = JSON.parse(response.body);
+    if (payload.result?.success === true) {
+      return { success: true, response: payload };
+    } else {
+      throw new Error('Legacy initialized response missing success=true');
+    }
+  }, tests);
+
+  // Test 8: Request method without id should return invalid request
+  await runTest('Invalid Request - Missing id', async () => {
+    const { StreamableMCPServer } = await import('./streamableMCPServer');
+    const mcpServer = new StreamableMCPServer();
+
+    const response = await mcpServer.handleMCPRequest(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'tools/list',
+      params: {}
+    }));
+
+    if (response.status !== 400) {
+      throw new Error(`Expected status 400, got ${response.status}`);
+    }
+
+    const payload = JSON.parse(response.body);
+    if (payload.error?.code === -32600 && payload.id === null) {
+      return { success: true, response: payload };
+    } else {
+      throw new Error(`Expected -32600 with id=null, got: ${response.body}`);
+    }
+  }, tests);
+
+  // Test 9: Batch requests should be rejected
+  await runTest('Invalid Request - Batch not supported', async () => {
+    const { StreamableMCPServer } = await import('./streamableMCPServer');
+    const mcpServer = new StreamableMCPServer();
+
+    const response = await mcpServer.handleMCPRequest(JSON.stringify([
+      {
+        jsonrpc: '2.0',
+        id: 'test-9',
+        method: 'ping',
+        params: {}
+      }
+    ]));
+
+    if (response.status !== 400) {
+      throw new Error(`Expected status 400, got ${response.status}`);
+    }
+
+    const payload = JSON.parse(response.body);
+    if (payload.error?.code === -32600 && payload.id === null) {
+      return { success: true, response: payload };
+    } else {
+      throw new Error(`Expected batch rejection -32600 with id=null, got: ${response.body}`);
+    }
+  }, tests);
+
   const endTime = Date.now();
   const duration = endTime - startTime;
 
