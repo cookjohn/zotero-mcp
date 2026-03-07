@@ -15,6 +15,15 @@ class ServerPreferences {
   private monitorInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
+    // 进程诊断
+    try {
+      const runtime = Cc["@mozilla.org/xre/app-info;1"]?.getService(Ci.nsIXULRuntime) as any;
+      const pid = runtime?.processID;
+      const ptype = runtime?.processType;
+      if (typeof ztoolkit !== 'undefined') {
+        ztoolkit.log(`[ServerPreferences] Constructor called - PID: ${pid}, processType: ${ptype}`);
+      }
+    } catch (e) { /* ignore */ }
     this.initializeDefaults();
     this.register();
   }

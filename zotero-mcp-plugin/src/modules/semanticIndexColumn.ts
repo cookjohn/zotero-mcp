@@ -11,6 +11,7 @@ import { config } from "../../package.json";
 let indexedItemsCache: Set<string> | null = null;
 let cacheTimestamp: number = 0;
 const CACHE_TTL_MS = 5000; // 5 seconds cache TTL
+let isRefreshing: boolean = false; // 防止并发刷新
 
 // Registered column data key (false means registration failed)
 let registeredDataKey: string | false | null = null;
@@ -107,8 +108,12 @@ function getItemIndexStatus(itemKey: string): string {
 
 /**
  * Refresh the indexed items cache asynchronously
+ * Uses isRefreshing flag to prevent concurrent refreshes (race condition when
+ * Zotero calls dataProvider for each item in the tree simultaneously)
  */
 async function refreshCacheAsync(): Promise<void> {
+  if (isRefreshing) return; // 防止并发刷新风暴
+  isRefreshing = true;
   try {
     const { getVectorStore } = require("./semantic/vectorStore");
     const vectorStore = getVectorStore();
@@ -118,7 +123,8 @@ async function refreshCacheAsync(): Promise<void> {
     ztoolkit.log(`[SemanticColumn] Cache refreshed: ${indexedItemsCache?.size || 0} indexed items`);
   } catch (error) {
     ztoolkit.log(`[SemanticColumn] Failed to refresh cache: ${error}`, 'warn');
-    // Keep using stale cache if available
+  } finally {
+    isRefreshing = false;
   }
 }
 

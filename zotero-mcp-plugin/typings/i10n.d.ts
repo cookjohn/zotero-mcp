@@ -125,6 +125,8 @@ export type FluentMessageId =
   | 'pref-rate-limit-zero-hint'
   | 'pref-search-limit-label'
   | 'pref-semantic-auto-update'
+  | 'pref-semantic-disabled-hint'
+  | 'pref-semantic-enable'
   | 'pref-semantic-index-abort-button'
   | 'pref-semantic-index-aborted'
   | 'pref-semantic-index-build-button'

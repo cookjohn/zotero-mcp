@@ -59,23 +59,28 @@ export class HttpServer {
   }
 
   public start(port: number) {
+    // 进程诊断
+    try {
+      const pid = (Cc["@mozilla.org/xre/app-info;1"]?.getService(Ci.nsIXULRuntime) as any)?.processID;
+      ztoolkit.log(`[HttpServer] start() called - port: ${port}, PID: ${pid}, isRunning: ${this.isRunning}`);
+    } catch (e) {
+      ztoolkit.log(`[HttpServer] start() called - port: ${port}, isRunning: ${this.isRunning}`);
+    }
+
     if (this.isRunning) {
-      Zotero.debug("[HttpServer] Server is already running.");
+      ztoolkit.log("[HttpServer] Server is already running, skipping start");
       return;
     }
 
-    // 验证端口参数
     if (!port || isNaN(port) || port < 1 || port > 65535) {
       const errorMsg = `[HttpServer] Invalid port number: ${port}. Port must be between 1 and 65535.`;
-      Zotero.debug(errorMsg);
+      ztoolkit.log(errorMsg, 'error');
       throw new Error(errorMsg);
     }
 
     try {
       this.port = port;
-      Zotero.debug(
-        `[HttpServer] Attempting to start server on port ${port}...`,
-      );
+      ztoolkit.log(`[HttpServer] Attempting to start server on port ${port}...`);
 
       this.serverSocket = Cc[
         "@mozilla.org/network/server-socket;1"
@@ -118,40 +123,46 @@ export class HttpServer {
   }
 
   public stop() {
+    ztoolkit.log(`[HttpServer] stop() called - isRunning: ${this.isRunning}, hasSocket: ${!!this.serverSocket}`);
+
     if (!this.isRunning || !this.serverSocket) {
-      Zotero.debug(
-        "[HttpServer] Server is not running or socket is null, nothing to stop.",
-      );
+      ztoolkit.log("[HttpServer] Server is not running, nothing to stop");
       return;
     }
 
-    // Close all active transports first
-    ztoolkit.log(`[HttpServer] Closing ${this.activeTransports.size} active connections...`);
+    // Stop session cleanup timer FIRST to prevent new cleanup cycles
+    ztoolkit.log("[HttpServer] Stopping session cleanup timer...");
+    this.stopSessionCleanup();
+
+    // Close all active transports
+    ztoolkit.log(`[HttpServer] Closing ${this.activeTransports.size} active transport connections...`);
     for (const transport of this.activeTransports) {
       try {
-        transport.close(0); // 0 = normal close
+        transport.close(0);
       } catch (e) {
         // Ignore errors when closing individual transports
       }
     }
     this.activeTransports.clear();
+    ztoolkit.log("[HttpServer] All transports closed");
 
+    // Close server socket
     try {
+      ztoolkit.log("[HttpServer] Closing server socket...");
       this.serverSocket.close();
       this.isRunning = false;
-      Zotero.debug("[HttpServer] HTTP server stopped successfully.");
+      ztoolkit.log("[HttpServer] Server socket closed successfully");
     } catch (e) {
-      Zotero.debug(`[HttpServer] Error stopping server: ${e}`);
+      ztoolkit.log(`[HttpServer] Error closing server socket: ${e}`, 'error');
+      this.isRunning = false;
     }
-
-    // Stop session cleanup timer
-    this.stopSessionCleanup();
 
     // Clear active sessions
     this.activeSessions.clear();
 
     // Clean up MCP server
     this.cleanupMCPServer();
+    ztoolkit.log("[HttpServer] stop() complete");
   }
 
   private cleanupMCPServer(): void {
@@ -701,7 +712,8 @@ export class HttpServer {
         }
       }
     },
-    onStopListening: () => {
+    onStopListening: (socket: any, status: any) => {
+      ztoolkit.log(`[HttpServer] onStopListening called, status: ${status}`);
       this.isRunning = false;
     },
   };
@@ -1014,5 +1026,11 @@ private getCapabilities() {
   };
 }
 }
+
+// 进程诊断 - 记录 HttpServer 单例创建时机
+try {
+  const runtime = Cc["@mozilla.org/xre/app-info;1"]?.getService(Ci.nsIXULRuntime) as any;
+  ztoolkit.log(`[HttpServer] Singleton created - PID: ${runtime?.processID}, processType: ${runtime?.processType}`);
+} catch (e) { /* ignore */ }
 
 export const httpServer = new HttpServer();

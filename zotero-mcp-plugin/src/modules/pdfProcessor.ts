@@ -164,7 +164,8 @@ export class PDFProcessor {
 
       return response.text;
     } catch (error) {
-      this.ztoolkit.log("[PDFProcessor] PDF文本提取失败:", error, "error");
+      const errMsg = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      this.ztoolkit.log(`[PDFProcessor] PDF文本提取失败: ${errMsg}`, "error");
       throw error;
     }
   }

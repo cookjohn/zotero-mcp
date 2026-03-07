@@ -49,6 +49,10 @@ pref-config-guide-placeholder = Select client type and generate configuration to
 pref-client-codex-cli = Codex CLI
 pref-client-custom-http = Custom HTTP Client
 
+pref-semantic-enable =
+    .label = Enable semantic search
+pref-semantic-disabled-hint = Semantic search is disabled. Enable it above to use embedding-based search features.
+
 pref-embedding-title = Semantic Search (Embedding API)
 pref-embedding-description = Configure the embedding API for semantic search. Supports OpenAI-compatible APIs.
 pref-embedding-provider-label = Provider Preset:

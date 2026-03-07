@@ -680,7 +680,9 @@ export class SemanticSearchService {
     // Extract content (PDF extraction happens here)
     content = await this.extractItemContent(item, sharedProcessor);
     if (!content.trim()) {
-      ztoolkit.log(`[SemanticSearch] indexItem() skip: no content for ${item.key}`);
+      // Mark item in index_status even with no content, to prevent repeated rebuild attempts
+      await this.vectorStore.updateIndexStatus(item.key, 0, 'empty', itemModified, attachmentModified);
+      ztoolkit.log(`[SemanticSearch] indexItem() skip: no content for ${item.key}, marked in index_status to avoid retry loop`);
       return;
     }
     ztoolkit.log(`[SemanticSearch] indexItem() extracted content: ${content.length} chars`);

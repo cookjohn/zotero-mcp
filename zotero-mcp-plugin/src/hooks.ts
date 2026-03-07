@@ -7,7 +7,8 @@ import { createZToolkit } from "./utils/ztoolkit";
 import { MCPSettingsService } from "./modules/mcpSettingsService";
 import { registerSemanticIndexColumn, unregisterSemanticIndexColumn, refreshSemanticColumn } from "./modules/semanticIndexColumn";
 
-// Preference key for auto-update setting
+// Preference keys for semantic search settings
+const PREF_SEMANTIC_ENABLED = 'extensions.zotero.zotero-mcp-plugin.semantic.enabled';
 const PREF_SEMANTIC_AUTO_UPDATE = 'extensions.zotero.zotero-mcp-plugin.semantic.autoUpdate';
 
 // Store notifier ID for cleanup
@@ -65,6 +66,10 @@ function clearAllPendingTimeouts(): void {
 async function processPendingAutoUpdates() {
   if (isShuttingDown) return;
   if (pendingAutoUpdateKeys.size === 0) return;
+
+  // Check if semantic search is enabled
+  const semanticEnabled = Zotero.Prefs.get(PREF_SEMANTIC_ENABLED, true);
+  if (semanticEnabled === false) return;
 
   const keysToUpdate = Array.from(pendingAutoUpdateKeys);
   pendingAutoUpdateKeys.clear();
@@ -185,7 +190,9 @@ function registerItemNotifier() {
       // Only process item events
       if (type !== 'item') return;
 
-      // Check if auto-update is enabled
+      // Check if semantic search and auto-update are enabled
+      const semanticOn = Zotero.Prefs.get(PREF_SEMANTIC_ENABLED, true);
+      if (semanticOn === false) return;
       const enabled = Zotero.Prefs.get(PREF_SEMANTIC_AUTO_UPDATE, true);
       if (!enabled) return;
 
@@ -282,6 +289,13 @@ async function triggerAutoIndexBuild() {
       return;
     }
 
+    // Check if semantic search is enabled
+    const semanticEnabled = Zotero.Prefs.get(PREF_SEMANTIC_ENABLED, true);
+    if (semanticEnabled === false) {
+      ztoolkit.log("[MCP Plugin] Semantic search disabled, skipping auto index check");
+      return;
+    }
+
     ztoolkit.log("[MCP Plugin] Periodic auto-index check...");
 
     const { getSemanticSearchService } = await import("./modules/semantic");
@@ -355,136 +369,83 @@ function unregisterItemNotifier() {
 }
 
 async function onStartup() {
+  // 进程诊断 - 检测当前运行在哪个进程中
+  try {
+    const runtime = (Cc as any)["@mozilla.org/xre/app-info;1"]?.getService((Ci as any).nsIXULRuntime);
+    const processType = runtime?.processType;
+    const processID = runtime?.processID;
+    const processTypeNames: Record<number, string> = { 0: 'PARENT', 2: 'CONTENT', 4: 'GPU', 9: 'UTILITY' };
+    ztoolkit.log(`[MCP Plugin] ======== STARTUP BEGIN ======== PID=${processID}, processType=${processType} (${processTypeNames[processType] || 'UNKNOWN'})`);
+  } catch (e) {
+    ztoolkit.log(`[MCP Plugin] ======== STARTUP BEGIN ======== (process info unavailable: ${e})`);
+  }
+
   await Promise.all([
     Zotero.initializationPromise,
     Zotero.unlockPromise,
     Zotero.uiReadyPromise,
   ]);
 
+  ztoolkit.log("[MCP Plugin] [STARTUP] Zotero initialization promises resolved");
+
   initLocale();
 
   // Initialize MCP settings with defaults
   try {
     MCPSettingsService.initializeDefaults();
-    ztoolkit.log(`===MCP=== [hooks.ts] MCP settings initialized successfully`);
+    ztoolkit.log(`[MCP Plugin] [STARTUP] MCP settings initialized`);
   } catch (error) {
-    ztoolkit.log(`===MCP=== [hooks.ts] Error initializing MCP settings: ${error}`, 'error');
+    ztoolkit.log(`[MCP Plugin] [STARTUP] Error initializing MCP settings: ${error}`, 'error');
   }
 
   // Check if this is first installation and show config prompt
   checkFirstInstallation();
 
-  // 启动HTTP服务器前增加详细诊断
+  // 启动HTTP服务器
   try {
-    ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Starting server initialization...`);
-    
-    // 记录初始化环境信息
-    ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Zotero version: ${Zotero.version || 'unknown'}`);
-    try {
-      ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Platform: ${(globalThis as any).navigator?.platform || 'unknown'}`);
-      ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] User agent: ${(globalThis as any).navigator?.userAgent || 'unknown'}`);
-    } catch (e) {
-      ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Platform info unavailable`);
-    }
-    
-    ztoolkit.log(`===MCP=== [hooks.ts] Attempting to get server preferences...`);
     const port = serverPreferences.getPort();
     const enabled = serverPreferences.isServerEnabled();
+    ztoolkit.log(`[MCP Plugin] [STARTUP] HTTP server config - enabled: ${enabled}, port: ${port}`);
 
-    ztoolkit.log(
-      `===MCP=== [hooks.ts] Port retrieved: ${port} (type: ${typeof port})`,
-    );
-    ztoolkit.log(`===MCP=== [hooks.ts] Server enabled: ${enabled} (type: ${typeof enabled})`);
-    
-    // 额外检查：直接查询底层偏好设置
-    try {
-      const directEnabled = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.mcp.server.enabled", true);
-      const directPort = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.mcp.server.port", true);
-      ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Direct pref check - enabled: ${directEnabled}, port: ${directPort}`);
-      
-      if (enabled !== directEnabled) {
-        ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] WARNING: Enabled state mismatch! serverPreferences: ${enabled}, direct: ${directEnabled}`);
-      }
-    } catch (error) {
-      ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Error in direct preference check: ${error}`, 'error');
-    }
-    
-    // 只在服务器启用时启动服务器，但不影响插件的其他功能
+    addon.data.httpServer = httpServer;
+
     if (enabled === false) {
-      ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Server is disabled - skipping server startup`);
-      ztoolkit.log(`===MCP=== [hooks.ts] Note: Plugin will continue to initialize (settings panel, etc.)`);
-
-      // 尝试检测是否是首次启动后被重置
-      const hasBeenEnabled = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.debug.hasBeenEnabled", false);
-      if (!hasBeenEnabled) {
-        ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] First time setup - server was never enabled before`);
-      } else {
-        ztoolkit.log(`===MCP=== [hooks.ts] [DIAGNOSTIC] Server was previously enabled but is now disabled`);
-      }
-
-      // 保存 httpServer 引用供后续使用（即使未启动）
-      addon.data.httpServer = httpServer;
+      ztoolkit.log(`[MCP Plugin] [STARTUP] HTTP server disabled, skipping`);
     } else {
-      // 服务器已启用，启动服务器
-      // 记录服务器曾经被启用过
-      Zotero.Prefs.set("extensions.zotero.zotero-mcp-plugin.debug.hasBeenEnabled", true, true);
-
       if (!port || isNaN(port)) {
         throw new Error(`Invalid port value: ${port}`);
       }
-
-      ztoolkit.log(
-        `===MCP=== [hooks.ts] Starting HTTP server on port ${port}...`,
-      );
-      httpServer.start(port); // No await, let it run in background
-      addon.data.httpServer = httpServer; // 保存引用以便后续使用
-      ztoolkit.log(
-        `===MCP=== [hooks.ts] HTTP server start initiated on port ${port}`,
-      );
+      ztoolkit.log(`[MCP Plugin] [STARTUP] Starting HTTP server on port ${port}...`);
+      httpServer.start(port);
+      ztoolkit.log(`[MCP Plugin] [STARTUP] HTTP server started on port ${port}`);
     }
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    ztoolkit.log(
-      `===MCP=== [hooks.ts] Failed to start HTTP server: ${err.message}`,
-      "error",
-    );
-    Zotero.debug(
-      `===MCP=== [hooks.ts] Server start error details: ${err.stack}`,
-    );
+    ztoolkit.log(`[MCP Plugin] [STARTUP] Failed to start HTTP server: ${err.message}`, "error");
   }
 
   // 监听偏好设置变化
   serverPreferences.addObserver(async (name) => {
+    if (isShuttingDown) return; // 关闭时不处理偏好变化
     ztoolkit.log(`[MCP Plugin] Preference changed: ${name}`);
 
     if (name === "extensions.zotero.zotero-mcp-plugin.mcp.server.port" || name === "extensions.zotero.zotero-mcp-plugin.mcp.server.enabled") {
       try {
-        // 先停止服务器
         if (httpServer.isServerRunning()) {
-          ztoolkit.log("[MCP Plugin] Stopping HTTP server for restart...");
           httpServer.stop();
-          ztoolkit.log("[MCP Plugin] HTTP server stopped");
+          ztoolkit.log("[MCP Plugin] HTTP server stopped for restart");
         }
 
-        // 如果启用了服务器，重新启动
         if (serverPreferences.isServerEnabled()) {
           const port = serverPreferences.getPort();
-          ztoolkit.log(
-            `[MCP Plugin] Restarting HTTP server on port ${port}...`,
-          );
           httpServer.start(port);
-          ztoolkit.log(
-            `[MCP Plugin] HTTP server restarted successfully on port ${port}`,
-          );
+          ztoolkit.log(`[MCP Plugin] HTTP server restarted on port ${port}`);
         } else {
-          ztoolkit.log("[MCP Plugin] HTTP server disabled by user preference");
+          ztoolkit.log("[MCP Plugin] HTTP server disabled by user");
         }
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
-        ztoolkit.log(
-          `[MCP Plugin] Error handling preference change: ${err.message}`,
-          "error",
-        );
+        ztoolkit.log(`[MCP Plugin] Error handling preference change: ${err.message}`, "error");
       }
     }
   });
@@ -494,13 +455,14 @@ async function onStartup() {
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
   );
+  ztoolkit.log("[MCP Plugin] [STARTUP] Main windows loaded");
 
   // Register item notifier for auto-update semantic index
   registerItemNotifier();
+  ztoolkit.log("[MCP Plugin] [STARTUP] Item notifier registered");
 
-  // Mark initialized as true to confirm plugin loading status
-  // outside of the plugin (e.g. scaffold testing process)
   addon.data.initialized = true;
+  ztoolkit.log("[MCP Plugin] ======== STARTUP COMPLETE ========");
 }
 
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
@@ -531,100 +493,94 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 }
 
 function onShutdown(): void {
-  ztoolkit.log("[MCP Plugin] Shutting down...");
+  ztoolkit.log("[MCP Plugin] ======== SHUTDOWN START ========");
 
   // Set shutdown flag to prevent new async operations
   isShuttingDown = true;
 
   // Clear all pending timeouts immediately
+  ztoolkit.log("[MCP Plugin] [SHUTDOWN 1/7] Clearing pending timeouts...");
   clearAllPendingTimeouts();
+  ztoolkit.log("[MCP Plugin] [SHUTDOWN 1/7] Done");
 
   // 取消注册条目变化监听器
   try {
+    ztoolkit.log("[MCP Plugin] [SHUTDOWN 2/7] Unregistering item notifier...");
     unregisterItemNotifier();
-    ztoolkit.log("[MCP Plugin] Item notifier unregistered during shutdown");
+    ztoolkit.log("[MCP Plugin] [SHUTDOWN 2/7] Done");
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    ztoolkit.log(`[MCP Plugin] Error unregistering item notifier: ${err.message}`, "error");
+    ztoolkit.log(`[MCP Plugin] [SHUTDOWN 2/7] Error: ${err.message}`, "error");
   }
 
   // 注销语义索引状态列
   try {
+    ztoolkit.log("[MCP Plugin] [SHUTDOWN 3/7] Unregistering semantic index column...");
     unregisterSemanticIndexColumn();
-    ztoolkit.log("[MCP Plugin] Semantic index column unregistered during shutdown");
+    ztoolkit.log("[MCP Plugin] [SHUTDOWN 3/7] Done");
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    ztoolkit.log(
-      `[MCP Plugin] Error unregistering semantic index column: ${err.message}`,
-      "error",
-    );
+    ztoolkit.log(`[MCP Plugin] [SHUTDOWN 3/7] Error: ${err.message}`, "error");
   }
 
-  // 停止HTTP服务器
+  // 停止HTTP服务器 - 这是阻止进程退出的最可能原因
   try {
+    ztoolkit.log(`[MCP Plugin] [SHUTDOWN 4/7] Stopping HTTP server (running: ${httpServer.isServerRunning()})...`);
     if (httpServer.isServerRunning()) {
       httpServer.stop();
-      ztoolkit.log("[MCP Plugin] HTTP server stopped during shutdown");
     }
+    ztoolkit.log(`[MCP Plugin] [SHUTDOWN 4/7] Done (running: ${httpServer.isServerRunning()})`);
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    ztoolkit.log(
-      `[MCP Plugin] Error stopping server during shutdown: ${err.message}`,
-      "error",
-    );
+    ztoolkit.log(`[MCP Plugin] [SHUTDOWN 4/7] Error: ${err.message}`, "error");
   }
 
   // 停止语义搜索服务
   try {
-    const { getSemanticSearchService } = require("./modules/semantic");
+    ztoolkit.log("[MCP Plugin] [SHUTDOWN 5/7] Stopping semantic search service...");
+    const { getSemanticSearchService, resetSemanticSearchService } = require("./modules/semantic");
     const semanticService = getSemanticSearchService();
-    // Abort any ongoing indexing
     semanticService.abortIndex();
-    // Destroy the service
     semanticService.destroy();
-    ztoolkit.log("[MCP Plugin] Semantic search service stopped during shutdown");
+    resetSemanticSearchService();
+    ztoolkit.log("[MCP Plugin] [SHUTDOWN 5/7] Done");
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    ztoolkit.log(
-      `[MCP Plugin] Error stopping semantic service during shutdown: ${err.message}`,
-      "error",
-    );
+    ztoolkit.log(`[MCP Plugin] [SHUTDOWN 5/7] Error: ${err.message}`, "error");
   }
 
   // 停止嵌入服务
   try {
+    ztoolkit.log("[MCP Plugin] [SHUTDOWN 6/7] Stopping embedding service...");
     const { getEmbeddingService } = require("./modules/semantic/embeddingService");
     const embeddingService = getEmbeddingService();
     embeddingService.destroy();
-    ztoolkit.log("[MCP Plugin] Embedding service stopped during shutdown");
+    ztoolkit.log("[MCP Plugin] [SHUTDOWN 6/7] Done");
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    ztoolkit.log(
-      `[MCP Plugin] Error stopping embedding service during shutdown: ${err.message}`,
-      "error",
-    );
+    ztoolkit.log(`[MCP Plugin] [SHUTDOWN 6/7] Error: ${err.message}`, "error");
   }
 
   // 关闭向量存储数据库
   try {
-    const { getVectorStore } = require("./modules/semantic/vectorStore");
-    const vectorStore = getVectorStore();
-    vectorStore.close();
-    ztoolkit.log("[MCP Plugin] Vector store closed during shutdown");
+    ztoolkit.log("[MCP Plugin] [SHUTDOWN 7/7] Closing vector store...");
+    const { resetVectorStore } = require("./modules/semantic/vectorStore");
+    resetVectorStore();
+    ztoolkit.log("[MCP Plugin] [SHUTDOWN 7/7] Done");
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    ztoolkit.log(
-      `[MCP Plugin] Error closing vector store during shutdown: ${err.message}`,
-      "error",
-    );
+    ztoolkit.log(`[MCP Plugin] [SHUTDOWN 7/7] Error: ${err.message}`, "error");
   }
 
+  ztoolkit.log("[MCP Plugin] [SHUTDOWN] Unregistering server preferences...");
   serverPreferences.unregister();
+
   ztoolkit.unregisterAll();
-  // Remove addon object
   addon.data.alive = false;
   // @ts-expect-error - Plugin instance is not typed
   delete Zotero[addon.data.config.addonInstance];
+
+  ztoolkit.log("[MCP Plugin] ======== SHUTDOWN COMPLETE ========");
 }
 
 /**

@@ -43,11 +43,13 @@ async function onMainWindowUnload({ window }, reason) {
 }
 
 async function shutdown({ id, version, resourceURI, rootURI }, reason) {
+  // 始终执行清理 - 即使是 APP_SHUTDOWN 也要关闭 HTTP 服务器和定时器
+  // 否则 server socket 会阻止进程退出
+  await Zotero.__addonInstance__?.hooks.onShutdown();
+
   if (reason === APP_SHUTDOWN) {
     return;
   }
-
-  await Zotero.__addonInstance__?.hooks.onShutdown();
 
   if (chromeHandle) {
     chromeHandle.destruct();

@@ -220,6 +220,9 @@ function bindPrefEvents() {
     }
   });
 
+  // ============ Semantic Search Toggle ============
+  bindSemanticEnabledToggle(doc);
+
   // ============ Embedding API Settings ============
   bindEmbeddingSettings(doc);
 
@@ -228,6 +231,54 @@ function bindPrefEvents() {
 
   // ============ Semantic Index Stats ============
   bindSemanticStatsSettings(doc);
+}
+
+const PREF_SEMANTIC_ENABLED = 'extensions.zotero.zotero-mcp-plugin.semantic.enabled';
+
+/**
+ * Bind semantic search enable/disable toggle
+ */
+function bindSemanticEnabledToggle(doc: Document) {
+  const checkbox = doc?.querySelector(
+    `#zotero-prefpane-${config.addonRef}-semantic-enabled`,
+  ) as HTMLInputElement;
+  const settingsContainer = doc?.querySelector('#semantic-settings-container') as HTMLElement;
+  const statsGroupbox = doc?.querySelector('#semantic-stats-groupbox') as HTMLElement;
+
+  if (!checkbox) return;
+
+  function updateSemanticUI(enabled: boolean) {
+    if (settingsContainer) {
+      settingsContainer.style.display = enabled ? '' : 'none';
+    }
+    if (statsGroupbox) {
+      statsGroupbox.style.display = enabled ? '' : 'none';
+    }
+  }
+
+  // Initialize state
+  const currentEnabled = Zotero.Prefs.get(PREF_SEMANTIC_ENABLED, true);
+  if (currentEnabled === undefined) {
+    // Default to false (disabled) if not set
+    Zotero.Prefs.set(PREF_SEMANTIC_ENABLED, false, true);
+  }
+  const isEnabled = currentEnabled !== false && currentEnabled !== undefined;
+
+  if (isEnabled) {
+    checkbox.setAttribute('checked', 'true');
+  } else {
+    checkbox.removeAttribute('checked');
+  }
+  updateSemanticUI(isEnabled);
+
+  // Listen for toggle
+  checkbox.addEventListener("command", (event: Event) => {
+    const el = event.target as Element;
+    const checked = el.hasAttribute('checked');
+    Zotero.Prefs.set(PREF_SEMANTIC_ENABLED, checked, true);
+    updateSemanticUI(checked);
+    ztoolkit.log(`[PreferenceScript] Semantic search ${checked ? 'enabled' : 'disabled'}`);
+  });
 }
 
 // Embedding provider presets - only apiBase and hints, model/dimensions filled by user

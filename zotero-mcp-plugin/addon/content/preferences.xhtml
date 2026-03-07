@@ -28,7 +28,8 @@
     <preference id="extensions.zotero.zotero-mcp-plugin.embedding.rpm" name="extensions.zotero.zotero-mcp-plugin.embedding.rpm" type="int" />
     <preference id="extensions.zotero.zotero-mcp-plugin.embedding.tpm" name="extensions.zotero.zotero-mcp-plugin.embedding.tpm" type="int" />
     <preference id="extensions.zotero.zotero-mcp-plugin.embedding.costPer1M" name="extensions.zotero.zotero-mcp-plugin.embedding.costPer1M" type="string" />
-    <!-- Semantic index auto-update setting -->
+    <!-- Semantic search settings -->
+    <preference id="extensions.zotero.zotero-mcp-plugin.semantic.enabled" name="extensions.zotero.zotero-mcp-plugin.semantic.enabled" type="bool" />
     <preference id="extensions.zotero.zotero-mcp-plugin.semantic.autoUpdate" name="extensions.zotero.zotero-mcp-plugin.semantic.autoUpdate" type="bool" />
   </preferences>
 
@@ -255,7 +256,14 @@
       <label><html:h2 data-l10n-id="pref-embedding-title"></html:h2></label>
       <html:p data-l10n-id="pref-embedding-description"></html:p>
 
-      <vbox>
+      <checkbox
+        id="zotero-prefpane-__addonRef__-semantic-enabled"
+        preference="extensions.zotero.zotero-mcp-plugin.semantic.enabled"
+        data-l10n-id="pref-semantic-enable"
+        style="margin-bottom: 10px;"
+      ></checkbox>
+
+      <vbox id="semantic-settings-container">
         <hbox align="center" style="margin-bottom: 10px;">
           <html:label
             for="zotero-prefpane-__addonRef__-embedding-provider"
@@ -473,7 +481,7 @@
       </vbox>
     </groupbox>
 
-    <groupbox style="margin-bottom: 15px;">
+    <groupbox id="semantic-stats-groupbox" style="margin-bottom: 15px;">
       <label><html:h2 data-l10n-id="pref-semantic-stats-title"></html:h2></label>
 
       <vbox id="semantic-stats-container">

@@ -6,7 +6,7 @@ _This README is also available in: [:cn: 简体中文](./README-zh.md) | :gb: En
 [![zotero target version](https://img.shields.io/badge/Zotero-7-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue)](https://www.typescriptlang.org)
-[![Version](https://img.shields.io/badge/Version-1.3.0-brightgreen)]()
+[![Version](https://img.shields.io/badge/Version-1.4.1-brightgreen)]()
 [![EN doc](https://img.shields.io/badge/Document-English-blue.svg)](README.md)
 [![中文文档](https://img.shields.io/badge/文档-中文-blue.svg)](README-zh.md)
 
@@ -14,7 +14,7 @@ _This README is also available in: [:cn: 简体中文](./README-zh.md) | :gb: En
 ## Fork us on Wechat
  | MP | Forum |
 | :--- | :---: |
-| ![Reading PDF](./IMG/MP.jpg) | ![Contact us](./IMG/2f1aa2fdf89a6093e7d256f4d8844233.jpg) |
+| ![Reading PDF](./IMG/MP.jpg) | ![Contact us](./IMG/0314.jpg) |
 ## 📚 Project Overview
 
 The Zotero MCP server is a tool server based on the Model Context Protocol that provides seamless integration with the Zotero reference management system for AI applications like Claude Desktop. Through this server, AI assistants can:

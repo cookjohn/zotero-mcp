@@ -1047,7 +1047,14 @@ export class StreamableMCPServer {
       }
     ];
 
-    return this.createResponse(request.id ?? null, { tools });
+    // Filter out semantic tools if semantic search is disabled
+    const semanticEnabled = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.semantic.enabled', true);
+    const semanticToolNames = new Set(['semantic_search', 'find_similar', 'semantic_status']);
+    const filteredTools = semanticEnabled === false
+      ? tools.filter((t: any) => !semanticToolNames.has(t.name))
+      : tools;
+
+    return this.createResponse(request.id ?? null, { tools: filteredTools });
   }
 
   private async handleToolCall(request: MCPRequest): Promise<MCPResponse> {
@@ -1135,22 +1142,23 @@ export class StreamableMCPServer {
 
         // Semantic Search Tools
         case 'semantic_search':
-          if (!args?.query) {
-            throw new Error('query is required');
-          }
-          result = await this.callSemanticSearch(args);
-          break;
-
         case 'find_similar':
-          if (!args?.itemKey) {
-            throw new Error('itemKey is required');
+        case 'semantic_status': {
+          const semEnabled = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.semantic.enabled', true);
+          if (semEnabled === false) {
+            throw new Error('Semantic search is disabled. Enable it in Zotero MCP Plugin preferences.');
           }
-          result = await this.callFindSimilar(args);
+          if (name === 'semantic_search') {
+            if (!args?.query) throw new Error('query is required');
+            result = await this.callSemanticSearch(args);
+          } else if (name === 'find_similar') {
+            if (!args?.itemKey) throw new Error('itemKey is required');
+            result = await this.callFindSimilar(args);
+          } else {
+            result = await this.callSemanticStatus();
+          }
           break;
-
-        case 'semantic_status':
-          result = await this.callSemanticStatus();
-          break;
+        }
 
         case 'fulltext_database':
           if (!args?.action) {

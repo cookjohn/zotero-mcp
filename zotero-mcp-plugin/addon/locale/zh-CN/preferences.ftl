@@ -49,6 +49,10 @@ pref-config-guide-placeholder = 选择客户端类型并生成配置后，此处
 pref-client-codex-cli = Codex CLI
 pref-client-custom-http = 自定义 HTTP 客户端
 
+pref-semantic-enable =
+    .label = 启用语义搜索
+pref-semantic-disabled-hint = 语义搜索已禁用。启用后可使用基于向量嵌入的搜索功能。
+
 pref-embedding-title = 语义搜索（Embedding API）
 pref-embedding-description = 配置用于语义搜索的 Embedding API。支持 OpenAI 兼容的 API。
 pref-embedding-provider-label = 服务商预设：
