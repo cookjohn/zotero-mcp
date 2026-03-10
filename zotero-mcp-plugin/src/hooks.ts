@@ -684,7 +684,7 @@ function showFirstInstallPrompt() {
   try {
     // Use bilingual text for first install prompt
     const title = "欢迎使用 Zotero MCP 插件 / Welcome to Zotero MCP Plugin";
-    const promptText = "感谢安装 Zotero MCP 插件！为了开始使用，您需要为您的 AI 客户端生成配置文件。是否现在打开设置页面来生成配置？\n\nThank you for installing the Zotero MCP Plugin! To get started, you need to generate configuration files for your AI clients. Would you like to open the settings page now to generate configurations?";
+    const promptText = "感谢安装 Zotero MCP 插件！为了开始使用，您需要为您的 AI 客户端生成配置文件。是否现在打开设置页面来生成配置？\n使用技巧请关注设置页面公众号。\n\nThank you for installing the Zotero MCP Plugin! To get started, you need to generate configuration files for your AI clients. Would you like to open the settings page now to generate configurations?";
     const openPrefsText = "打开设置 / Open Settings";
     const laterText = "稍后配置 / Configure Later";
     

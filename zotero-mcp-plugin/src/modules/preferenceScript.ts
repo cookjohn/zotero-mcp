@@ -38,44 +38,77 @@ export async function registerPrefsScripts(_window: Window) {
   bindPrefEvents();
 }
 
+/**
+ * Bind an HTML checkbox to a Zotero preference (init + sync on change)
+ */
+function bindHtmlCheckbox(doc: Document, selector: string, prefKey: string) {
+  const el = doc?.querySelector(selector) as HTMLInputElement;
+  if (!el) return;
+  const val = Zotero.Prefs.get(prefKey, true);
+  el.checked = val !== false && val !== undefined;
+  el.addEventListener("change", () => {
+    Zotero.Prefs.set(prefKey, el.checked, true);
+  });
+}
+
+/**
+ * Bind an HTML text/number input to a Zotero preference
+ */
+function bindHtmlInput(doc: Document, selector: string, prefKey: string, isNumber = false) {
+  const el = doc?.querySelector(selector) as HTMLInputElement;
+  if (!el) return;
+  const val = Zotero.Prefs.get(prefKey, true);
+  if (val !== undefined && val !== null) el.value = String(val);
+  el.addEventListener("change", () => {
+    const v = isNumber ? parseInt(el.value, 10) : el.value;
+    if (isNumber && isNaN(v as number)) return;
+    Zotero.Prefs.set(prefKey, v, true);
+  });
+}
+
+/**
+ * Bind an HTML select to a Zotero preference
+ */
+function bindHtmlSelect(doc: Document, selector: string, prefKey: string) {
+  const el = doc?.querySelector(selector) as HTMLSelectElement;
+  if (!el) return;
+  const val = Zotero.Prefs.get(prefKey, true);
+  if (val !== undefined && val !== null) el.value = String(val);
+  el.addEventListener("change", () => {
+    Zotero.Prefs.set(prefKey, el.value, true);
+  });
+}
+
 function bindPrefEvents() {
   const doc = addon.data.prefs!.window.document;
-  
-  // Server enabled checkbox with manual event handling
+
+  // Server enabled toggle (HTML checkbox in toggle switch)
   const serverEnabledCheckbox = doc?.querySelector(
     `#zotero-prefpane-${config.addonRef}-mcp-server-enabled`,
   ) as HTMLInputElement;
-  
+
   if (serverEnabledCheckbox) {
     // Initialize checkbox state
     const currentEnabled = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.mcp.server.enabled", true);
-    if (currentEnabled !== false) {
-      serverEnabledCheckbox.setAttribute('checked', 'true');
-    } else {
-      serverEnabledCheckbox.removeAttribute('checked');
-    }
+    serverEnabledCheckbox.checked = currentEnabled !== false;
     ztoolkit.log(`[PreferenceScript] Initialized checkbox state: ${currentEnabled}`);
-    
-    // Add command listener (XUL checkbox uses 'command' event)
-    serverEnabledCheckbox.addEventListener("command", (event: Event) => {
-      const checkbox = event.target as Element;
-      const checked = checkbox.hasAttribute('checked');
-      ztoolkit.log(`[PreferenceScript] Checkbox command event - checked: ${checked}`);
-      
+
+    // Add change listener (HTML checkbox uses 'change' event)
+    serverEnabledCheckbox.addEventListener("change", () => {
+      const checked = serverEnabledCheckbox.checked;
+      ztoolkit.log(`[PreferenceScript] Server toggle changed - checked: ${checked}`);
+
       // Update preference manually
       Zotero.Prefs.set("extensions.zotero.zotero-mcp-plugin.mcp.server.enabled", checked, true);
-      ztoolkit.log(`[PreferenceScript] Updated preference to: ${checked}`);
-      
-      // Verify the preference was set
-      const verify = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.mcp.server.enabled", true);
-      ztoolkit.log(`[PreferenceScript] Verified preference value: ${verify}`);
-      
-      // Directly control server since observer isn't working
+
+      // Update cascade visibility
+      updateServerDependentUI(doc, checked);
+
+      // Directly control server
       try {
         const httpServer = addon.data.httpServer;
         if (httpServer) {
           if (checked) {
-            ztoolkit.log(`[PreferenceScript] Starting server manually...`);
             if (!httpServer.isServerRunning()) {
               const portPref = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.mcp.server.port", true);
               const port = typeof portPref === 'number' ? portPref : 23120;
@@ -83,7 +116,6 @@ function bindPrefEvents() {
               ztoolkit.log(`[PreferenceScript] Server started on port ${port}`);
             }
           } else {
-            ztoolkit.log(`[PreferenceScript] Stopping server manually...`);
             if (httpServer.isServerRunning()) {
               httpServer.stop();
               ztoolkit.log(`[PreferenceScript] Server stopped`);
@@ -94,24 +126,22 @@ function bindPrefEvents() {
         ztoolkit.log(`[PreferenceScript] Error controlling server: ${error}`, 'error');
       }
     });
-    
-    // Add click listener for additional debugging
-    serverEnabledCheckbox.addEventListener("click", (event: Event) => {
-      const checkbox = event.target as Element;
-      ztoolkit.log(`[PreferenceScript] Checkbox clicked - hasAttribute('checked'): ${checkbox.hasAttribute('checked')}`);
-      
-      // Use setTimeout to check state after the click is processed
-      setTimeout(() => {
-        ztoolkit.log(`[PreferenceScript] Checkbox state after click: ${checkbox.hasAttribute('checked')}`);
-      }, 10);
-    });
+
+    // Initialize cascade visibility
+    updateServerDependentUI(doc, currentEnabled !== false);
   }
   
-  // Port input validation (preference binding handled by XUL)
+  // Port input validation
   const portInput = doc?.querySelector(
     `#zotero-prefpane-${config.addonRef}-mcp-server-port`,
   ) as HTMLInputElement;
-  
+
+  // Initialize port value from pref
+  if (portInput) {
+    const savedPort = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.mcp.server.port", true);
+    if (savedPort) portInput.value = String(savedPort);
+  }
+
   portInput?.addEventListener("change", () => {
     if (portInput) {
       const port = parseInt(portInput.value, 10);
@@ -119,19 +149,38 @@ function bindPrefEvents() {
         addon.data.prefs!.window.alert(
           getString("pref-server-port-invalid" as any),
         );
-        // Reset to previous valid value
         const originalPort = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.mcp.server.port", true) || 23120;
         portInput.value = originalPort.toString();
+      } else {
+        Zotero.Prefs.set("extensions.zotero.zotero-mcp-plugin.mcp.server.port", port, true);
       }
     }
   });
+
+  // Bind HTML toggle switches (these need manual pref sync since they're not XUL checkboxes)
+  bindHtmlCheckbox(doc, `#zotero-prefpane-${config.addonRef}-mcp-server-allow-remote`, "extensions.zotero.zotero-mcp-plugin.mcp.server.allowRemote");
+  bindHtmlCheckbox(doc, `#zotero-prefpane-${config.addonRef}-include-metadata`, "extensions.zotero.zotero-mcp-plugin.ui.includeMetadata");
+  bindHtmlCheckbox(doc, `#zotero-prefpane-${config.addonRef}-semantic-auto-update`, "extensions.zotero.zotero-mcp-plugin.semantic.autoUpdate");
+  bindHtmlCheckbox(doc, `#zotero-prefpane-${config.addonRef}-custom-include-webpage`, "extensions.zotero.zotero-mcp-plugin.custom.includeWebpage");
+  bindHtmlCheckbox(doc, `#zotero-prefpane-${config.addonRef}-custom-enable-compression`, "extensions.zotero.zotero-mcp-plugin.custom.enableCompression");
+
+  // Bind HTML number/text inputs that need manual pref sync
+  bindHtmlInput(doc, `#zotero-prefpane-${config.addonRef}-max-tokens`, "extensions.zotero.zotero-mcp-plugin.ai.maxTokens", true);
+  bindHtmlSelect(doc, `#zotero-prefpane-${config.addonRef}-content-mode`, "extensions.zotero.zotero-mcp-plugin.content.mode");
+  bindHtmlInput(doc, `#zotero-prefpane-${config.addonRef}-custom-content-length`, "extensions.zotero.zotero-mcp-plugin.custom.maxContentLength", true);
+  bindHtmlInput(doc, `#zotero-prefpane-${config.addonRef}-custom-max-attachments`, "extensions.zotero.zotero-mcp-plugin.custom.maxAttachments", true);
+  bindHtmlInput(doc, `#zotero-prefpane-${config.addonRef}-custom-max-notes`, "extensions.zotero.zotero-mcp-plugin.custom.maxNotes", true);
+  bindHtmlInput(doc, `#zotero-prefpane-${config.addonRef}-custom-keyword-count`, "extensions.zotero.zotero-mcp-plugin.custom.keywordCount", true);
+  bindHtmlInput(doc, `#zotero-prefpane-${config.addonRef}-custom-truncate-length`, "extensions.zotero.zotero-mcp-plugin.custom.smartTruncateLength", true);
+  bindHtmlInput(doc, `#zotero-prefpane-${config.addonRef}-custom-search-limit`, "extensions.zotero.zotero-mcp-plugin.custom.searchItemLimit", true);
+  bindHtmlInput(doc, `#zotero-prefpane-${config.addonRef}-custom-max-annotations`, "extensions.zotero.zotero-mcp-plugin.custom.maxAnnotationsPerRequest", true);
 
   // Client config generation
   const clientSelect = doc?.querySelector("#client-type-select") as HTMLSelectElement;
   const serverNameInput = doc?.querySelector("#server-name-input") as HTMLInputElement;
   const generateButton = doc?.querySelector("#generate-config-button") as HTMLButtonElement;
   const copyConfigButton = doc?.querySelector("#copy-config-button") as HTMLButtonElement;
-  const configOutput = doc?.querySelector("#config-output") as HTMLTextAreaElement;
+  const configOutput = doc?.querySelector("#config-output") as HTMLElement;
   const configGuide = doc?.querySelector("#config-guide") as HTMLElement;
 
   let currentConfig = "";
@@ -147,11 +196,15 @@ function bindPrefEvents() {
       currentConfig = ClientConfigGenerator.generateConfig(clientType, port, serverName);
       currentGuide = ClientConfigGenerator.generateFullGuide(clientType, port, serverName);
 
-      // Display configuration in textarea
-      configOutput.value = currentConfig;
+      // Display configuration in div panel
+      if (configOutput) {
+        configOutput.textContent = currentConfig;
+      }
 
       // Display guide in separate area
-      displayGuideInArea(currentGuide);
+      if (configGuide) {
+        configGuide.textContent = currentGuide;
+      }
 
       // Enable copy button
       copyConfigButton.disabled = false;
@@ -167,44 +220,23 @@ function bindPrefEvents() {
     try {
       const success = await ClientConfigGenerator.copyToClipboard(currentConfig);
       if (success) {
-        // Show temporary success message
         const originalText = copyConfigButton.textContent;
         copyConfigButton.textContent = "已复制!";
         copyConfigButton.style.backgroundColor = "#4CAF50";
+        copyConfigButton.style.color = "#fff";
         setTimeout(() => {
           copyConfigButton.textContent = originalText;
           copyConfigButton.style.backgroundColor = "";
+          copyConfigButton.style.color = "";
         }, 2000);
       } else {
-        // Auto-select text in textarea for manual copy
-        configOutput.select();
-        configOutput.focus();
-        addon.data.prefs!.window.alert("自动复制失败，已选中文本，请使用 Ctrl+C 手动复制");
+        addon.data.prefs!.window.alert("自动复制失败，请手动复制配置内容");
       }
     } catch (error) {
-      // Auto-select text in textarea for manual copy
-      configOutput.select();
-      configOutput.focus();
-      addon.data.prefs!.window.alert(`复制失败，已选中文本，请使用 Ctrl+C 手动复制\n错误: ${error}`);
+      addon.data.prefs!.window.alert(`复制失败: ${error}`);
       ztoolkit.log(`[PreferenceScript] Copy failed: ${error}`, "error");
     }
   });
-
-
-  // Helper function to display guide in separate area
-  function displayGuideInArea(guide: string) {
-    if (!configGuide) return;
-    
-    try {
-      // Use safe text content to avoid any HTML parsing issues
-      configGuide.textContent = guide;
-      configGuide.style.whiteSpace = "pre-wrap";
-      configGuide.style.fontFamily = "monospace, 'Courier New', Courier";
-    } catch (error) {
-      ztoolkit.log(`[PreferenceScript] Error displaying guide: ${error}`, "error");
-      configGuide.textContent = "配置指南显示出错，请尝试重新生成配置。";
-    }
-  }
 
   // Auto-generate config when client type changes
   clientSelect?.addEventListener("change", () => {
@@ -220,6 +252,12 @@ function bindPrefEvents() {
     }
   });
 
+  // ============ Collapsible Panels ============
+  bindCollapsiblePanels(doc);
+
+  // ============ Content Mode → Custom Panel ============
+  bindContentModeToggle(doc);
+
   // ============ Semantic Search Toggle ============
   bindSemanticEnabledToggle(doc);
 
@@ -231,9 +269,93 @@ function bindPrefEvents() {
 
   // ============ Semantic Index Stats ============
   bindSemanticStatsSettings(doc);
+
+  // ============ Rate Limit Summary ============
+  updateRateLimitSummary(doc);
+}
+
+/**
+ * Update server-dependent UI visibility (cascade hiding)
+ */
+function updateServerDependentUI(doc: Document, enabled: boolean) {
+  const serverContent = doc?.querySelector('#server-dependent-content') as HTMLElement;
+  const serverOffHint = doc?.querySelector('#server-off-hint') as HTMLElement;
+  const portRow = doc?.querySelector('#server-port-row') as HTMLElement;
+  const remoteRow = doc?.querySelector('#server-remote-row') as HTMLElement;
+
+  if (serverContent) serverContent.style.display = enabled ? '' : 'none';
+  if (serverOffHint) serverOffHint.style.display = enabled ? 'none' : 'block';
+  if (portRow) portRow.style.display = enabled ? '' : 'none';
+  if (remoteRow) remoteRow.style.display = enabled ? '' : 'none';
+}
+
+/**
+ * Bind collapsible panel toggle logic
+ */
+function bindCollapsiblePanels(doc: Document) {
+  const panels = [
+    { toggle: '#custom-settings-toggle', panel: '#custom-settings-panel' },
+    { toggle: '#rate-limit-toggle', panel: '#rate-limit-panel' },
+    { toggle: '#detail-stats-toggle', panel: '#detail-stats-panel' },
+  ];
+
+  for (const { toggle, panel } of panels) {
+    const toggleEl = doc?.querySelector(toggle) as HTMLElement;
+    const panelEl = doc?.querySelector(panel) as HTMLElement;
+    if (toggleEl && panelEl) {
+      toggleEl.addEventListener('click', () => {
+        panelEl.classList.toggle('open');
+      });
+    }
+  }
+}
+
+/**
+ * Auto-open custom settings panel when custom mode is selected
+ */
+function bindContentModeToggle(doc: Document) {
+  const modeSelect = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-content-mode`) as HTMLSelectElement;
+  const customPanel = doc?.querySelector('#custom-settings-panel') as HTMLElement;
+
+  if (modeSelect && customPanel) {
+    // Auto-open on custom mode
+    if (modeSelect.value === 'custom') {
+      customPanel.classList.add('open');
+    }
+
+    modeSelect.addEventListener('change', () => {
+      if (modeSelect.value === 'custom') {
+        customPanel.classList.add('open');
+      }
+    });
+  }
+}
+
+/**
+ * Update rate limit summary text in collapsible header
+ */
+function updateRateLimitSummary(doc: Document) {
+  const rpmInput = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-embedding-rpm`) as HTMLInputElement;
+  const costInput = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-embedding-cost`) as HTMLInputElement;
+  const summaryEl = doc?.querySelector('#rate-limit-summary') as HTMLElement;
+
+  const update = () => {
+    if (!summaryEl) return;
+    const rpm = rpmInput?.value || '60';
+    const cost = costInput?.value || '0.02';
+    summaryEl.textContent = `RPM ${rpm} · $${cost}/M`;
+  };
+
+  update();
+  rpmInput?.addEventListener('change', update);
+  costInput?.addEventListener('change', update);
 }
 
 const PREF_SEMANTIC_ENABLED = 'extensions.zotero.zotero-mcp-plugin.semantic.enabled';
+const PREF_SERVER_ENABLED = 'extensions.zotero.zotero-mcp-plugin.mcp.server.enabled';
+
+// Module-level flag: suppress logging during auto-refresh
+let _silentRefresh = false;
 
 /**
  * Bind semantic search enable/disable toggle
@@ -243,7 +365,7 @@ function bindSemanticEnabledToggle(doc: Document) {
     `#zotero-prefpane-${config.addonRef}-semantic-enabled`,
   ) as HTMLInputElement;
   const settingsContainer = doc?.querySelector('#semantic-settings-container') as HTMLElement;
-  const statsGroupbox = doc?.querySelector('#semantic-stats-groupbox') as HTMLElement;
+  const disabledHint = doc?.querySelector('#semantic-disabled-hint') as HTMLElement;
 
   if (!checkbox) return;
 
@@ -251,30 +373,24 @@ function bindSemanticEnabledToggle(doc: Document) {
     if (settingsContainer) {
       settingsContainer.style.display = enabled ? '' : 'none';
     }
-    if (statsGroupbox) {
-      statsGroupbox.style.display = enabled ? '' : 'none';
+    if (disabledHint) {
+      disabledHint.style.display = enabled ? 'none' : 'block';
     }
   }
 
   // Initialize state
   const currentEnabled = Zotero.Prefs.get(PREF_SEMANTIC_ENABLED, true);
   if (currentEnabled === undefined) {
-    // Default to false (disabled) if not set
     Zotero.Prefs.set(PREF_SEMANTIC_ENABLED, false, true);
   }
   const isEnabled = currentEnabled !== false && currentEnabled !== undefined;
 
-  if (isEnabled) {
-    checkbox.setAttribute('checked', 'true');
-  } else {
-    checkbox.removeAttribute('checked');
-  }
+  checkbox.checked = isEnabled;
   updateSemanticUI(isEnabled);
 
-  // Listen for toggle
-  checkbox.addEventListener("command", (event: Event) => {
-    const el = event.target as Element;
-    const checked = el.hasAttribute('checked');
+  // Listen for toggle (HTML checkbox uses 'change' event)
+  checkbox.addEventListener("change", () => {
+    const checked = checkbox.checked;
     Zotero.Prefs.set(PREF_SEMANTIC_ENABLED, checked, true);
     updateSemanticUI(checked);
     ztoolkit.log(`[PreferenceScript] Semantic search ${checked ? 'enabled' : 'disabled'}`);
@@ -334,7 +450,7 @@ function bindEmbeddingSettings(doc: Document) {
   const apiKeyInput = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-embedding-api-key`) as HTMLInputElement;
   const modelInput = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-embedding-model`) as HTMLInputElement;
   const dimensionsInput = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-embedding-dimensions`) as HTMLInputElement;
-  const dimensionsRow = dimensionsInput?.closest('hbox') || dimensionsInput?.parentElement;
+  const dimensionsRow = dimensionsInput?.closest('.zmp-fg') || dimensionsInput?.parentElement;
   const testButton = doc?.querySelector("#test-embedding-button") as HTMLButtonElement;
   const testResult = doc?.querySelector("#embedding-test-result") as HTMLSpanElement;
 
@@ -370,6 +486,22 @@ function bindEmbeddingSettings(doc: Document) {
   initValue(apiKeyInput, "extensions.zotero.zotero-mcp-plugin.embedding.apiKey", "");
   initValue(modelInput, "extensions.zotero.zotero-mcp-plugin.embedding.model", "text-embedding-3-small");
   initValue(dimensionsInput, "extensions.zotero.zotero-mcp-plugin.embedding.dimensions", "512");
+
+  // API endpoint preview
+  const endpointPreview = doc?.querySelector("#embedding-api-endpoint-preview") as HTMLElement;
+  const updateEndpointPreview = () => {
+    if (!endpointPreview) return;
+    const base = apiBaseInput?.value?.trim() || "";
+    if (base) {
+      const sep = base.endsWith("/") ? "" : "/";
+      endpointPreview.textContent = `→ ${base}${sep}embeddings`;
+    } else {
+      endpointPreview.textContent = "";
+    }
+  };
+  updateEndpointPreview();
+  apiBaseInput?.addEventListener("input", updateEndpointPreview);
+  apiBaseInput?.addEventListener("change", updateEndpointPreview);
 
   // Check if model supports custom dimensions
   const supportsCustomDimensions = (model: string) => model.includes('text-embedding-3');
@@ -429,6 +561,9 @@ function bindEmbeddingSettings(doc: Document) {
 
         // Update embedding service config
         updateEmbeddingServiceConfig();
+
+        // Update endpoint preview
+        updateEndpointPreview();
 
         ztoolkit.log(`[PreferenceScript] Applied provider preset: ${provider}`);
       }
@@ -521,8 +656,55 @@ function bindEmbeddingSettings(doc: Document) {
           input: ["test"]
         }),
         timeout: 30000,
-        responseType: 'json'
-      });
+        responseType: 'json',
+        successCodes: false // Don't throw on non-2xx, let us handle it
+      } as any);
+
+      // Check HTTP status
+      if (response.status < 200 || response.status >= 300) {
+        let responseBody = "";
+        try {
+          responseBody = typeof response.response === 'object'
+            ? JSON.stringify(response.response, null, 2)
+            : (response.responseText || String(response.response || ""));
+        } catch { responseBody = response.responseText || ""; }
+
+        const code = response.status;
+        const hints: Record<number, string> = {
+          401: getString("pref-embedding-test-error-401" as any) || "Authentication failed - check your API key",
+          403: getString("pref-embedding-test-error-403" as any) || "Access forbidden - check API key permissions",
+          404: getString("pref-embedding-test-error-404" as any) || "Endpoint not found - check API base URL",
+          429: getString("pref-embedding-test-error-429" as any) || "Rate limited - try again later",
+          500: getString("pref-embedding-test-error-5xx" as any) || "Server error - try again later",
+          502: getString("pref-embedding-test-error-5xx" as any) || "Server error - try again later",
+          503: getString("pref-embedding-test-error-5xx" as any) || "Server error - try again later",
+        };
+        const hint = `HTTP ${code}: ${hints[code] || "Request failed"}`;
+
+        testResult.innerHTML = "";
+        const hintSpan = doc.createElement("span");
+        hintSpan.textContent = `${getString("pref-embedding-test-failed" as any)} ${hint}`;
+        hintSpan.style.color = "#d32f2f";
+        testResult.appendChild(hintSpan);
+
+        if (responseBody) {
+          const detailWrap = doc.createElement("details");
+          detailWrap.style.cssText = "margin-top:4px; font-size:11px; color:var(--text-2,#6b7280);";
+          const summary = doc.createElement("summary");
+          summary.textContent = getString("pref-embedding-test-error-detail" as any) || "Show raw response";
+          summary.style.cssText = "cursor:pointer; color:var(--text-3,#9ca3af); user-select:none;";
+          const pre = doc.createElement("pre");
+          pre.textContent = responseBody;
+          pre.style.cssText = "margin:4px 0 0; white-space:pre-wrap; word-break:break-all; font-size:11px; font-family:'SF Mono',Consolas,monospace; background:var(--bg-muted,#f4f5f7); padding:6px 8px; border-radius:4px; max-height:200px; overflow-y:auto;";
+          detailWrap.appendChild(summary);
+          detailWrap.appendChild(pre);
+          testResult.appendChild(detailWrap);
+        }
+
+        testButton.disabled = false;
+        ztoolkit.log(`[PreferenceScript] Embedding test failed: HTTP ${code} - ${responseBody}`, "warn");
+        return;
+      }
 
       const data = response.response;
       if (data && data.data && data.data.length > 0) {
@@ -581,9 +763,59 @@ function bindEmbeddingSettings(doc: Document) {
         testResult.style.color = "#d32f2f";
       }
     } catch (error: any) {
-      const errorMsg = error.message || error.status || String(error);
-      testResult.textContent = getString("pref-embedding-test-failed" as any) + `: ${errorMsg.substring(0, 50)}`;
-      testResult.style.color = "#d32f2f";
+      // Network / timeout / other non-HTTP errors
+      const fullMsg = error.message || error.status || String(error);
+
+      // Try to extract response body if available on the error object
+      let responseBody = "";
+      try {
+        if (error.xmlhttp) {
+          responseBody = error.xmlhttp.responseText || "";
+        } else if (error.responseText) {
+          responseBody = error.responseText;
+        }
+      } catch { /* ignore */ }
+
+      // Extract HTTP status code from error message
+      const statusMatch = fullMsg.match(/status code (\d+)/);
+      let hint = "";
+      if (statusMatch) {
+        const code = parseInt(statusMatch[1], 10);
+        const hints: Record<number, string> = {
+          401: getString("pref-embedding-test-error-401" as any) || "Authentication failed - check your API key",
+          403: getString("pref-embedding-test-error-403" as any) || "Access forbidden - check API key permissions",
+          404: getString("pref-embedding-test-error-404" as any) || "Endpoint not found - check API base URL",
+          429: getString("pref-embedding-test-error-429" as any) || "Rate limited - try again later",
+          500: getString("pref-embedding-test-error-5xx" as any) || "Server error - try again later",
+          502: getString("pref-embedding-test-error-5xx" as any) || "Server error - try again later",
+          503: getString("pref-embedding-test-error-5xx" as any) || "Server error - try again later",
+        };
+        hint = `HTTP ${code}: ${hints[code] || "Request failed"}`;
+      } else {
+        hint = fullMsg.length > 100 ? fullMsg.substring(0, 100) + "..." : fullMsg;
+      }
+
+      const rawContent = responseBody || fullMsg;
+
+      testResult.innerHTML = "";
+      const hintSpan = doc.createElement("span");
+      hintSpan.textContent = `${getString("pref-embedding-test-failed" as any)} ${hint}`;
+      hintSpan.style.color = "#d32f2f";
+      testResult.appendChild(hintSpan);
+
+      // Collapsible raw response
+      const detailWrap = doc.createElement("details");
+      detailWrap.style.cssText = "margin-top:4px; font-size:11px; color:var(--text-2,#6b7280);";
+      const summary = doc.createElement("summary");
+      summary.textContent = getString("pref-embedding-test-error-detail" as any) || "Show raw response";
+      summary.style.cssText = "cursor:pointer; color:var(--text-3,#9ca3af); user-select:none;";
+      const pre = doc.createElement("pre");
+      pre.textContent = rawContent;
+      pre.style.cssText = "margin:4px 0 0; white-space:pre-wrap; word-break:break-all; font-size:11px; font-family:'SF Mono',Consolas,monospace; background:var(--bg-muted,#f4f5f7); padding:6px 8px; border-radius:4px; max-height:200px; overflow-y:auto;";
+      detailWrap.appendChild(summary);
+      detailWrap.appendChild(pre);
+      testResult.appendChild(detailWrap);
+
       ztoolkit.log(`[PreferenceScript] Embedding test failed: ${error}`, "warn");
     } finally {
       testButton.disabled = false;
@@ -715,9 +947,13 @@ function bindApiUsageStats(doc: Document) {
       if (currentTpmEl) currentTpmEl.textContent = formatNum(stats.currentTpm);
       if (rateLimitHitsEl) rateLimitHitsEl.textContent = formatNum(stats.rateLimitHits);
 
-      ztoolkit.log(`[PreferenceScript] Loaded API usage stats: ${stats.totalTokens} tokens, ${stats.totalRequests} requests`);
+      if (!_silentRefresh) {
+        ztoolkit.log(`[PreferenceScript] Loaded API usage stats: ${stats.totalTokens} tokens, ${stats.totalRequests} requests`);
+      }
     } catch (error) {
-      ztoolkit.log(`[PreferenceScript] Failed to load API usage stats: ${error}`, "warn");
+      if (!_silentRefresh) {
+        ztoolkit.log(`[PreferenceScript] Failed to load API usage stats: ${error}`, "warn");
+      }
       // Show error state
       if (totalTokensEl) totalTokensEl.textContent = "-";
       if (totalRequestsEl) totalRequestsEl.textContent = "-";
@@ -813,9 +1049,35 @@ function bindSemanticStatsSettings(doc: Document) {
   // Register error callback for semantic service
   registerErrorCallback();
 
-  // Refresh button
+  // Unified refresh: updates semantic stats, API usage, and detail summary
+  function refreshAllStats(silent = false) {
+    _silentRefresh = silent;
+    loadSemanticStats(silent);
+    const apiRefreshBtn = doc?.querySelector("#refresh-api-usage-button") as HTMLButtonElement;
+    apiRefreshBtn?.click();
+    _silentRefresh = false;
+  }
+
+  // Refresh button - also triggers API usage refresh
   refreshButton?.addEventListener("click", () => {
-    loadSemanticStats();
+    refreshAllStats();
+  });
+
+  // Auto-refresh stats every 5 seconds (silent mode: no loading flash, no log spam)
+  // Skip when server or semantic search is disabled
+  const autoRefreshInterval = setInterval(() => {
+    const serverEnabled = Zotero.Prefs.get(PREF_SERVER_ENABLED, true);
+    if (serverEnabled === false) return;
+    const semanticEnabled = Zotero.Prefs.get(PREF_SEMANTIC_ENABLED, true);
+    if (semanticEnabled === false || semanticEnabled === undefined) return;
+    refreshAllStats(true);
+  }, 5000);
+
+  // Cleanup auto-refresh when the prefs window closes
+  const prefsWindow = doc?.defaultView;
+  prefsWindow?.addEventListener("unload", () => {
+    clearInterval(autoRefreshInterval);
+    ztoolkit.log("[PreferenceScript] Auto-refresh interval cleared on window unload");
   });
 
   // Build index button
@@ -1058,7 +1320,7 @@ function bindSemanticStatsSettings(doc: Document) {
 
     if (progressPercent && progress.total > 0) {
       const percent = Math.round((progress.processed / progress.total) * 100);
-      progressPercent.textContent = `(${percent}%)`;
+      progressPercent.textContent = `${percent}%`;
     }
 
     if (progressBar && progress.total > 0) {
@@ -1179,12 +1441,14 @@ function bindSemanticStatsSettings(doc: Document) {
     }
   }
 
-  async function loadSemanticStats() {
+  async function loadSemanticStats(silent = false) {
     if (!loadingEl || !contentEl) return;
 
-    // Show loading, hide content
-    loadingEl.style.display = "block";
-    contentEl.style.display = "none";
+    // Show loading, hide content (skip in silent mode to avoid flicker)
+    if (!silent) {
+      loadingEl.style.display = "block";
+      contentEl.style.display = "none";
+    }
 
     try {
       // Import semantic search service
@@ -1283,7 +1547,25 @@ function bindSemanticStatsSettings(doc: Document) {
       loadingEl.style.display = "none";
       contentEl.style.display = "block";
 
-      ztoolkit.log(`[PreferenceScript] Loaded semantic stats: ${stats.indexStats.totalItems} items, ${stats.indexStats.totalVectors} vectors`);
+      // Update detail stats summary in collapsible header
+      const detailSummaryEl = doc?.querySelector('#detail-stats-summary') as HTMLElement;
+      if (detailSummaryEl) {
+        try {
+          const { getEmbeddingService } = require("./semantic/embeddingService");
+          const embeddingService = getEmbeddingService();
+          const usageStats = embeddingService.getUsageStats();
+          const tokenStr = usageStats.totalTokens > 1000
+            ? `${Math.round(usageStats.totalTokens / 1000)}K`
+            : String(usageStats.totalTokens);
+          detailSummaryEl.textContent = `${tokenStr} tokens · $${usageStats.estimatedCostUsd.toFixed(2)}`;
+        } catch {
+          detailSummaryEl.textContent = '';
+        }
+      }
+
+      if (!silent) {
+        ztoolkit.log(`[PreferenceScript] Loaded semantic stats: ${stats.indexStats.totalItems} items, ${stats.indexStats.totalVectors} vectors`);
+      }
 
     } catch (error) {
       ztoolkit.log(`[PreferenceScript] Failed to load semantic stats: ${error}`, "warn");

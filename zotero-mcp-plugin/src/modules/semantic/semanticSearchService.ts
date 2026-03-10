@@ -400,10 +400,15 @@ export class SemanticSearchService {
         items = await this.getItemsWithContent();
       }
 
+      const totalLibraryItems = items.length;
+      ztoolkit.log(`[SemanticSearch] Library items fetched: ${totalLibraryItems}`);
+
       // Filter already indexed items (unless rebuild)
       if (!rebuild) {
         const indexedItems = await this.vectorStore.getIndexedItems();
+        const indexedCount = indexedItems.size;
         items = items.filter(item => !indexedItems.has(item.key));
+        ztoolkit.log(`[SemanticSearch] Items: library=${totalLibraryItems}, indexed=${indexedCount}, toIndex=${items.length}`);
       } else {
         // For rebuild: clear all existing index data first
         ztoolkit.log(`[SemanticSearch] Rebuild mode: clearing existing index data...`);
@@ -787,6 +792,15 @@ export class SemanticSearchService {
 
     const indexStats = await this.vectorStore.getStats();
     const embeddingStatus = this.embeddingService.getStatus();
+
+    // Log comparison: library items vs indexed items
+    try {
+      const libraryItems = await this.getItemsWithContent();
+      const indexedItems = await this.vectorStore.getIndexedItems();
+      ztoolkit.log(`[SemanticSearch] Stats: libraryItems=${libraryItems.length}, indexedItems=${indexedItems.size}, vectors=${indexStats.totalVectors}, diff=${libraryItems.length - indexedItems.size}`);
+    } catch (e) {
+      // Non-critical, don't block stats
+    }
 
     return {
       indexStats,

@@ -959,6 +959,14 @@ export class VectorStore {
       // Ignore file size errors
     }
 
+    // index_status table count (may differ from embeddings DISTINCT count)
+    const indexStatusCount = await this.db.valueQueryAsync(
+      `SELECT COUNT(*) FROM index_status`
+    );
+    if (indexStatusCount !== items) {
+      ztoolkit.log(`[VectorStore] Stats mismatch: index_status=${indexStatusCount}, embeddings(DISTINCT item_key)=${items}. Some items may have index_status but no embeddings.`, 'warn');
+    }
+
     return {
       totalVectors: total || 0,
       totalItems: items || 0,
