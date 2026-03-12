@@ -6,7 +6,7 @@ _This README is also available in: [:cn: 简体中文](./README-zh.md) | :gb: En
 [![zotero target version](https://img.shields.io/badge/Zotero-7-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue)](https://www.typescriptlang.org)
-[![Version](https://img.shields.io/badge/Version-1.4.1-brightgreen)]()
+[![Version](https://img.shields.io/badge/Version-1.4.3-brightgreen)]()
 [![EN doc](https://img.shields.io/badge/Document-English-blue.svg)](README.md)
 [![中文文档](https://img.shields.io/badge/文档-中文-blue.svg)](README-zh.md)
 
@@ -19,12 +19,15 @@ _This README is also available in: [:cn: 简体中文](./README-zh.md) | :gb: En
 
 The Zotero MCP server is a tool server based on the Model Context Protocol that provides seamless integration with the Zotero reference management system for AI applications like Claude Desktop. Through this server, AI assistants can:
 
-- 🔍 Intelligently search your Zotero library
-- 📖 Get detailed information about references
-- 🏷️ Filter references by tags, creators, year, and more
-- 🔗 Precisely locate references via identifiers like DOI and ISBN
+- 🔍 **Smart Search**: Multi-dimensional library search (title/creator/year/tags/fulltext/semantic) with boolean operators and relevance scoring
+- 📖 **Content Extraction**: Extract PDF full-text, notes, abstracts, webpage snapshots with fine-grained mode control
+- 📝 **Annotation Analysis**: Search and analyze PDF highlights and annotations by color, tags, and keywords
+- 📂 **Collection Browsing**: Browse and search collection hierarchies, retrieve items within collections
+- 🧠 **Semantic Search**: AI-powered concept matching via embedding vectors, discover related literature across languages
+- ✏️ **Write Operations**: Create notes, manage tags, update metadata, create new items and attach PDFs
+- 💾 **Full-text Database**: Access and search cached PDF full-text content
 
-This enables AI assistants to help you with academic tasks such as literature reviews, citation management, and research assistance.
+This enables AI assistants to help you with literature reviews, citation management, content analysis, annotation organization, knowledge base management, and more.
 
 ## 🚀 Project Structure
 
@@ -156,19 +159,19 @@ Example configuration for Claude Desktop:
 
 ### `zotero-mcp-plugin` Features
 
--   **Integrated MCP Server**: Built-in MCP server using Streamable HTTP protocol
--   **Streamable HTTP Protocol**: Real-time bidirectional communication with AI clients
--   **Advanced Search Engine**: Full-text search with filtering by title, creator, year, tags, item type, etc.
--   **🆕 Semantic Search**: AI-powered semantic search using embedding vectors
+-   **Integrated MCP Server**: Built-in MCP server using Streamable HTTP protocol, no separate process needed
+-   **Advanced Search Engine**: Full-text search with boolean operators, relevance scoring, filtering by title, creator, year, tags, item type, and more
+-   **Unified Content Extraction**: Extract content from PDFs, attachments, notes, abstracts, webpage snapshots with four modes (minimal/preview/standard/complete)
+-   **Smart Annotation System**: Search and retrieve PDF highlights, annotations, and notes by color, tags, and keywords with intelligent ranking
+-   **Collection Management**: Browse, search collection hierarchies, get collection details, subcollections, and item lists
+-   **Semantic Search**: AI-powered semantic search using embedding vectors
     - Supports OpenAI and Ollama embedding APIs (auto-detection)
     - Vector indexing with SQLite-vec storage
     - Index status column in main library view
     - Collection/item context menu for index management
-    - Rate limiting and API usage tracking
--   **Collection Management**: Browse, search, and retrieve items from specific collections
--   **Tag Search System**: Powerful tag queries (`any`, `all`, `none` modes) with matching options (`exact`, `contains`, `startsWith`)
--   **PDF Processing**: Full-text extraction from PDF attachments with page-specific access
--   **Annotation Retrieval**: Extract highlights, notes, and annotations from PDFs
+-   **Write Operations**: Create/modify notes, manage tags, update metadata fields, create new items and reparent standalone PDFs
+-   **Full-text Database**: Cached PDF full-text database with list, search, get, and stats operations
+-   **Standalone Attachment Management**: Search and manage standalone PDF items without parent metadata
 -   **Client Configuration Generator**: Automatically generates configuration for various AI clients
 -   **Security**: Local-only operation ensuring complete data privacy
 -   **User-Friendly**: Easy configuration through Zotero preferences interface
@@ -191,39 +194,87 @@ Here are some screenshots demonstrating the functionality of Zotero MCP:
 ---
 
 
-## 🔧 API Reference
+## 🔧 API Reference (MCP Tools)
 
-The integrated MCP server provides the following tools:
+The integrated MCP server provides **20 tools** in 5 categories:
 
-### `search_library`
+### 1. Search & Query (7 tools)
 
-Searches the Zotero library. Supports parameters like `q`, `title`, `creator`, `year`, `tag`, `itemType`, `limit`, `sort`, etc.
+#### `search_library`
+Advanced library search with multi-dimensional filtering, boolean operators, relevance scoring, and intelligent mode control.
+- `q`, `title`, `titleOperator`, `yearRange`, `fulltext`, `fulltextMode`, `itemType`, `includeAttachments`, `mode` (minimal/preview/standard/complete), `relevanceScoring`, `sort`, `limit`, `offset`
 
-### `get_item_details`
+#### `search_annotations`
+Search annotations by query, colors, or tags with intelligent ranking.
+- `q`, `itemKeys`, `types` (note/highlight/annotation/ink/text/image), `colors`, `tags`, `mode`, `limit`, `offset`
 
-Retrieves full information for a single item.
--   **`itemKey`** (string, required): The unique key of the item.
+#### `search_fulltext`
+Full-text search across all document content with context snippets.
+- `q` (required), `itemKeys`, `mode`, `contextLength`, `caseSensitive`
 
-### `find_item_by_identifier`
+#### `search_collections`
+Search collections by name. Params: `q`, `limit`.
 
-Finds an item by DOI or ISBN.
--   **`doi`** (string, optional)
--   **`isbn`** (string, optional)
+#### `get_item_details`
+Get complete metadata for a single item. Params: `itemKey` (required), `mode`.
 
-*At least one identifier is required.*
+#### `get_item_abstract`
+Get item abstract/summary. Params: `itemKey` (required), `format` (json/text).
 
-### `semantic_search` 🆕
+#### `get_content`
+Unified content extraction: PDF full-text, notes, abstracts, webpage snapshots from items or specific attachments.
+- `itemKey`, `attachmentKey`, `mode`, `include` (pdf/attachments/notes/abstract/webpage), `contentControl`, `format` (json/text)
 
-Performs semantic search on indexed items using embedding vectors.
--   **`query`** (string, required): Natural language query
--   **`limit`** (number, optional): Maximum results (default: 10)
--   **`threshold`** (number, optional): Similarity threshold (0-1)
+### 2. Collection Management (4 tools)
 
-### `semantic_index` 🆕
+#### `get_collections`
+Get all collections. Params: `mode`, `limit`, `offset`.
 
-Manages the semantic search index.
--   **`action`** (string, required): `build`, `rebuild`, or `clear`
--   **`itemKeys`** (array, optional): Specific items to index
+#### `get_collection_details`
+Get details of a specific collection. Params: `collectionKey` (required).
+
+#### `get_collection_items`
+Get items in a collection. Params: `collectionKey` (required), `limit`, `offset`.
+
+#### `get_subcollections`
+Get subcollections. Params: `collectionKey` (required), `limit`, `offset`, `recursive`.
+
+### 3. Semantic Search (3 tools, can be disabled in preferences)
+
+#### `semantic_search`
+AI-powered semantic search using embedding vectors. Finds conceptually related content even without exact keyword matches.
+- `query` (required), `topK`, `minScore`, `language` (zh/en/all)
+
+#### `find_similar`
+Find items semantically similar to a given item.
+- `itemKey` (required), `topK`, `minScore`
+
+#### `semantic_status`
+Get semantic search service status and index statistics. No parameters required.
+
+### 4. Full-text Database (1 tool)
+
+#### `fulltext_database`
+Access cached full-text content database (read-only).
+- `action` (required: list/search/get/stats), `query`, `itemKeys`, `limit`
+
+### 5. Write Operations (4 tools, can be disabled in preferences)
+
+#### `write_note`
+Create or modify Zotero notes. Supports Markdown auto-conversion to HTML.
+- `action` (required: create/update/append), `parentKey`, `noteKey`, `content` (required), `tags`
+
+#### `write_tag`
+Add, remove, or replace tags on items.
+- `action` (required: add/remove/set), `itemKey` (required), `tags` (required)
+
+#### `write_metadata`
+Update metadata fields on items (title, abstract, date, DOI, creators, etc.).
+- `itemKey` (required), `fields`, `creators`
+
+#### `write_item`
+Create new items or reparent existing attachments.
+- `action` (required: create/reparent), `itemType`, `fields`, `creators`, `tags`, `attachmentKeys`, `parentKey`
 
 ---
 

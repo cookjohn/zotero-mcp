@@ -19,6 +19,7 @@
     <preference id="extensions.zotero.zotero-mcp-plugin.custom.includeWebpage" name="extensions.zotero.zotero-mcp-plugin.custom.includeWebpage" type="bool" />
     <preference id="extensions.zotero.zotero-mcp-plugin.custom.enableCompression" name="extensions.zotero.zotero-mcp-plugin.custom.enableCompression" type="bool" />
     <preference id="extensions.zotero.zotero-mcp-plugin.ui.includeMetadata" name="extensions.zotero.zotero-mcp-plugin.ui.includeMetadata" type="bool" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.write.enabled" name="extensions.zotero.zotero-mcp-plugin.write.enabled" type="bool" />
     <!-- Embedding API settings -->
     <preference id="extensions.zotero.zotero-mcp-plugin.embedding.apiBase" name="extensions.zotero.zotero-mcp-plugin.embedding.apiBase" type="string" />
     <preference id="extensions.zotero.zotero-mcp-plugin.embedding.apiKey" name="extensions.zotero.zotero-mcp-plugin.embedding.apiKey" type="string" />
@@ -226,6 +227,20 @@
           <html:input type="checkbox"
             id="zotero-prefpane-__addonRef__-mcp-server-allow-remote"
             preference="extensions.zotero.zotero-mcp-plugin.mcp.server.allowRemote"
+          />
+          <html:span class="zmp-tog-track"></html:span>
+        </html:label>
+      </html:div>
+
+      <html:div class="zmp-sw" style="margin-top:14px;margin-bottom:0">
+        <html:div>
+          <html:div class="zmp-sw-text" data-l10n-id="pref-write-enable-text"></html:div>
+          <html:div class="zmp-sw-sub" data-l10n-id="pref-write-enable-sub"></html:div>
+        </html:div>
+        <html:label class="zmp-tog">
+          <html:input type="checkbox"
+            id="zotero-prefpane-__addonRef__-write-enabled"
+            preference="extensions.zotero.zotero-mcp-plugin.write.enabled"
           />
           <html:span class="zmp-tog-track"></html:span>
         </html:label>

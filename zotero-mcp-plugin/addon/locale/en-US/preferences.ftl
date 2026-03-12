@@ -152,6 +152,7 @@ pref-semantic-stats-progress = Progress:
 pref-semantic-stats-refresh-button =
     .label = Refresh
 pref-semantic-stats-not-initialized = Semantic search service not initialized
+pref-semantic-stats-db-corrupted = Index database is corrupted. Please restart Zotero to auto-repair.
 
 pref-stat-items = Items
 pref-stat-vectors = Vectors
@@ -211,6 +212,9 @@ first-install-title = Welcome to Zotero MCP Plugin
 first-install-prompt = Thank you for installing the Zotero MCP Plugin! To get started, you need to generate configuration files for your AI clients. Would you like to open the settings page now to generate configurations?
 first-install-open-prefs = Open Settings
 first-install-later = Configure Later
+
+pref-write-enable-text = Enable Write Operations
+pref-write-enable-sub = Allow AI clients to create and modify notes (disabled by default for safety)
 
 pref-contact-title = Contact Information
 pref-contact-email = Email: fransjone@mail.com

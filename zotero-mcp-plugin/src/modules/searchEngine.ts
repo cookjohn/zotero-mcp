@@ -621,6 +621,60 @@ export async function handleSearchRequest(
     }
   }
 
+  // --- 3.5. 独立附件特殊处理（Zotero.Search 不能可靠搜索 attachment 类型条目）---
+  if (params.itemType === "attachment") {
+    // 用干净的搜索对象找所有附件（包括子附件），再内存过滤出独立项
+    const attachSearch = new Zotero.Search();
+    (attachSearch as any).libraryID = libraryID;
+    attachSearch.addCondition("itemType", "is", "attachment");
+    const attachIDs = await attachSearch.search();
+    let standaloneItems = (await Zotero.Items.getAsync(attachIDs)).filter(
+      (item: Zotero.Item) => !item.parentItemID
+    );
+
+    // 如果还有 q 参数，对文件名/标题做简单过滤
+    if (params.q) {
+      const q = params.q.toLowerCase();
+      standaloneItems = standaloneItems.filter((item: Zotero.Item) => {
+        const title = (
+          (item.getField("title") as string) ||
+          item.attachmentFilename ||
+          ""
+        ).toLowerCase();
+        return title.includes(q);
+      });
+    }
+
+    const total = standaloneItems.length;
+    const paginated = standaloneItems.slice(offset, offset + limit);
+    const results = paginated.map((item: Zotero.Item) => {
+      const formatted = formatItemBrief(item);
+      formatted.attachments = [
+        {
+          key: item.key,
+          filename: item.attachmentFilename || "",
+          filePath: item.getFilePath() || "",
+          contentType: item.attachmentContentType || "",
+          linkMode: item.attachmentLinkMode,
+        },
+      ];
+      return formatted;
+    });
+
+    return {
+      query: params,
+      pagination: {
+        limit,
+        offset,
+        total,
+        hasMore: offset + paginated.length < total,
+      },
+      searchTime: `${Date.now() - startTime}ms`,
+      results,
+      searchFeatures: ["standalone_attachments"],
+    };
+  }
+
   // --- 4. 构建 Zotero 搜索条件 (除标签外) ---
   const s = new Zotero.Search();
   (s as any).libraryID = libraryID;

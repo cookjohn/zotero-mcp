@@ -8,6 +8,7 @@
 declare let Zotero: any;
 declare let ztoolkit: ZToolkit;
 declare let PathUtils: any;
+declare let IOUtils: any;
 
 export interface VectorRecord {
   itemKey: string;
@@ -105,11 +106,142 @@ export class VectorStore {
       // Create tables
       await this.createTables();
 
+      // Check database integrity
+      const isHealthy = await this.checkAndRepairDatabase();
+      if (!isHealthy) {
+        // Database was recreated after corruption, re-create tables
+        await this.createTables();
+      }
+
       this.initialized = true;
       ztoolkit.log('[VectorStore] Initialized successfully');
     } catch (error) {
       ztoolkit.log(`[VectorStore] Initialization failed: ${error}`, 'error');
       throw error;
+    }
+  }
+
+  /**
+   * Check database integrity and attempt repair if corrupted.
+   * Returns true if database is healthy (or was successfully repaired in-place).
+   * Returns false if database was recreated from scratch (tables need to be re-created).
+   */
+  private async checkAndRepairDatabase(): Promise<boolean> {
+    try {
+      // Quick integrity check on all tables
+      const result = await this.db.valueQueryAsync(`PRAGMA integrity_check(1)`);
+      if (result === 'ok') {
+        ztoolkit.log('[VectorStore] Database integrity check passed');
+        return true;
+      }
+
+      ztoolkit.log(`[VectorStore] Database integrity check FAILED: ${result}`, 'warn');
+
+      // Step 1: Try REINDEX to fix index corruption (most common cause)
+      try {
+        ztoolkit.log('[VectorStore] Attempting repair via REINDEX...');
+        await this.db.queryAsync(`REINDEX`);
+
+        // Re-check after REINDEX
+        const recheck = await this.db.valueQueryAsync(`PRAGMA integrity_check(1)`);
+        if (recheck === 'ok') {
+          ztoolkit.log('[VectorStore] Database repaired successfully via REINDEX');
+          return true;
+        }
+        ztoolkit.log(`[VectorStore] REINDEX did not fix corruption: ${recheck}`, 'warn');
+      } catch (reindexError) {
+        ztoolkit.log(`[VectorStore] REINDEX failed: ${reindexError}`, 'warn');
+      }
+
+      // Step 2: Close corrupted db, backup and recreate
+      ztoolkit.log('[VectorStore] Corruption cannot be repaired in-place, recreating database...');
+
+      // Close current connection
+      try {
+        await this.db.closeDatabase();
+      } catch (closeError) {
+        ztoolkit.log(`[VectorStore] Error closing corrupted db: ${closeError}`, 'warn');
+      }
+
+      // Rename corrupted file as backup
+      const backupPath = this.dbPath + '.corrupt.' + Date.now();
+      try {
+        await IOUtils.move(this.dbPath, backupPath);
+        ztoolkit.log(`[VectorStore] Corrupted database backed up to: ${backupPath}`);
+      } catch (moveError) {
+        ztoolkit.log(`[VectorStore] Failed to backup corrupted db: ${moveError}`, 'warn');
+        // Try to remove it directly
+        try {
+          await IOUtils.remove(this.dbPath);
+        } catch (removeError) {
+          ztoolkit.log(`[VectorStore] Failed to remove corrupted db: ${removeError}`, 'error');
+          throw new Error(`Database is corrupted and cannot be removed: ${removeError}`);
+        }
+      }
+
+      // Also remove WAL/SHM files if they exist
+      for (const suffix of ['-wal', '-shm']) {
+        try {
+          await IOUtils.remove(this.dbPath + suffix);
+        } catch (_) {
+          // May not exist, ignore
+        }
+      }
+
+      // Create fresh connection
+      this.db = new Zotero.DBConnection(this.dbPath);
+      ztoolkit.log('[VectorStore] Fresh database created after corruption recovery');
+
+      // Notify user
+      try {
+        new ztoolkit.ProgressWindow("Zotero MCP Plugin", { closeOtherProgressWindows: false })
+          .createLine({
+            text: "检测到索引数据库损坏，已自动重建。旧文件已备份。\nCorrupted index database detected and rebuilt. Old file backed up.",
+            type: "default",
+          })
+          .show();
+      } catch (_) {
+        // UI notification is non-critical
+      }
+
+      return false; // Tables need to be re-created
+    } catch (error) {
+      // integrity_check itself failed - likely severe corruption
+      ztoolkit.log(`[VectorStore] Integrity check query failed: ${error}`, 'error');
+
+      // Try the same backup-and-recreate approach
+      try {
+        try { await this.db.closeDatabase(); } catch (_) {}
+
+        const backupPath = this.dbPath + '.corrupt.' + Date.now();
+        try {
+          await IOUtils.move(this.dbPath, backupPath);
+          ztoolkit.log(`[VectorStore] Severely corrupted database backed up to: ${backupPath}`);
+        } catch (_) {
+          await IOUtils.remove(this.dbPath);
+        }
+
+        for (const suffix of ['-wal', '-shm']) {
+          try { await IOUtils.remove(this.dbPath + suffix); } catch (_) {}
+        }
+
+        this.db = new Zotero.DBConnection(this.dbPath);
+        ztoolkit.log('[VectorStore] Fresh database created after severe corruption');
+
+        try {
+          new ztoolkit.ProgressWindow("Zotero MCP Plugin", { closeOtherProgressWindows: false })
+            .createLine({
+              text: "检测到索引数据库严重损坏，已自动重建。旧文件已备份。\nSeverely corrupted index database detected and rebuilt. Old file backed up.",
+              type: "default",
+            })
+            .show();
+        } catch (_) {}
+
+        return false;
+      } catch (recreateError) {
+        ztoolkit.log(`[VectorStore] Failed to recreate database after corruption: ${recreateError}`, 'error');
+        throw recreateError;
+      }
     }
   }
 

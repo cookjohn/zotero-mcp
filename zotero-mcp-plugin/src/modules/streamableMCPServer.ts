@@ -145,7 +145,8 @@ function getToolSpecificGuidance(toolName: string): any {
           'These are research items from the user\'s personal library',
           'You can analyze and discuss these items to help with research',
           'Use the provided metadata for citations when needed',
-          'Use itemKey to get complete content with get_content tool'
+          'Use itemKey to get complete content with get_content tool',
+          'To list standalone PDF/file items imported without metadata (no title/author/year), use itemType="attachment" and includeAttachments="true"'
         ]
       };
 
@@ -361,6 +362,100 @@ function getToolSpecificGuidance(toolName: string): any {
           'Use search to find items containing specific text',
           'Use get to retrieve full content for specific items',
           'Database management is done through Zotero preferences'
+        ]
+      };
+
+    case 'write_note':
+      return {
+        ...baseGuidance,
+        dataStructure: {
+          type: 'write_result',
+          format: 'Write operation result with note key and metadata',
+          actions: 'create, update, append'
+        },
+        interpretation: {
+          purpose: 'Create or modify notes in the user\'s Zotero library',
+          content: 'Confirmation of write operation with created/modified note details',
+          reliability: 'Direct Zotero database operation'
+        },
+        usage: [
+          'Use create with parentKey to attach a note to a specific item',
+          'Use create without parentKey for standalone notes',
+          'Use update to replace the entire content of an existing note',
+          'Use append to add content to the end of an existing note',
+          'Content can be Markdown or HTML - Markdown is auto-converted to HTML',
+          'Always confirm the intended action with the user before writing',
+          'Return the noteKey in the response so the user can reference the note later'
+        ]
+      };
+
+    case 'write_tag':
+      return {
+        ...baseGuidance,
+        dataStructure: {
+          type: 'write_result',
+          format: 'Tag operation result with before/after tag lists',
+          actions: 'add, remove, set'
+        },
+        interpretation: {
+          purpose: 'Manage tags on items in the user\'s Zotero library',
+          content: 'Confirmation of tag operation with before and after state',
+          reliability: 'Direct Zotero database operation'
+        },
+        usage: [
+          'Use add to append tags without removing existing ones',
+          'Use remove to delete specific tags from an item',
+          'Use set to replace all tags with a new list',
+          'Always confirm tag changes with the user before executing',
+          'Response includes beforeTags and afterTags for verification'
+        ]
+      };
+
+    case 'write_metadata':
+      return {
+        ...baseGuidance,
+        dataStructure: {
+          type: 'write_result',
+          format: 'Metadata update result with before/after values for each field',
+          fields: 'title, abstractNote, date, url, DOI, language, volume, issue, pages, publisher, place, ISBN, ISSN, extra, publicationTitle, bookTitle, etc.'
+        },
+        interpretation: {
+          purpose: 'Update bibliographic metadata on items in the user\'s Zotero library',
+          content: 'Confirmation of metadata update with changed field details',
+          reliability: 'Direct Zotero database operation'
+        },
+        usage: [
+          'Use fields object to update any metadata field (e.g., {"title": "New Title", "date": "2024"})',
+          'Use creators array to replace the authors/editors list',
+          'For individual creators: {creatorType, firstName, lastName}',
+          'For organization creators: {creatorType, name}',
+          'Common creatorTypes: author, editor, translator, contributor',
+          'Always confirm metadata changes with the user before executing',
+          'Only works on regular items (not notes or attachments)',
+          'Response includes before/after values for verification'
+        ]
+      };
+
+    case 'write_item':
+      return {
+        ...baseGuidance,
+        dataStructure: {
+          type: 'write_result',
+          format: 'Item creation or reparent result with item key and details',
+          actions: 'create, reparent'
+        },
+        interpretation: {
+          purpose: 'Create new items or reorganize attachments in the user\'s Zotero library',
+          content: 'Confirmation of item creation or attachment reparenting',
+          reliability: 'Direct Zotero database operation'
+        },
+        usage: [
+          'Use create to make a new bibliographic item with itemType, fields, creators, tags',
+          'Use attachmentKeys with create to simultaneously attach standalone PDFs to the new item',
+          'Use reparent to move existing attachments/notes under a different parent item',
+          'Common workflow: read PDF content → extract metadata → create item → attach PDF',
+          'Common itemTypes: journalArticle, book, conferencePaper, thesis, report, webpage, preprint, bookSection',
+          'Always confirm item creation with the user before executing'
         ]
       };
 
@@ -639,22 +734,31 @@ export class StreamableMCPServer {
           properties: {
             q: { type: 'string', description: 'General search query' },
             title: { type: 'string', description: 'Title search' },
-            titleOperator: { 
-              type: 'string', 
+            titleOperator: {
+              type: 'string',
               enum: ['contains', 'exact', 'startsWith', 'endsWith', 'regex'],
-              description: 'Title search operator' 
+              description: 'Title search operator'
             },
             yearRange: { type: 'string', description: 'Year range (e.g., "2020-2023")' },
             fulltext: { type: 'string', description: 'Full-text search in attachments and notes' },
-            fulltextMode: { 
-              type: 'string', 
+            fulltextMode: {
+              type: 'string',
               enum: ['attachment', 'note', 'both'],
-              description: 'Full-text search mode: attachment (PDFs only), note (notes only), both (default)' 
+              description: 'Full-text search mode: attachment (PDFs only), note (notes only), both (default)'
             },
-            fulltextOperator: { 
-              type: 'string', 
+            fulltextOperator: {
+              type: 'string',
               enum: ['contains', 'exact', 'regex'],
-              description: 'Full-text search operator (default: contains)' 
+              description: 'Full-text search operator (default: contains)'
+            },
+            itemType: {
+              type: 'string',
+              description: 'Filter by item type (e.g., "attachment" to list standalone files like PDFs imported without metadata, "journalArticle", "book", etc.)'
+            },
+            includeAttachments: {
+              type: 'string',
+              enum: ['true', 'false'],
+              description: 'Include standalone attachment items (e.g., PDFs without parent item) in results. Must be "true" when itemType is "attachment". Default: false.'
             },
             mode: {
               type: 'string',
@@ -662,10 +766,10 @@ export class StreamableMCPServer {
               description: 'Processing mode: minimal (30 results), preview (100), standard (adaptive), complete (500+). Uses user default if not specified.'
             },
             relevanceScoring: { type: 'boolean', description: 'Enable relevance scoring' },
-            sort: { 
-              type: 'string', 
+            sort: {
+              type: 'string',
               enum: ['relevance', 'date', 'title', 'year'],
-              description: 'Sort order' 
+              description: 'Sort order'
             },
             limit: { type: 'number', description: 'Maximum results to return (overrides mode default)' },
             offset: { type: 'number', description: 'Pagination offset' },
@@ -1044,6 +1148,151 @@ export class StreamableMCPServer {
           },
           required: ['action']
         }
+      },
+      // Write Tools
+      {
+        name: 'write_note',
+        description: 'Create or modify Zotero notes. Supports creating child notes (attached to items), standalone notes, updating existing notes, or appending content. Write operations must be enabled in preferences.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['create', 'update', 'append'],
+              description: 'create: new note, update: replace content, append: add to end'
+            },
+            parentKey: {
+              type: 'string',
+              description: 'Item key to attach note to (create action only, omit for standalone note)'
+            },
+            noteKey: {
+              type: 'string',
+              description: 'Existing note key (required for update/append actions)'
+            },
+            content: {
+              type: 'string',
+              description: 'Note content in HTML or Markdown format. Markdown is auto-converted to HTML for Zotero storage.'
+            },
+            tags: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Tags to add to the note'
+            }
+          },
+          required: ['action', 'content']
+        }
+      },
+      {
+        name: 'write_tag',
+        description: 'Add, remove, or replace tags on Zotero items. Works on any item type (regular items, notes, attachments). Write operations must be enabled in preferences.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['add', 'remove', 'set'],
+              description: 'add: add tags (keep existing), remove: remove specific tags, set: replace all tags with provided list'
+            },
+            itemKey: {
+              type: 'string',
+              description: 'Item key to modify tags on'
+            },
+            tags: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Tags to add/remove/set'
+            }
+          },
+          required: ['action', 'itemKey', 'tags']
+        }
+      },
+      {
+        name: 'write_metadata',
+        description: 'Update metadata fields on Zotero items (title, abstract, date, URL, DOI, creators, etc.). Write operations must be enabled in preferences.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            itemKey: {
+              type: 'string',
+              description: 'Item key to update metadata on'
+            },
+            fields: {
+              type: 'object',
+              description: 'Fields to update. Common fields: title, abstractNote, date, url, DOI, language, shortTitle, volume, issue, pages, publisher, place, ISBN, ISSN, extra, rights, series, seriesNumber, edition, numPages, journalAbbreviation, publicationTitle, bookTitle',
+              additionalProperties: { type: 'string' }
+            },
+            creators: {
+              type: 'array',
+              description: 'Set the creators list (replaces all existing creators). Each creator has creatorType (author/editor/translator/etc.), and either firstName+lastName or name (for organizations).',
+              items: {
+                type: 'object',
+                properties: {
+                  creatorType: {
+                    type: 'string',
+                    description: 'Creator type: author, editor, translator, contributor, bookAuthor, seriesEditor, reviewedAuthor, etc.'
+                  },
+                  firstName: { type: 'string', description: 'First name (for individuals)' },
+                  lastName: { type: 'string', description: 'Last name (for individuals)' },
+                  name: { type: 'string', description: 'Full name (for organizations, use instead of firstName/lastName)' }
+                },
+                required: ['creatorType']
+              }
+            }
+          },
+          required: ['itemKey']
+        }
+      },
+      {
+        name: 'write_item',
+        description: 'Create a new Zotero item or re-parent existing attachments. Use to create bibliographic entries and attach standalone PDFs to them. Write operations must be enabled in preferences.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['create', 'reparent'],
+              description: 'create: create a new item with metadata. reparent: move an attachment under a different parent item.'
+            },
+            itemType: {
+              type: 'string',
+              description: 'Item type for create action (e.g., journalArticle, book, conferencePaper, thesis, report, webpage, preprint, bookSection, etc.)'
+            },
+            fields: {
+              type: 'object',
+              description: 'Metadata fields for create action. Common: title, abstractNote, date, url, DOI, language, volume, issue, pages, publisher, place, publicationTitle, bookTitle, etc.',
+              additionalProperties: { type: 'string' }
+            },
+            creators: {
+              type: 'array',
+              description: 'Creators for create action. Each: {creatorType, firstName, lastName} or {creatorType, name} for organizations.',
+              items: {
+                type: 'object',
+                properties: {
+                  creatorType: { type: 'string', description: 'author, editor, translator, contributor, etc.' },
+                  firstName: { type: 'string' },
+                  lastName: { type: 'string' },
+                  name: { type: 'string', description: 'For organizations' }
+                },
+                required: ['creatorType']
+              }
+            },
+            tags: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Tags to add to the new item'
+            },
+            attachmentKeys: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'For create: existing standalone attachment keys to re-parent under the new item. For reparent: attachment keys to move.'
+            },
+            parentKey: {
+              type: 'string',
+              description: 'For reparent action: the target parent item key to move attachments to'
+            }
+          },
+          required: ['action']
+        }
       }
     ];
 
@@ -1054,7 +1303,14 @@ export class StreamableMCPServer {
       ? tools.filter((t: any) => !semanticToolNames.has(t.name))
       : tools;
 
-    return this.createResponse(request.id ?? null, { tools: filteredTools });
+    // Filter out write tools if write operations are disabled (default: disabled)
+    const writeEnabled = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
+    const writeToolNames = new Set(['write_note', 'write_tag', 'write_metadata', 'write_item']);
+    const finalTools = writeEnabled === true
+      ? filteredTools
+      : filteredTools.filter((t: any) => !writeToolNames.has(t.name));
+
+    return this.createResponse(request.id ?? null, { tools: finalTools });
   }
 
   private async handleToolCall(request: MCPRequest): Promise<MCPResponse> {
@@ -1166,6 +1422,58 @@ export class StreamableMCPServer {
           }
           result = await this.callFulltextDatabase(args);
           break;
+
+        // Write Tools
+        case 'write_note': {
+          const writeEnabled = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
+          if (writeEnabled !== true) {
+            throw new Error('Write operations are disabled. Enable them in Zotero MCP Plugin preferences.');
+          }
+          if (!args?.action || !args?.content) {
+            throw new Error('action and content are required');
+          }
+          result = await this.callWriteNote(args);
+          break;
+        }
+
+        case 'write_tag': {
+          const writeEnabled2 = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
+          if (writeEnabled2 !== true) {
+            throw new Error('Write operations are disabled. Enable them in Zotero MCP Plugin preferences.');
+          }
+          if (!args?.action || !args?.itemKey || !args?.tags) {
+            throw new Error('action, itemKey, and tags are required');
+          }
+          result = await this.callWriteTag(args);
+          break;
+        }
+
+        case 'write_metadata': {
+          const writeEnabled3 = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
+          if (writeEnabled3 !== true) {
+            throw new Error('Write operations are disabled. Enable them in Zotero MCP Plugin preferences.');
+          }
+          if (!args?.itemKey) {
+            throw new Error('itemKey is required');
+          }
+          if (!args?.fields && !args?.creators) {
+            throw new Error('At least one of fields or creators is required');
+          }
+          result = await this.callWriteMetadata(args);
+          break;
+        }
+
+        case 'write_item': {
+          const writeEnabled4 = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
+          if (writeEnabled4 !== true) {
+            throw new Error('Write operations are disabled. Enable them in Zotero MCP Plugin preferences.');
+          }
+          if (!args?.action) {
+            throw new Error('action is required');
+          }
+          result = await this.callWriteItem(args);
+          break;
+        }
 
         default:
           throw new Error(`Unknown tool: ${name}`);
@@ -1661,6 +1969,574 @@ export class StreamableMCPServer {
   }
 
   /**
+   * Convert Markdown content to HTML suitable for Zotero notes.
+   * Auto-detects if content is already HTML and skips conversion.
+   */
+  private markdownToNoteHtml(markdown: string): string {
+    if (!markdown || typeof markdown !== 'string') return '';
+
+    // Detect if content is already HTML
+    const trimmed = markdown.trim();
+    if (trimmed.startsWith('<') && /<\/.+>/.test(trimmed)) {
+      return markdown;
+    }
+
+    let html = markdown;
+
+    // Escape HTML entities
+    html = html.replace(/&/g, '&amp;')
+               .replace(/</g, '&lt;')
+               .replace(/>/g, '&gt;');
+
+    // Headings (process longest first)
+    html = html.replace(/^######\s+(.+)$/gm, '<h6>$1</h6>');
+    html = html.replace(/^#####\s+(.+)$/gm, '<h5>$1</h5>');
+    html = html.replace(/^####\s+(.+)$/gm, '<h4>$1</h4>');
+    html = html.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
+
+    // Bold + italic, bold, italic
+    html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Links
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+
+    // Horizontal rules
+    html = html.replace(/^---+$/gm, '<hr/>');
+
+    // Unordered lists (block)
+    html = html.replace(/(?:^[-*+]\s+.+$\n?)+/gm, (match) => {
+      const items = match.trim().split('\n').map((line: string) => {
+        const content = line.replace(/^[-*+]\s+/, '');
+        return `<li>${content}</li>`;
+      }).join('');
+      return `<ul>${items}</ul>\n`;
+    });
+
+    // Ordered lists (block)
+    html = html.replace(/(?:^\d+\.\s+.+$\n?)+/gm, (match) => {
+      const items = match.trim().split('\n').map((line: string) => {
+        const content = line.replace(/^\d+\.\s+/, '');
+        return `<li>${content}</li>`;
+      }).join('');
+      return `<ol>${items}</ol>\n`;
+    });
+
+    // Paragraphs: split by double newline, wrap plain text blocks in <p>
+    const blocks = html.split(/\n\n+/);
+    html = blocks.map((block: string) => {
+      block = block.trim();
+      if (!block) return '';
+      if (/^<(h[1-6]|ul|ol|li|blockquote|hr|div|p|pre|table)/i.test(block)) {
+        return block;
+      }
+      block = block.replace(/\n/g, '<br/>');
+      return `<p>${block}</p>`;
+    }).filter(Boolean).join('\n');
+
+    return html;
+  }
+
+  /**
+   * Handle write_note tool calls: create, update, append notes
+   */
+  private async callWriteNote(args: any): Promise<any> {
+    const { action, parentKey, noteKey, content, tags } = args;
+
+    try {
+      const htmlContent = this.markdownToNoteHtml(content);
+
+      switch (action) {
+        case 'create': {
+          const note = new Zotero.Item('note');
+          note.libraryID = Zotero.Libraries.userLibraryID;
+
+          if (parentKey) {
+            const parentItem = Zotero.Items.getByLibraryAndKey(
+              Zotero.Libraries.userLibraryID, parentKey
+            );
+            if (!parentItem) {
+              throw new Error(`Parent item not found: ${parentKey}`);
+            }
+            if (parentItem.isNote()) {
+              throw new Error('Cannot attach a note to another note');
+            }
+            if (parentItem.isAttachment()) {
+              throw new Error('Cannot attach a note to an attachment');
+            }
+            note.parentKey = parentKey;
+          }
+
+          note.setNote(htmlContent);
+
+          if (tags && Array.isArray(tags)) {
+            for (const tag of tags) {
+              note.addTag(tag, 0);
+            }
+          }
+
+          await note.saveTx();
+
+          ztoolkit.log(`[StreamableMCP] Created note ${note.key}${parentKey ? ' attached to ' + parentKey : ' (standalone)'}`);
+
+          return applyGlobalAIInstructions({
+            action: 'create',
+            success: true,
+            data: {
+              noteKey: note.key,
+              parentKey: parentKey || null,
+              type: parentKey ? 'child' : 'standalone',
+              contentPreview: content.substring(0, 200),
+              contentLength: content.length,
+              tags: tags || [],
+              dateCreated: note.dateAdded
+            },
+            metadata: {
+              extractedAt: new Date().toISOString(),
+              message: `Note created successfully (key: ${note.key})`
+            }
+          }, 'write_note');
+        }
+
+        case 'update': {
+          if (!noteKey) {
+            throw new Error('noteKey is required for update action');
+          }
+
+          const existingNote = Zotero.Items.getByLibraryAndKey(
+            Zotero.Libraries.userLibraryID, noteKey
+          );
+          if (!existingNote) {
+            throw new Error(`Note not found: ${noteKey}`);
+          }
+          if (!existingNote.isNote()) {
+            throw new Error(`Item ${noteKey} is not a note`);
+          }
+
+          existingNote.setNote(htmlContent);
+
+          if (tags && Array.isArray(tags)) {
+            for (const tag of tags) {
+              existingNote.addTag(tag, 0);
+            }
+          }
+
+          await existingNote.saveTx();
+
+          ztoolkit.log(`[StreamableMCP] Updated note ${noteKey}`);
+
+          return applyGlobalAIInstructions({
+            action: 'update',
+            success: true,
+            data: {
+              noteKey,
+              contentPreview: content.substring(0, 200),
+              contentLength: content.length,
+              tags: existingNote.getTags().map((t: any) => t.tag),
+              dateModified: existingNote.dateModified
+            },
+            metadata: {
+              extractedAt: new Date().toISOString(),
+              message: `Note ${noteKey} updated successfully`
+            }
+          }, 'write_note');
+        }
+
+        case 'append': {
+          if (!noteKey) {
+            throw new Error('noteKey is required for append action');
+          }
+
+          const existingNote = Zotero.Items.getByLibraryAndKey(
+            Zotero.Libraries.userLibraryID, noteKey
+          );
+          if (!existingNote) {
+            throw new Error(`Note not found: ${noteKey}`);
+          }
+          if (!existingNote.isNote()) {
+            throw new Error(`Item ${noteKey} is not a note`);
+          }
+
+          const currentHtml = existingNote.getNote() || '';
+          const appendedHtml = currentHtml + htmlContent;
+          existingNote.setNote(appendedHtml);
+
+          if (tags && Array.isArray(tags)) {
+            for (const tag of tags) {
+              existingNote.addTag(tag, 0);
+            }
+          }
+
+          await existingNote.saveTx();
+
+          ztoolkit.log(`[StreamableMCP] Appended to note ${noteKey}`);
+
+          return applyGlobalAIInstructions({
+            action: 'append',
+            success: true,
+            data: {
+              noteKey,
+              appendedContentPreview: content.substring(0, 200),
+              appendedContentLength: content.length,
+              totalContentLength: appendedHtml.length,
+              tags: existingNote.getTags().map((t: any) => t.tag),
+              dateModified: existingNote.dateModified
+            },
+            metadata: {
+              extractedAt: new Date().toISOString(),
+              message: `Content appended to note ${noteKey} successfully`
+            }
+          }, 'write_note');
+        }
+
+        default:
+          throw new Error(`Unknown action: ${action}. Use create, update, or append.`);
+      }
+    } catch (error) {
+      ztoolkit.log(`[StreamableMCP] Write note error: ${error}`, 'error');
+      return applyGlobalAIInstructions({
+        success: false,
+        error: String(error)
+      }, 'write_note');
+    }
+  }
+
+  /**
+   * Handle write_tag tool calls: add, remove, set tags on items
+   */
+  private async callWriteTag(args: any): Promise<any> {
+    const { action, itemKey, tags } = args;
+
+    try {
+      const item = Zotero.Items.getByLibraryAndKey(
+        Zotero.Libraries.userLibraryID, itemKey
+      );
+      if (!item) {
+        throw new Error(`Item not found: ${itemKey}`);
+      }
+
+      const beforeTags = item.getTags().map((t: any) => t.tag);
+
+      switch (action) {
+        case 'add': {
+          for (const tag of tags) {
+            item.addTag(tag, 0);
+          }
+          break;
+        }
+
+        case 'remove': {
+          for (const tag of tags) {
+            item.removeTag(tag);
+          }
+          break;
+        }
+
+        case 'set': {
+          // Remove all existing tags
+          for (const existing of beforeTags) {
+            item.removeTag(existing);
+          }
+          // Add new tags
+          for (const tag of tags) {
+            item.addTag(tag, 0);
+          }
+          break;
+        }
+
+        default:
+          throw new Error(`Unknown action: ${action}. Use add, remove, or set.`);
+      }
+
+      await item.saveTx();
+
+      const afterTags = item.getTags().map((t: any) => t.tag);
+
+      ztoolkit.log(`[StreamableMCP] write_tag ${action} on ${itemKey}: [${beforeTags.join(', ')}] -> [${afterTags.join(', ')}]`);
+
+      return applyGlobalAIInstructions({
+        action,
+        success: true,
+        data: {
+          itemKey,
+          beforeTags,
+          afterTags,
+          tagsModified: tags
+        },
+        metadata: {
+          extractedAt: new Date().toISOString(),
+          message: `Tags ${action === 'add' ? 'added to' : action === 'remove' ? 'removed from' : 'set on'} item ${itemKey}`
+        }
+      }, 'write_tag');
+    } catch (error) {
+      ztoolkit.log(`[StreamableMCP] Write tag error: ${error}`, 'error');
+      return applyGlobalAIInstructions({
+        success: false,
+        error: String(error)
+      }, 'write_tag');
+    }
+  }
+
+  /**
+   * Handle write_metadata tool calls: update fields and creators on items
+   */
+  private async callWriteMetadata(args: any): Promise<any> {
+    const { itemKey, fields, creators } = args;
+
+    try {
+      const item = Zotero.Items.getByLibraryAndKey(
+        Zotero.Libraries.userLibraryID, itemKey
+      );
+      if (!item) {
+        throw new Error(`Item not found: ${itemKey}`);
+      }
+      if (!item.isRegularItem()) {
+        throw new Error(`Item ${itemKey} is not a regular item (it is a ${item.itemType}). Use write_note for notes.`);
+      }
+
+      const updatedFields: Record<string, { before: string; after: string }> = {};
+      let creatorsUpdated = false;
+      let beforeCreators: any[] = [];
+      let afterCreators: any[] = [];
+
+      // Update fields
+      if (fields && typeof fields === 'object') {
+        for (const [fieldName, value] of Object.entries(fields)) {
+          try {
+            const before = String(item.getField(fieldName) || '');
+            item.setField(fieldName, String(value));
+            updatedFields[fieldName] = { before, after: String(value) };
+          } catch (fieldError) {
+            throw new Error(`Failed to set field "${fieldName}": ${fieldError}`);
+          }
+        }
+      }
+
+      // Update creators
+      if (creators && Array.isArray(creators)) {
+        beforeCreators = item.getCreators().map((c: any) => ({
+          creatorType: Zotero.CreatorTypes.getName(c.creatorTypeID),
+          firstName: c.firstName,
+          lastName: c.lastName
+        }));
+
+        item.setCreators(creators.map((c: any) => {
+          const creatorData: any = {
+            creatorType: c.creatorType || 'author'
+          };
+          if (c.name) {
+            // Organization / single-field name
+            creatorData.name = c.name;
+          } else {
+            creatorData.firstName = c.firstName || '';
+            creatorData.lastName = c.lastName || '';
+          }
+          return creatorData;
+        }));
+
+        creatorsUpdated = true;
+        afterCreators = creators;
+      }
+
+      await item.saveTx();
+
+      ztoolkit.log(`[StreamableMCP] Updated metadata on ${itemKey}: fields=[${Object.keys(updatedFields).join(', ')}], creators=${creatorsUpdated}`);
+
+      return applyGlobalAIInstructions({
+        success: true,
+        data: {
+          itemKey,
+          updatedFields,
+          creatorsUpdated,
+          ...(creatorsUpdated ? { beforeCreators, afterCreators } : {})
+        },
+        metadata: {
+          extractedAt: new Date().toISOString(),
+          message: `Metadata updated on item ${itemKey}`
+        }
+      }, 'write_metadata');
+    } catch (error) {
+      ztoolkit.log(`[StreamableMCP] Write metadata error: ${error}`, 'error');
+      return applyGlobalAIInstructions({
+        success: false,
+        error: String(error)
+      }, 'write_metadata');
+    }
+  }
+
+  /**
+   * Handle write_item tool calls: create items and reparent attachments
+   */
+  private async callWriteItem(args: any): Promise<any> {
+    const { action, itemType, fields, creators, tags, attachmentKeys, parentKey } = args;
+
+    try {
+      switch (action) {
+        case 'create': {
+          if (!itemType) {
+            throw new Error('itemType is required for create action (e.g., journalArticle, book, conferencePaper)');
+          }
+
+          // Create new item
+          const item = new Zotero.Item(itemType);
+          item.libraryID = Zotero.Libraries.userLibraryID;
+
+          // Set fields
+          if (fields && typeof fields === 'object') {
+            for (const [fieldName, value] of Object.entries(fields)) {
+              try {
+                item.setField(fieldName, String(value));
+              } catch (fieldError) {
+                throw new Error(`Failed to set field "${fieldName}": ${fieldError}`);
+              }
+            }
+          }
+
+          // Set creators
+          if (creators && Array.isArray(creators)) {
+            item.setCreators(creators.map((c: any) => {
+              const creatorData: any = { creatorType: c.creatorType || 'author' };
+              if (c.name) {
+                creatorData.name = c.name;
+              } else {
+                creatorData.firstName = c.firstName || '';
+                creatorData.lastName = c.lastName || '';
+              }
+              return creatorData;
+            }));
+          }
+
+          // Add tags
+          if (tags && Array.isArray(tags)) {
+            for (const tag of tags) {
+              item.addTag(tag, 0);
+            }
+          }
+
+          await item.saveTx();
+
+          ztoolkit.log(`[StreamableMCP] Created item ${item.key} (type: ${itemType})`);
+
+          // Re-parent attachments if provided
+          const reparentedAttachments: string[] = [];
+          if (attachmentKeys && Array.isArray(attachmentKeys)) {
+            for (const attKey of attachmentKeys) {
+              const attachment = Zotero.Items.getByLibraryAndKey(
+                Zotero.Libraries.userLibraryID, attKey
+              );
+              if (!attachment) {
+                ztoolkit.log(`[StreamableMCP] Attachment not found: ${attKey}`, 'warn');
+                continue;
+              }
+              if (!attachment.isAttachment()) {
+                ztoolkit.log(`[StreamableMCP] Item ${attKey} is not an attachment, skipping`, 'warn');
+                continue;
+              }
+              attachment.parentKey = item.key;
+              await attachment.saveTx();
+              reparentedAttachments.push(attKey);
+              ztoolkit.log(`[StreamableMCP] Re-parented attachment ${attKey} under ${item.key}`);
+            }
+          }
+
+          return applyGlobalAIInstructions({
+            action: 'create',
+            success: true,
+            data: {
+              itemKey: item.key,
+              itemType,
+              title: fields?.title || '',
+              creatorsCount: creators?.length || 0,
+              tagsCount: tags?.length || 0,
+              reparentedAttachments,
+              dateCreated: item.dateAdded
+            },
+            metadata: {
+              extractedAt: new Date().toISOString(),
+              message: `Item created (key: ${item.key}, type: ${itemType})${reparentedAttachments.length > 0 ? `, ${reparentedAttachments.length} attachment(s) attached` : ''}`
+            }
+          }, 'write_item');
+        }
+
+        case 'reparent': {
+          if (!attachmentKeys || !Array.isArray(attachmentKeys) || attachmentKeys.length === 0) {
+            throw new Error('attachmentKeys is required for reparent action');
+          }
+          if (!parentKey) {
+            throw new Error('parentKey is required for reparent action');
+          }
+
+          // Verify parent exists
+          const parentItem = Zotero.Items.getByLibraryAndKey(
+            Zotero.Libraries.userLibraryID, parentKey
+          );
+          if (!parentItem) {
+            throw new Error(`Parent item not found: ${parentKey}`);
+          }
+          if (!parentItem.isRegularItem()) {
+            throw new Error(`Parent ${parentKey} is not a regular item (type: ${parentItem.itemType})`);
+          }
+
+          const results: Array<{ key: string; success: boolean; error?: string }> = [];
+          for (const attKey of attachmentKeys) {
+            try {
+              const attachment = Zotero.Items.getByLibraryAndKey(
+                Zotero.Libraries.userLibraryID, attKey
+              );
+              if (!attachment) {
+                results.push({ key: attKey, success: false, error: 'Not found' });
+                continue;
+              }
+              if (!attachment.isAttachment() && !attachment.isNote()) {
+                results.push({ key: attKey, success: false, error: `Not an attachment or note (type: ${attachment.itemType})` });
+                continue;
+              }
+              attachment.parentKey = parentKey;
+              await attachment.saveTx();
+              results.push({ key: attKey, success: true });
+              ztoolkit.log(`[StreamableMCP] Re-parented ${attKey} under ${parentKey}`);
+            } catch (attError) {
+              results.push({ key: attKey, success: false, error: String(attError) });
+            }
+          }
+
+          const successCount = results.filter(r => r.success).length;
+
+          return applyGlobalAIInstructions({
+            action: 'reparent',
+            success: successCount > 0,
+            data: {
+              parentKey,
+              results,
+              successCount,
+              totalCount: attachmentKeys.length
+            },
+            metadata: {
+              extractedAt: new Date().toISOString(),
+              message: `Re-parented ${successCount}/${attachmentKeys.length} item(s) under ${parentKey}`
+            }
+          }, 'write_item');
+        }
+
+        default:
+          throw new Error(`Unknown action: ${action}. Use create or reparent.`);
+      }
+    } catch (error) {
+      ztoolkit.log(`[StreamableMCP] Write item error: ${error}`, 'error');
+      return applyGlobalAIInstructions({
+        success: false,
+        error: String(error)
+      }, 'write_item');
+    }
+  }
+
+  /**
    * Format tool result for MCP response with intelligent content type detection
    */
   private formatToolResult(result: any, toolName: string, args: any): any {
@@ -1866,7 +2742,12 @@ export class StreamableMCPServer {
         'find_similar',
         'semantic_status',
         // Full-text Database Tool (read-only)
-        'fulltext_database'
+        'fulltext_database',
+        // Write Tools
+        'write_note',
+        'write_tag',
+        'write_metadata',
+        'write_item'
       ],
       transport: {
         type: "streamable-http",

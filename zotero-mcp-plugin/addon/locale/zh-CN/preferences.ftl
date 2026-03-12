@@ -152,6 +152,7 @@ pref-semantic-stats-progress = 进度：
 pref-semantic-stats-refresh-button =
     .label = 刷新
 pref-semantic-stats-not-initialized = 语义搜索服务未初始化
+pref-semantic-stats-db-corrupted = 索引数据库已损坏，请重启 Zotero 自动修复
 
 pref-stat-items = 文献
 pref-stat-vectors = 向量
@@ -211,6 +212,9 @@ first-install-title = 欢迎使用 Zotero MCP 插件
 first-install-prompt = 感谢安装 Zotero MCP 插件！为了开始使用，您需要为您的 AI 客户端生成配置文件。是否现在打开设置页面来生成配置？
 first-install-open-prefs = 打开设置
 first-install-later = 稍后配置
+
+pref-write-enable-text = 启用写入操作
+pref-write-enable-sub = 允许 AI 客户端创建和修改笔记（默认关闭以确保安全）
 
 pref-contact-title = 联系方式
 pref-contact-email = 邮箱：fransjone@mail.com

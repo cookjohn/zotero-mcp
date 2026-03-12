@@ -1570,8 +1570,16 @@ function bindSemanticStatsSettings(doc: Document) {
     } catch (error) {
       ztoolkit.log(`[PreferenceScript] Failed to load semantic stats: ${error}`, "warn");
 
-      // Show error message
-      loadingEl.textContent = getString("pref-semantic-stats-not-initialized" as any) || "Semantic search service not initialized";
+      // Check if the error is database corruption
+      const errorStr = String(error);
+      const isCorruption = errorStr.includes('malformed') || errorStr.includes('corrupt') || errorStr.includes('disk image');
+
+      // Show appropriate error message
+      if (isCorruption) {
+        loadingEl.textContent = getString("pref-semantic-stats-db-corrupted" as any) || "Index database is corrupted. Please restart Zotero to auto-repair.";
+      } else {
+        loadingEl.textContent = getString("pref-semantic-stats-not-initialized" as any) || "Semantic search service not initialized";
+      }
       loadingEl.style.display = "block";
       contentEl.style.display = "none";
     }
