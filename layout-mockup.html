@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Zotero MCP 设置</title>
+  <style>
+    :root {
+      --bg: #fff;
+      --bg-hover: #f9fafb;
+      --bg-muted: #f4f5f7;
+      --border: #e5e7eb;
+      --border-light: #f0f1f3;
+      --text: #111827;
+      --text-2: #6b7280;
+      --text-3: #9ca3af;
+      --blue: #3b82f6;
+      --blue-dark: #2563eb;
+      --red: #ef4444;
+      --green: #10b981;
+      --r: 8px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-size: 14px;
+      color: var(--text);
+      background: #f0f2f5;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page {
+      max-width: 640px;
+      margin: 30px auto;
+      background: var(--bg);
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 6px 20px rgba(0,0,0,0.04);
+      overflow: hidden;
+    }
+
+    .s { padding: 24px 28px; border-bottom: 1px solid var(--border); }
+    .s:last-of-type { border-bottom: none; }
+    .s-title { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+    .s-desc { font-size: 12px; color: var(--text-2); margin-bottom: 16px; }
+
+    .sw {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px; background: var(--bg-muted); border-radius: var(--r);
+      margin-bottom: 14px;
+    }
+    .sw-text { font-size: 13px; font-weight: 500; }
+    .sw-sub { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+    .tog { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+    .tog input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .tog-t {
+      position: absolute; cursor: pointer; inset: 0;
+      background: #d1d5db; border-radius: 11px; transition: 0.2s;
+    }
+    .tog-t::before {
+      content: ""; position: absolute; width: 16px; height: 16px;
+      left: 3px; bottom: 3px; background: #fff; border-radius: 50%;
+      transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+    }
+    .tog input:checked + .tog-t { background: var(--blue); }
+    .tog input:checked + .tog-t::before { transform: translateX(18px); }
+
+    .fg { margin-bottom: 14px; }
+    .fg:last-child { margin-bottom: 0; }
+    .fl { display: block; font-size: 12px; font-weight: 500; color: var(--text-2); margin-bottom: 5px; }
+    .fi {
+      width: 100%; max-width: 280px; padding: 7px 10px;
+      border: 1px solid var(--border); border-radius: 6px;
+      font-size: 13px; font-family: inherit; color: var(--text);
+      background: var(--bg); outline: none; transition: 0.15s;
+    }
+    .fi:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59,130,246,0.08); }
+    .fi-s { max-width: 90px; }
+    .fi-l { max-width: 380px; }
+    .fi-mono { font-family: "SF Mono", Consolas, monospace; font-size: 12px; }
+    .fh { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+
+    .f2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .f3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+    .b {
+      display: inline-flex; align-items: center; padding: 7px 14px;
+      border: 1px solid var(--border); border-radius: 6px;
+      font-size: 12px; font-weight: 500; font-family: inherit;
+      cursor: pointer; background: var(--bg); color: var(--text);
+      transition: 0.1s;
+    }
+    .b:hover { background: var(--bg-muted); }
+    .bp { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .bp:hover { background: var(--blue-dark); }
+    .bd { color: var(--red); border-color: #fecaca; }
+    .bd:hover { background: #fef2f2; }
+    .bg { display: flex; gap: 8px; margin-top: 14px; }
+
+    .ex { border: 1px solid var(--border-light); border-radius: var(--r); margin: 12px 0; overflow: hidden; }
+    .ex-h {
+      display: flex; align-items: center; padding: 10px 14px;
+      cursor: pointer; user-select: none; background: var(--bg-hover);
+      font-size: 13px; transition: 0.1s;
+    }
+    .ex-h:hover { background: var(--bg-muted); }
+    .ex-a { font-size: 10px; color: var(--text-3); margin-right: 8px; transition: transform 0.2s; display: inline-block; }
+    .ex.open .ex-a { transform: rotate(90deg); }
+    .ex-t { font-weight: 500; color: var(--text); }
+    .ex-m { margin-left: auto; font-size: 11px; color: var(--text-3); }
+    .ex-b { display: none; padding: 14px; border-top: 1px solid var(--border-light); }
+    .ex.open .ex-b { display: block; }
+
+    .st { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 12px 0; }
+    .st-i { text-align: center; padding: 10px 4px; background: var(--bg-muted); border-radius: 6px; }
+    .st-v { font-size: 17px; font-weight: 600; }
+    .st-v.ok { color: var(--green); }
+    .st-l { font-size: 10px; color: var(--text-3); margin-top: 1px; }
+
+    .pr { padding: 12px; background: #ecfdf5; border: 1px solid #d1fae5; border-radius: var(--r); margin: 10px 0; }
+    .pr-h { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; }
+    .pr-t { height: 5px; background: #a7f3d0; border-radius: 3px; overflow: hidden; }
+    .pr-f { height: 100%; width: 68%; background: var(--green); border-radius: 3px; }
+    .pr-d { font-size: 11px; color: var(--text-2); margin-top: 5px; }
+
+    .dp { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+    .p { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+    .p-h { padding: 7px 12px; background: var(--bg-muted); border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 600; color: var(--text-2); }
+    .p-b { padding: 10px 12px; font-family: "SF Mono", Consolas, monospace; font-size: 11px; color: var(--text-2); line-height: 1.5; min-height: 80px; }
+
+    .ft {
+      display: flex; flex-direction: column; align-items: center;
+      padding: 20px 28px; background: var(--bg-muted); border-top: 1px solid var(--border);
+    }
+    .ft img {
+      width: 100px; height: 100px; border-radius: 8px;
+      margin-bottom: 8px; border: 1px solid var(--border);
+    }
+    .ft-text {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 11px; color: var(--text-3);
+    }
+    .ft a { color: var(--blue); text-decoration: none; }
+    .ft .d { color: var(--border); }
+
+    .empty { padding: 20px; text-align: center; color: var(--text-3); font-size: 13px; display: none; }
+
+    .sl {
+      font-size: 11px; font-weight: 600; color: var(--text-3);
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin: 20px 0 10px; padding-bottom: 6px;
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    .is { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
+    .is-r { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; }
+    .is-l { color: var(--text-2); }
+    .is-v { font-weight: 500; }
+    .is-v.dim { color: var(--text-3); font-weight: normal; }
+
+    .alert {
+      padding: 10px 14px; border-radius: 6px; font-size: 12px; margin-top: 8px;
+      background: #fffbeb; color: #92400e; border: 1px solid #fde68a;
+    }
+
+    /* Server disabled state */
+    .server-off-hint {
+      display: none;
+      padding: 32px 20px;
+      text-align: center;
+      color: var(--text-3);
+      font-size: 13px;
+      border-bottom: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- ① MCP 服务器 -->
+  <div class="s">
+    <div class="s-title">MCP 服务器</div>
+    <div class="s-desc">AI 客户端通过此服务连接你的 Zotero 文献库</div>
+
+    <div class="sw">
+      <div><div class="sw-text">启用服务器</div></div>
+      <label class="tog"><input type="checkbox" checked id="server-toggle"><span class="tog-t"></span></label>
+    </div>
+
+    <div id="server-port" class="f2">
+      <div class="fg">
+        <label class="fl">端口号</label>
+        <input type="number" class="fi fi-s" value="23120">
+        <div class="fh">修改后需重启</div>
+      </div>
+    </div>
+
+    <div id="server-remote" class="sw" style="margin-bottom:0">
+      <div>
+        <div class="sw-text">允许远程访问</div>
+        <div class="sw-sub">开启后请确保网络环境安全</div>
+      </div>
+      <label class="tog"><input type="checkbox"><span class="tog-t"></span></label>
+    </div>
+  </div>
+
+  <!-- 服务器关闭时的提示 -->
+  <div id="server-off-hint" class="server-off-hint">
+    MCP 服务器已关闭，开启后即可配置客户端和搜索功能
+  </div>
+
+  <!-- ②③④ 服务器开启时才显示的内容 -->
+  <div id="server-content">
+
+    <!-- ② 客户端配置 -->
+    <div class="s">
+      <div class="s-title">客户端配置</div>
+      <div class="s-desc">选择你的 AI 客户端，一键生成连接配置</div>
+
+      <div class="f2">
+        <div class="fg">
+          <label class="fl">客户端</label>
+          <select class="fi">
+            <option>Claude Code</option>
+            <option>Claude Desktop</option>
+            <option>Cursor</option>
+            <option>Cline (VS Code)</option>
+            <option>Cherry Studio</option>
+            <option>Gemini CLI</option>
+            <option>Codex CLI</option>
+            <option>Chatbox</option>
+            <option>Trae AI</option>
+            <option>Qwen Code</option>
+            <option>自定义 HTTP</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label class="fl">服务名称</label>
+          <input type="text" class="fi" value="zotero-mcp">
+        </div>
+      </div>
+
+      <div class="bg" style="margin-top:8px">
+        <button class="b bp">生成配置</button>
+        <button class="b">复制</button>
+      </div>
+
+      <div class="dp">
+        <div class="p"><div class="p-h">配置内容</div><div class="p-b">claude mcp add \
+  --transport http \
+  zotero-mcp \
+  http://127.0.0.1:23120/mcp</div></div>
+        <div class="p"><div class="p-h">使用说明</div><div class="p-b">1. 复制左侧命令
+2. 在终端执行
+3. 验证: claude mcp list</div></div>
+      </div>
+    </div>
+
+    <!-- ③ 内容设置 -->
+    <div class="s">
+      <div class="s-title">内容设置</div>
+      <div class="s-desc">控制 MCP 返回给 AI 的内容量和格式</div>
+
+      <div class="f2">
+        <div class="fg">
+          <label class="fl">最大令牌数</label>
+          <input type="number" class="fi" value="8000">
+        </div>
+        <div class="fg">
+          <label class="fl">内容模式</label>
+          <select class="fi" id="cm">
+            <option>极简</option><option>预览</option>
+            <option selected>标准</option><option>完整</option><option>自定义</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="ex" id="ce">
+        <div class="ex-h" onclick="this.parentElement.classList.toggle('open')">
+          <span class="ex-a">▶</span>
+          <span class="ex-t">自定义参数</span>
+          <span class="ex-m">选择自定义模式后生效</span>
+        </div>
+        <div class="ex-b">
+          <div class="f2">
+            <div class="fg"><label class="fl">内容长度上限</label><input type="number" class="fi" value="5000"></div>
+            <div class="fg"><label class="fl">最大附件数</label><input type="number" class="fi" value="5"></div>
+            <div class="fg"><label class="fl">最大笔记数</label><input type="number" class="fi" value="10"></div>
+            <div class="fg"><label class="fl">关键词数量</label><input type="number" class="fi" value="5"></div>
+            <div class="fg"><label class="fl">智能截断长度</label><input type="number" class="fi" value="200"></div>
+            <div class="fg"><label class="fl">搜索结果上限</label><input type="number" class="fi" value="50"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sw" style="margin-bottom:0">
+        <div>
+          <div class="sw-text">包含元数据</div>
+          <div class="sw-sub">返回标题、作者、DOI 等字段</div>
+        </div>
+        <label class="tog"><input type="checkbox" checked><span class="tog-t"></span></label>
+      </div>
+    </div>
+
+    <!-- ④ 语义搜索 -->
+    <div class="s">
+      <div class="s-title">语义搜索</div>
+      <div class="s-desc">通过向量嵌入实现自然语言文献检索</div>
+
+      <div class="sw">
+        <div>
+          <div class="sw-text">启用语义搜索</div>
+          <div class="sw-sub">关闭后仅使用关键词搜索</div>
+        </div>
+        <label class="tog"><input type="checkbox" checked id="sem-toggle"><span class="tog-t"></span></label>
+      </div>
+
+      <div id="sc">
+        <div class="fg">
+          <label class="fl">服务商</label>
+          <select class="fi" style="max-width: 200px">
+            <option>自定义</option><option selected>OpenAI</option>
+            <option>Google Gemini</option><option>阿里云百炼</option>
+            <option>智谱 AI</option><option>硅基流动</option>
+            <option>Voyage AI</option><option>Ollama</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label class="fl">API 地址</label>
+          <input type="text" class="fi fi-l fi-mono" value="https://api.openai.com/v1">
+        </div>
+        <div class="fg">
+          <label class="fl">密钥</label>
+          <input type="password" class="fi fi-l fi-mono" value="sk-xxxxxxxx">
+        </div>
+        <div class="f2">
+          <div class="fg">
+            <label class="fl">模型</label>
+            <input type="text" class="fi fi-mono" value="text-embedding-3-small">
+          </div>
+          <div class="fg">
+            <label class="fl">维度</label>
+            <input type="number" class="fi fi-s" value="512">
+          </div>
+        </div>
+        <div class="bg" style="margin-top:6px">
+          <button class="b">测试连接</button>
+          <span style="font-size:12px; color:var(--green); line-height:30px">✓ 成功 · 384ms</span>
+        </div>
+
+        <div class="ex" style="margin-top:16px">
+          <div class="ex-h" onclick="this.parentElement.classList.toggle('open')">
+            <span class="ex-a">▶</span>
+            <span class="ex-t">速率与费用</span>
+            <span class="ex-m">RPM 60 · $0.02/M</span>
+          </div>
+          <div class="ex-b">
+            <div class="f3">
+              <div class="fg"><label class="fl">RPM</label><input type="number" class="fi" value="60"><div class="fh">0 = 不限</div></div>
+              <div class="fg"><label class="fl">TPM</label><input type="number" class="fi" value="150000"></div>
+              <div class="fg"><label class="fl">$/1M 令牌</label><input type="text" class="fi" value="0.02"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sl">索引</div>
+
+        <div class="sw">
+          <div><div class="sw-text">自动更新</div><div class="sw-sub">文献变更时自动更新向量</div></div>
+          <label class="tog"><input type="checkbox" checked><span class="tog-t"></span></label>
+        </div>
+
+        <div class="st">
+          <div class="st-i"><div class="st-v">500</div><div class="st-l">文献</div></div>
+          <div class="st-i"><div class="st-v">480</div><div class="st-l">向量</div></div>
+          <div class="st-i"><div class="st-v">25M</div><div class="st-l">数据库</div></div>
+          <div class="st-i"><div class="st-v ok">就绪</div><div class="st-l">状态</div></div>
+        </div>
+
+        <div class="pr">
+          <div class="pr-h"><strong>340 / 500</strong><span>68% · 约 5 分钟</span></div>
+          <div class="pr-t"><div class="pr-f"></div></div>
+          <div class="pr-d">Smith2024_deep_learning.pdf</div>
+        </div>
+
+        <div class="bg">
+          <button class="b bp">构建索引</button>
+          <button class="b">重建</button>
+          <button class="b bd">清空</button>
+        </div>
+
+        <div class="ex" style="margin-top:14px">
+          <div class="ex-h" onclick="this.parentElement.classList.toggle('open')">
+            <span class="ex-a">▶</span>
+            <span class="ex-t">详细统计与 API 用量</span>
+            <span class="ex-m">125K 令牌 · $2.50</span>
+          </div>
+          <div class="ex-b">
+            <div style="font-size:10px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px">索引详情</div>
+            <div class="is">
+              <div class="is-r"><span class="is-l">中文向量</span><span class="is-v">200</span></div>
+              <div class="is-r"><span class="is-l">英文向量</span><span class="is-v">280</span></div>
+              <div class="is-r"><span class="is-l">缓存</span><span class="is-v">12 MB</span></div>
+              <div class="is-r"><span class="is-l">维度</span><span class="is-v">512</span></div>
+            </div>
+            <div style="font-size:10px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:0.5px; margin:16px 0 8px">API 累计</div>
+            <div class="is">
+              <div class="is-r"><span class="is-l">令牌</span><span class="is-v">125,000</span></div>
+              <div class="is-r"><span class="is-l">请求</span><span class="is-v">50</span></div>
+              <div class="is-r"><span class="is-l">费用</span><span class="is-v">$2.50</span></div>
+              <div class="is-r"><span class="is-l">限速触发</span><span class="is-v">0</span></div>
+            </div>
+            <div class="bg"><button class="b" style="font-size:11px; padding:5px 10px">刷新</button><button class="b bd" style="font-size:11px; padding:5px 10px">重置统计</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="sd" class="empty">
+        语义搜索已关闭 · 开启后可使用自然语言检索文献
+      </div>
+    </div>
+
+  </div><!-- /server-content -->
+
+  <!-- ⑤ Footer -->
+  <div class="ft">
+    <img src="IMG/MP.jpg" alt="公众号二维码">
+    <div class="ft-text">
+      <span>Zotero MCP v1.4.1</span>
+      <span class="d">·</span>
+      <a href="#">GitHub</a>
+      <span class="d">·</span>
+      <span>contact@example.com</span>
+      <span class="d">·</span>
+      <span>微信群</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// MCP 服务器开关 → 隐藏/显示 ②③④
+document.getElementById('server-toggle').addEventListener('change', function() {
+  const on = this.checked;
+  document.getElementById('server-content').style.display = on ? '' : 'none';
+  document.getElementById('server-off-hint').style.display = on ? 'none' : 'block';
+  document.getElementById('server-port').style.display = on ? '' : 'none';
+  document.getElementById('server-remote').style.display = on ? '' : 'none';
+});
+
+// 语义搜索开关
+document.getElementById('sem-toggle').addEventListener('change', function() {
+  document.getElementById('sc').style.display = this.checked ? 'block' : 'none';
+  document.getElementById('sd').style.display = this.checked ? 'none' : 'block';
+});
+</script>
+
+</body>
+</html>

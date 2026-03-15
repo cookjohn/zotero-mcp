@@ -12,7 +12,6 @@ import {
 import { UnifiedContentExtractor } from './unifiedContentExtractor';
 import { SmartAnnotationExtractor } from './smartAnnotationExtractor';
 import { MCPSettingsService } from './mcpSettingsService';
-import { AIInstructionsManager } from './aiInstructionsManager';
 import { getSemanticSearchService, SemanticSearchService } from './semantic';
 
 export interface MCPRequest {
@@ -22,447 +21,7 @@ export interface MCPRequest {
   params?: any;
 }
 
-/**
- * 统一的MCP响应数据结构
- */
-interface UnifiedMCPResponse {
-  data: any;
-  metadata: {
-    extractedAt: string;
-    toolName: string;
-    responseType: 'search' | 'content' | 'annotation' | 'collection' | 'text' | 'object' | 'array';
-    aiGuidelines?: any;
-    [key: string]: any;
-  };
-  _dataIntegrity?: string;
-  _instructions?: string;
-}
 
-/**
- * Apply global AI instructions and create unified response structure
- */
-function applyGlobalAIInstructions(responseData: any, toolName: string): UnifiedMCPResponse {
-  if (!responseData) {
-    return createUnifiedResponse(null, 'object', toolName);
-  }
-  
-  // 处理字符串响应（如format='text'时的get_content）
-  if (typeof responseData === 'string') {
-    return createUnifiedResponse(responseData, 'text', toolName);
-  }
-  
-  // 处理数组响应（如某些collection列表）
-  if (Array.isArray(responseData)) {
-    return createUnifiedResponse(responseData, 'array', toolName, { count: responseData.length });
-  }
-  
-  // 处理对象响应
-  if (typeof responseData === 'object') {
-    // 检查是否是SmartAnnotationExtractor或UnifiedContentExtractor的完整结构
-    if (responseData.metadata && (responseData.data !== undefined || responseData.content !== undefined)) {
-      // 已有完整结构，只需增强metadata并保护数据
-      const enhanced = {
-        ...responseData,
-        metadata: AIInstructionsManager.enhanceMetadataWithAIGuidelines({
-          ...responseData.metadata,
-          toolName,
-          responseType: determineResponseType(toolName),
-          toolGuidance: getToolSpecificGuidance(toolName)
-        })
-      };
-      return AIInstructionsManager.protectResponseData(enhanced);
-    }
-    
-    // 否则包装为统一结构
-    return createUnifiedResponse(responseData, 'object', toolName);
-  }
-  
-  // 其他类型的响应（数字、布尔等）
-  return createUnifiedResponse(responseData, typeof responseData as any, toolName);
-}
-
-/**
- * 创建统一的响应结构
- */
-function createUnifiedResponse(
-  data: any, 
-  responseType: 'search' | 'content' | 'annotation' | 'collection' | 'text' | 'object' | 'array', 
-  toolName: string,
-  additionalMeta?: any
-): UnifiedMCPResponse {
-  const baseMetadata = {
-    extractedAt: new Date().toISOString(),
-    toolName,
-    responseType,
-    toolGuidance: getToolSpecificGuidance(toolName),
-    ...additionalMeta
-  };
-  
-  const enhancedMetadata = AIInstructionsManager.enhanceMetadataWithAIGuidelines(baseMetadata);
-  
-  return AIInstructionsManager.protectResponseData({
-    data,
-    metadata: enhancedMetadata
-  });
-}
-
-/**
- * 根据工具名确定响应类型
- */
-function determineResponseType(toolName: string): 'search' | 'content' | 'annotation' | 'collection' | 'text' {
-  if (toolName.includes('search')) return 'search';
-  if (toolName.includes('annotation')) return 'annotation';
-  if (toolName.includes('content')) return 'content';
-  if (toolName.includes('collection')) return 'collection';
-  return 'content';
-}
-
-/**
- * 获取工具特定的AI客户端指导信息
- */
-function getToolSpecificGuidance(toolName: string): any {
-  const baseGuidance = {
-    dataStructure: {},
-    interpretation: {},
-    usage: []
-  };
-
-  switch (toolName) {
-    case 'search_library':
-      return {
-        ...baseGuidance,
-        dataStructure: {
-          type: 'search_results',
-          format: 'Array of Zotero items with metadata',
-          pagination: 'Check X-Total-Count header and use offset/limit parameters'
-        },
-        interpretation: {
-          purpose: 'Library search results from user\'s personal Zotero collection',
-          content: 'Each item represents a bibliographic entry with complete metadata',
-          reliability: 'Direct from user library - treat as authoritative source material'
-        },
-        usage: [
-          'These are research items from the user\'s personal library',
-          'You can analyze and discuss these items to help with research',
-          'Use the provided metadata for citations when needed',
-          'Use itemKey to get complete content with get_content tool',
-          'To list standalone PDF/file items imported without metadata (no title/author/year), use itemType="attachment" and includeAttachments="true"'
-        ]
-      };
-
-    case 'search_annotations':
-    case 'get_annotations':
-      return {
-        ...baseGuidance,
-        dataStructure: {
-          type: 'annotation_results',
-          format: 'Smart-processed annotations with relevance scoring',
-          compression: 'Content may be intelligently truncated based on importance'
-        },
-        interpretation: {
-          purpose: 'User\'s personal highlights, notes, and comments from research materials',
-          content: 'Direct quotes and personal insights from user\'s reading',
-          reliability: 'User-generated content - preserve exact wording and context'
-        },
-        usage: [
-          'These are the user\'s personal research notes and highlights',
-          'You can summarize and analyze these annotations to help with research',
-          'User highlighting indicates what they found important or interesting',
-          'Combine with other sources to provide comprehensive research assistance'
-        ]
-      };
-
-    case 'get_content':
-      return {
-        ...baseGuidance,
-        dataStructure: {
-          type: 'document_content',
-          format: 'Full-text content from PDFs, attachments, notes, abstracts',
-          sources: 'Multiple content types combined (pdf, notes, abstract, webpage)'
-        },
-        interpretation: {
-          purpose: 'Complete textual content of research documents',
-          content: 'Raw extracted text from user\'s document collection',
-          reliability: 'Direct extraction - may contain OCR errors or formatting artifacts'
-        },
-        usage: [
-          'Use for detailed content analysis and complete-text research',
-          'Content includes user\'s attached PDFs and personal notes',
-          'May require cleaning for OCR artifacts in PDF extractions',
-          'Combine with annotations for user\'s personal insights on this content',
-          'IMPORTANT: When user specifically asks for "complete text" or "complete content", provide the entire extracted text without summarization',
-          'If user requests the complete document content, reproduce it in its entirety'
-        ]
-      };
-
-    case 'get_collections':
-    case 'search_collections':
-    case 'get_collection_details':
-    case 'get_collection_items':
-    case 'get_subcollections':
-      return {
-        ...baseGuidance,
-        dataStructure: {
-          type: 'collection_data',
-          format: 'Hierarchical collection structure with items and subcollections',
-          organization: 'Reflects user\'s personal research organization system'
-        },
-        interpretation: {
-          purpose: 'User\'s personal organization system for research materials',
-          content: 'Custom-named folders reflecting research topics and projects',
-          reliability: 'User-curated organization - reflects research priorities'
-        },
-        usage: [
-          'Collection names indicate user\'s research areas and interests',
-          'Use collection structure to understand research project organization',
-          'Respect user\'s categorization decisions in your responses',
-          'Collections show thematic relationships between documents'
-        ]
-      };
-
-    case 'search_fulltext':
-      return {
-        ...baseGuidance,
-        dataStructure: {
-          type: 'fulltext_search',
-          format: 'Full-text search results with content snippets',
-          relevance: 'Results ranked by text matching and relevance'
-        },
-        interpretation: {
-          purpose: 'Deep content search across all document texts',
-          content: 'Matching text passages from user\'s entire document collection',
-          reliability: 'Search-based - results depend on query accuracy'
-        },
-        usage: [
-          'Use for finding specific concepts across entire research collection',
-          'Results show where user has relevant materials on specific topics',
-          'Combine with other tools for complete context',
-          'Good for discovering connections between different documents',
-          'When user asks for complete content from search results, use get_content with the itemKey to retrieve complete text'
-        ]
-      };
-
-    case 'get_item_details':
-      return {
-        ...baseGuidance,
-        dataStructure: {
-          type: 'item_metadata',
-          format: 'Complete bibliographic metadata for single item',
-          completeness: 'Full citation information and item relationships'
-        },
-        interpretation: {
-          purpose: 'Detailed metadata for specific research item',
-          content: 'Publication details, authors, dates, identifiers, relationships',
-          reliability: 'Curated metadata - suitable for citations and references'
-        },
-        usage: [
-          'Use for generating proper citations and references',
-          'Contains all bibliographic data needed for academic writing',
-          'Use itemKey to access complete content via get_content',
-          'Check for related items and collections for broader context'
-        ]
-      };
-
-    case 'get_item_abstract':
-      return {
-        ...baseGuidance,
-        dataStructure: {
-          type: 'abstract_content',
-          format: 'Academic abstract or summary text',
-          source: 'Publisher-provided or user-entered abstract'
-        },
-        interpretation: {
-          purpose: 'Summary of research paper or document main points',
-          content: 'Concise overview of research objectives, methods, results',
-          reliability: 'Authoritative summary - typically from original publication'
-        },
-        usage: [
-          'Use for quick understanding of paper\'s main contributions',
-          'Suitable for literature reviews and research summaries',
-          'Abstract represents author\'s own summary of their work',
-          'Combine with complete content and annotations for complete understanding'
-        ]
-      };
-
-    case 'semantic_search':
-      return {
-        ...baseGuidance,
-        dataStructure: {
-          type: 'semantic_search_results',
-          format: 'AI-powered similarity search results with relevance scores',
-          ranking: 'Results ranked by semantic similarity to query'
-        },
-        interpretation: {
-          purpose: 'Find conceptually related content beyond keyword matching',
-          content: 'Semantically similar documents, annotations, and passages',
-          reliability: 'AI-powered - results based on meaning similarity'
-        },
-        usage: [
-          'Use for concept-based research exploration',
-          'Find related papers even without exact keyword matches',
-          'Discover thematic connections across research materials',
-          'Combine with keyword search for comprehensive results'
-        ]
-      };
-
-    case 'find_similar':
-      return {
-        ...baseGuidance,
-        dataStructure: {
-          type: 'similar_items',
-          format: 'Items semantically similar to the reference item',
-          ranking: 'Ranked by embedding similarity'
-        },
-        interpretation: {
-          purpose: 'Discover related research materials',
-          content: 'Documents with similar concepts, themes, or topics',
-          reliability: 'Based on semantic analysis of content'
-        },
-        usage: [
-          'Use to expand research from a known relevant paper',
-          'Find related work that might be missed by citation analysis',
-          'Discover thematic clusters in the library'
-        ]
-      };
-
-    case 'semantic_status':
-      return {
-        ...baseGuidance,
-        dataStructure: {
-          type: 'index_status',
-          format: 'Index statistics and status'
-        },
-        interpretation: {
-          purpose: 'Check semantic search index status',
-          content: 'Index status, coverage, and statistics'
-        },
-        usage: [
-          'Check if semantic search is available',
-          'View index coverage of library',
-          'Index management is done through Zotero preferences'
-        ]
-      };
-
-    case 'fulltext_database':
-      return {
-        ...baseGuidance,
-        dataStructure: {
-          type: 'fulltext_database',
-          format: 'Extracted PDF text content database (read-only access)',
-          actions: 'list, search, get, stats'
-        },
-        interpretation: {
-          purpose: 'Access full-text content database',
-          content: 'Extracted PDF text stored in database',
-          reliability: 'Cached extraction - faster than re-extracting from Zotero'
-        },
-        usage: [
-          'Use stats to check database size and item count',
-          'Use list to see which items have cached content',
-          'Use search to find items containing specific text',
-          'Use get to retrieve full content for specific items',
-          'Database management is done through Zotero preferences'
-        ]
-      };
-
-    case 'write_note':
-      return {
-        ...baseGuidance,
-        dataStructure: {
-          type: 'write_result',
-          format: 'Write operation result with note key and metadata',
-          actions: 'create, update, append'
-        },
-        interpretation: {
-          purpose: 'Create or modify notes in the user\'s Zotero library',
-          content: 'Confirmation of write operation with created/modified note details',
-          reliability: 'Direct Zotero database operation'
-        },
-        usage: [
-          'Use create with parentKey to attach a note to a specific item',
-          'Use create without parentKey for standalone notes',
-          'Use update to replace the entire content of an existing note',
-          'Use append to add content to the end of an existing note',
-          'Content can be Markdown or HTML - Markdown is auto-converted to HTML',
-          'Always confirm the intended action with the user before writing',
-          'Return the noteKey in the response so the user can reference the note later'
-        ]
-      };
-
-    case 'write_tag':
-      return {
-        ...baseGuidance,
-        dataStructure: {
-          type: 'write_result',
-          format: 'Tag operation result with before/after tag lists',
-          actions: 'add, remove, set'
-        },
-        interpretation: {
-          purpose: 'Manage tags on items in the user\'s Zotero library',
-          content: 'Confirmation of tag operation with before and after state',
-          reliability: 'Direct Zotero database operation'
-        },
-        usage: [
-          'Use add to append tags without removing existing ones',
-          'Use remove to delete specific tags from an item',
-          'Use set to replace all tags with a new list',
-          'Always confirm tag changes with the user before executing',
-          'Response includes beforeTags and afterTags for verification'
-        ]
-      };
-
-    case 'write_metadata':
-      return {
-        ...baseGuidance,
-        dataStructure: {
-          type: 'write_result',
-          format: 'Metadata update result with before/after values for each field',
-          fields: 'title, abstractNote, date, url, DOI, language, volume, issue, pages, publisher, place, ISBN, ISSN, extra, publicationTitle, bookTitle, etc.'
-        },
-        interpretation: {
-          purpose: 'Update bibliographic metadata on items in the user\'s Zotero library',
-          content: 'Confirmation of metadata update with changed field details',
-          reliability: 'Direct Zotero database operation'
-        },
-        usage: [
-          'Use fields object to update any metadata field (e.g., {"title": "New Title", "date": "2024"})',
-          'Use creators array to replace the authors/editors list',
-          'For individual creators: {creatorType, firstName, lastName}',
-          'For organization creators: {creatorType, name}',
-          'Common creatorTypes: author, editor, translator, contributor',
-          'Always confirm metadata changes with the user before executing',
-          'Only works on regular items (not notes or attachments)',
-          'Response includes before/after values for verification'
-        ]
-      };
-
-    case 'write_item':
-      return {
-        ...baseGuidance,
-        dataStructure: {
-          type: 'write_result',
-          format: 'Item creation or reparent result with item key and details',
-          actions: 'create, reparent'
-        },
-        interpretation: {
-          purpose: 'Create new items or reorganize attachments in the user\'s Zotero library',
-          content: 'Confirmation of item creation or attachment reparenting',
-          reliability: 'Direct Zotero database operation'
-        },
-        usage: [
-          'Use create to make a new bibliographic item with itemType, fields, creators, tags',
-          'Use attachmentKeys with create to simultaneously attach standalone PDFs to the new item',
-          'Use reparent to move existing attachments/notes under a different parent item',
-          'Common workflow: read PDF content → extract metadata → create item → attach PDF',
-          'Common itemTypes: journalArticle, book, conferencePaper, thesis, report, webpage, preprint, bookSection',
-          'Always confirm item creation with the user before executing'
-        ]
-      };
-
-    default:
-      return baseGuidance;
-  }
-}
 
 export interface MCPResponse {
   jsonrpc: '2.0';
@@ -728,7 +287,7 @@ export class StreamableMCPServer {
     const tools = [
       {
         name: 'search_library',
-        description: 'Search the Zotero library with advanced parameters, boolean operators, relevance scoring, pagination, and intelligent mode control.',
+        description: 'Search the Zotero library with advanced parameters, boolean operators, relevance scoring, and pagination. Results are from user\'s personal library. Use itemKey with get_content for full text. To find standalone PDFs without metadata, use itemType="attachment" with includeAttachments="true".',
         inputSchema: {
           type: 'object',
           properties: {
@@ -778,7 +337,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'search_annotations',
-        description: 'Search and filter annotations by query, colors, or tags. Supports intelligent ranking and content management.',
+        description: 'Search and filter annotations (highlights, notes, comments) by query, colors, or tags. Returns user\'s personal research notes with relevance scoring. Preserve exact wording when quoting.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -830,7 +389,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_item_details',
-        description: 'Get detailed information for a specific item with intelligent mode control (metadata, abstract, attachments, notes, tags but not fulltext content)',
+        description: 'Get detailed bibliographic metadata for a specific item (title, authors, dates, identifiers, attachments, notes, tags). Use get_content for full text. Suitable for generating citations and references.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -846,7 +405,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_annotations',
-        description: 'Get annotations and notes with intelligent content management, color/tag filtering (PDF annotations, highlights, notes)',
+        description: 'Get annotations and notes for specific items with color/tag filtering. Returns user\'s personal highlights and comments from PDFs. Preserve exact wording when quoting.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -893,7 +452,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_content',
-        description: 'Unified content extraction tool: get PDF, attachments, notes, abstract etc. from items or specific attachments with intelligent processing',
+        description: 'Get full-text content from PDFs, attachments, notes, and abstracts. May contain OCR artifacts. When user asks for complete text, provide it without summarization.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -952,7 +511,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_collections',
-        description: 'Get list of all collections in the library with intelligent mode control',
+        description: 'Get list of all collections in the library. Collections reflect user\'s personal research organization structure.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1020,7 +579,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'search_fulltext',
-        description: 'Search within fulltext content of items with context, relevance scoring, and intelligent mode control',
+        description: 'Search within full-text content of all documents. Returns matching passages with context. Use get_content with itemKey for complete text of a result.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1044,7 +603,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_item_abstract',
-        description: 'Get the abstract/summary of a specific item',
+        description: 'Get the abstract/summary of a specific item. Typically the author\'s own summary from the original publication.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1061,7 +620,7 @@ export class StreamableMCPServer {
       // Semantic Search Tools
       {
         name: 'semantic_search',
-        description: 'AI-powered semantic search using embeddings. Finds conceptually related content even without exact keyword matches. Supports hybrid search combining semantic and keyword matching.',
+        description: 'AI-powered semantic search using embeddings. Finds conceptually related content even without exact keyword matches. Combine with keyword search (search_library, search_fulltext) for comprehensive results.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1088,7 +647,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'find_similar',
-        description: 'Find items semantically similar to a given item. Uses AI embeddings to discover related research materials.',
+        description: 'Find items semantically similar to a given item using AI embeddings. Useful for expanding research from a known relevant paper and discovering thematic clusters.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1119,7 +678,7 @@ export class StreamableMCPServer {
       // Full-text Database Tool (read-only operations)
       {
         name: 'fulltext_database',
-        description: 'Access the full-text content database (read-only). Can list cached items, search within cached content, get full content, or view statistics. Use Zotero preferences to manage the database.',
+        description: 'Access the cached full-text content database (read-only). Faster than re-extracting from Zotero. Actions: list (cached items), search (find text), get (retrieve content), stats (database info).',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1152,7 +711,7 @@ export class StreamableMCPServer {
       // Write Tools
       {
         name: 'write_note',
-        description: 'Create or modify Zotero notes. Supports creating child notes (attached to items), standalone notes, updating existing notes, or appending content. Write operations must be enabled in preferences.',
+        description: 'Create or modify Zotero notes. Supports child notes (attached to items), standalone notes, updating, or appending. Markdown is auto-converted to HTML. Confirm with user before writing.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1184,7 +743,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'write_tag',
-        description: 'Add, remove, or replace tags on Zotero items. Works on any item type (regular items, notes, attachments). Write operations must be enabled in preferences.',
+        description: 'Add, remove, or replace tags on Zotero items. Works on any item type. Response includes before/after tag lists for verification. Confirm with user before executing.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1208,7 +767,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'write_metadata',
-        description: 'Update metadata fields on Zotero items (title, abstract, date, URL, DOI, creators, etc.). Write operations must be enabled in preferences.',
+        description: 'Update metadata fields on Zotero items (title, abstract, date, URL, DOI, creators, etc.). Only works on regular items, not notes or attachments. Confirm with user before executing.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1244,7 +803,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'write_item',
-        description: 'Create a new Zotero item or re-parent existing attachments. Use to create bibliographic entries and attach standalone PDFs to them. Write operations must be enabled in preferences.',
+        description: 'Create a new Zotero item or re-parent existing attachments. Common workflow: read PDF → extract metadata → create item → attach PDF via attachmentKeys. Confirm with user before executing.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1533,14 +1092,14 @@ export class StreamableMCPServer {
       }
     }
     
-    return applyGlobalAIInstructions(result, 'search_library');
+    return result;
   }
 
   private async callSearchAnnotations(args: any): Promise<any> {
     const extractor = new SmartAnnotationExtractor();
     const { q, ...options } = args;
     const result = await extractor.searchAnnotations(q, options);
-    return applyGlobalAIInstructions(result, 'search_annotations');
+    return result;
   }
 
   private async callGetItemDetails(args: any): Promise<any> {
@@ -1575,13 +1134,13 @@ export class StreamableMCPServer {
       };
     }
     
-    return applyGlobalAIInstructions(result, 'get_item_details');
+    return result;
   }
 
   private async callGetAnnotations(args: any): Promise<any> {
     const extractor = new SmartAnnotationExtractor();
     const result = await extractor.getAnnotations(args);
-    return applyGlobalAIInstructions(result, 'get_annotations');
+    return result;
   }
 
   private async callGetContent(args: any): Promise<any> {
@@ -1608,7 +1167,7 @@ export class StreamableMCPServer {
         return result.content || '';
       }
       
-      return applyGlobalAIInstructions(result, 'get_content');
+      return result;
     } catch (error) {
       ztoolkit.log(`[StreamableMCP] Error in callGetContent: ${error}`, 'error');
       throw error;
@@ -1647,7 +1206,7 @@ export class StreamableMCPServer {
       };
     }
     
-    return applyGlobalAIInstructions(result, 'get_collections');
+    return result;
   }
 
   private async callSearchCollections(args: any): Promise<any> {
@@ -1659,13 +1218,13 @@ export class StreamableMCPServer {
     }
     const response = await handleSearchCollections(searchParams);
     const result = response.body ? JSON.parse(response.body) : response;
-    return applyGlobalAIInstructions(result, 'search_collections');
+    return result;
   }
 
   private async callGetCollectionDetails(collectionKey: string): Promise<any> {
     const response = await handleGetCollectionDetails({ 1: collectionKey }, new URLSearchParams());
     const result = response.body ? JSON.parse(response.body) : response;
-    return applyGlobalAIInstructions(result, 'get_collection_details');
+    return result;
   }
 
   private async callGetCollectionItems(args: any): Promise<any> {
@@ -1678,7 +1237,7 @@ export class StreamableMCPServer {
     }
     const response = await handleGetCollectionItems({ 1: collectionKey }, itemParams);
     const result = response.body ? JSON.parse(response.body) : response;
-    return applyGlobalAIInstructions(result, 'get_collection_items');
+    return result;
   }
 
   private async callGetSubcollections(args: any): Promise<any> {
@@ -1691,7 +1250,7 @@ export class StreamableMCPServer {
     }
     const response = await handleGetSubcollections({ 1: collectionKey }, subcollectionParams);
     const result = response.body ? JSON.parse(response.body) : response;
-    return applyGlobalAIInstructions(result, 'get_subcollections');
+    return result;
   }
 
 
@@ -1730,7 +1289,7 @@ export class StreamableMCPServer {
       };
     }
     
-    return applyGlobalAIInstructions(result, 'search_fulltext');
+    return result;
   }
 
   private async callGetItemAbstract(args: any): Promise<any> {
@@ -1743,7 +1302,7 @@ export class StreamableMCPServer {
     }
     const response = await handleGetItemAbstract({ 1: itemKey }, abstractParams);
     const result = response.body ? JSON.parse(response.body) : response;
-    return applyGlobalAIInstructions(result, 'get_item_abstract');
+    return result;
   }
 
   // ============ Semantic Search Methods ============
@@ -1773,7 +1332,7 @@ export class StreamableMCPServer {
         }
       };
 
-      return applyGlobalAIInstructions(response, 'semantic_search');
+      return response;
     } catch (error) {
       ztoolkit.log(`[StreamableMCP] Semantic search error: ${error}`, 'error');
       throw error;
@@ -1800,7 +1359,7 @@ export class StreamableMCPServer {
         }
       };
 
-      return applyGlobalAIInstructions(response, 'find_similar');
+      return response;
     } catch (error) {
       ztoolkit.log(`[StreamableMCP] Find similar error: ${error}`, 'error');
       throw error;
@@ -1836,7 +1395,7 @@ export class StreamableMCPServer {
         message += `. WARNING: ${int8Status.count}/${int8Status.total} vectors need Int8 migration for ~6x faster search. Run migrate_int8 to optimize.`;
       }
 
-      return applyGlobalAIInstructions({
+      return {
         ready: isReady,
         initialized: stats?.serviceStatus.initialized || false,
         fallbackMode: stats?.serviceStatus.fallbackMode || false,
@@ -1844,13 +1403,13 @@ export class StreamableMCPServer {
         indexStats: stats?.indexStats || null,
         int8Migration: int8Status,
         message
-      }, 'semantic_status');
+      };
     } catch (error) {
       ztoolkit.log(`[StreamableMCP] Semantic status error: ${error}`, 'error');
-      return applyGlobalAIInstructions({
+      return {
         ready: false,
         error: String(error)
-      }, 'semantic_status');
+      };
     }
   }
 
@@ -1867,7 +1426,7 @@ export class StreamableMCPServer {
           const cachedItems = await vectorStore.listCachedContent();
           const limitedItems = cachedItems.slice(0, limit);
 
-          return applyGlobalAIInstructions({
+          return {
             action: 'list',
             data: limitedItems,
             metadata: {
@@ -1876,7 +1435,7 @@ export class StreamableMCPServer {
               returned: limitedItems.length,
               message: `Found ${cachedItems.length} items in full-text database`
             }
-          }, 'fulltext_database');
+          };
         }
 
         case 'search': {
@@ -1886,7 +1445,7 @@ export class StreamableMCPServer {
 
           const searchResults = await vectorStore.searchCachedContent(query, { limit, caseSensitive });
 
-          return applyGlobalAIInstructions({
+          return {
             action: 'search',
             query,
             data: searchResults,
@@ -1896,7 +1455,7 @@ export class StreamableMCPServer {
               caseSensitive,
               message: `Found ${searchResults.length} items matching "${query}"`
             }
-          }, 'fulltext_database');
+          };
         }
 
         case 'get': {
@@ -1916,7 +1475,7 @@ export class StreamableMCPServer {
             });
           }
 
-          return applyGlobalAIInstructions({
+          return {
             action: 'get',
             data: results,
             metadata: {
@@ -1925,7 +1484,7 @@ export class StreamableMCPServer {
               found: results.filter(r => r.content !== null).length,
               message: `Retrieved content for ${results.filter(r => r.content !== null).length}/${itemKeys.length} items`
             }
-          }, 'fulltext_database');
+          };
         }
 
         case 'stats': {
@@ -1938,7 +1497,7 @@ export class StreamableMCPServer {
             return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
           };
 
-          return applyGlobalAIInstructions({
+          return {
             action: 'stats',
             data: {
               cachedItems: stats.cachedContentItems,
@@ -1953,7 +1512,7 @@ export class StreamableMCPServer {
               extractedAt: new Date().toISOString(),
               message: `Full-text database: ${stats.cachedContentItems} items, ${formatSize(stats.cachedContentSizeBytes)}`
             }
-          }, 'fulltext_database');
+          };
         }
 
         default:
@@ -1961,10 +1520,10 @@ export class StreamableMCPServer {
       }
     } catch (error) {
       ztoolkit.log(`[StreamableMCP] Fulltext database error: ${error}`, 'error');
-      return applyGlobalAIInstructions({
+      return {
         success: false,
         error: String(error)
-      }, 'fulltext_database');
+      };
     }
   }
 
@@ -2085,7 +1644,7 @@ export class StreamableMCPServer {
 
           ztoolkit.log(`[StreamableMCP] Created note ${note.key}${parentKey ? ' attached to ' + parentKey : ' (standalone)'}`);
 
-          return applyGlobalAIInstructions({
+          return {
             action: 'create',
             success: true,
             data: {
@@ -2101,7 +1660,7 @@ export class StreamableMCPServer {
               extractedAt: new Date().toISOString(),
               message: `Note created successfully (key: ${note.key})`
             }
-          }, 'write_note');
+          };
         }
 
         case 'update': {
@@ -2131,7 +1690,7 @@ export class StreamableMCPServer {
 
           ztoolkit.log(`[StreamableMCP] Updated note ${noteKey}`);
 
-          return applyGlobalAIInstructions({
+          return {
             action: 'update',
             success: true,
             data: {
@@ -2145,7 +1704,7 @@ export class StreamableMCPServer {
               extractedAt: new Date().toISOString(),
               message: `Note ${noteKey} updated successfully`
             }
-          }, 'write_note');
+          };
         }
 
         case 'append': {
@@ -2177,7 +1736,7 @@ export class StreamableMCPServer {
 
           ztoolkit.log(`[StreamableMCP] Appended to note ${noteKey}`);
 
-          return applyGlobalAIInstructions({
+          return {
             action: 'append',
             success: true,
             data: {
@@ -2192,7 +1751,7 @@ export class StreamableMCPServer {
               extractedAt: new Date().toISOString(),
               message: `Content appended to note ${noteKey} successfully`
             }
-          }, 'write_note');
+          };
         }
 
         default:
@@ -2200,10 +1759,10 @@ export class StreamableMCPServer {
       }
     } catch (error) {
       ztoolkit.log(`[StreamableMCP] Write note error: ${error}`, 'error');
-      return applyGlobalAIInstructions({
+      return {
         success: false,
         error: String(error)
-      }, 'write_note');
+      };
     }
   }
 
@@ -2260,7 +1819,7 @@ export class StreamableMCPServer {
 
       ztoolkit.log(`[StreamableMCP] write_tag ${action} on ${itemKey}: [${beforeTags.join(', ')}] -> [${afterTags.join(', ')}]`);
 
-      return applyGlobalAIInstructions({
+      return {
         action,
         success: true,
         data: {
@@ -2273,13 +1832,13 @@ export class StreamableMCPServer {
           extractedAt: new Date().toISOString(),
           message: `Tags ${action === 'add' ? 'added to' : action === 'remove' ? 'removed from' : 'set on'} item ${itemKey}`
         }
-      }, 'write_tag');
+      };
     } catch (error) {
       ztoolkit.log(`[StreamableMCP] Write tag error: ${error}`, 'error');
-      return applyGlobalAIInstructions({
+      return {
         success: false,
         error: String(error)
-      }, 'write_tag');
+      };
     }
   }
 
@@ -2348,7 +1907,7 @@ export class StreamableMCPServer {
 
       ztoolkit.log(`[StreamableMCP] Updated metadata on ${itemKey}: fields=[${Object.keys(updatedFields).join(', ')}], creators=${creatorsUpdated}`);
 
-      return applyGlobalAIInstructions({
+      return {
         success: true,
         data: {
           itemKey,
@@ -2360,13 +1919,13 @@ export class StreamableMCPServer {
           extractedAt: new Date().toISOString(),
           message: `Metadata updated on item ${itemKey}`
         }
-      }, 'write_metadata');
+      };
     } catch (error) {
       ztoolkit.log(`[StreamableMCP] Write metadata error: ${error}`, 'error');
-      return applyGlobalAIInstructions({
+      return {
         success: false,
         error: String(error)
-      }, 'write_metadata');
+      };
     }
   }
 
@@ -2445,7 +2004,7 @@ export class StreamableMCPServer {
             }
           }
 
-          return applyGlobalAIInstructions({
+          return {
             action: 'create',
             success: true,
             data: {
@@ -2461,7 +2020,7 @@ export class StreamableMCPServer {
               extractedAt: new Date().toISOString(),
               message: `Item created (key: ${item.key}, type: ${itemType})${reparentedAttachments.length > 0 ? `, ${reparentedAttachments.length} attachment(s) attached` : ''}`
             }
-          }, 'write_item');
+          };
         }
 
         case 'reparent': {
@@ -2508,7 +2067,7 @@ export class StreamableMCPServer {
 
           const successCount = results.filter(r => r.success).length;
 
-          return applyGlobalAIInstructions({
+          return {
             action: 'reparent',
             success: successCount > 0,
             data: {
@@ -2521,7 +2080,7 @@ export class StreamableMCPServer {
               extractedAt: new Date().toISOString(),
               message: `Re-parented ${successCount}/${attachmentKeys.length} item(s) under ${parentKey}`
             }
-          }, 'write_item');
+          };
         }
 
         default:
@@ -2529,10 +2088,10 @@ export class StreamableMCPServer {
       }
     } catch (error) {
       ztoolkit.log(`[StreamableMCP] Write item error: ${error}`, 'error');
-      return applyGlobalAIInstructions({
+      return {
         success: false,
         error: String(error)
-      }, 'write_item');
+      };
     }
   }
 

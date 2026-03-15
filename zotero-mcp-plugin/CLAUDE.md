@@ -16,7 +16,7 @@ A Zotero plugin that provides MCP (Model Context Protocol) server functionality,
 - `update.json` - Zotero auto-update manifest
 
 ## Available Skills
-- `release` - Automate version bump and GitHub release process
+- `release` - Automate version bump, XPI build, and GitHub release. See `../.claude/skills/release.md`
 
 ## Build Commands
 ```bash
@@ -36,7 +36,13 @@ npm run start      # Development with hot reload
 - Chinese: `addon/locale/zh-CN/preferences.ftl`
 
 ### Release Workflow
-See `.claude/skills/release.md` for automated release process.
+See `../.claude/skills/release.md` for automated release process.
+
+Key points:
+- Version in: `package.json`, `README.md`, `README-zh.md` (badge), `update.json`
+- Build: `npm run build` → `.scaffold/build/zotero-mcp-plugin.xpi`
+- `addon/` is gitignored — use `git add -f` for files under it
+- Release assets: XPI (renamed to `zotero-mcp-plugin-X.Y.Z.xpi`) + `update.json`
 
 ## Code Style
 - Use ztoolkit.log for logging
