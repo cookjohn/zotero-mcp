@@ -49,6 +49,67 @@
       --red: #ef4444;
       --green: #10b981;
       --r: 8px;
+      --tog-off: #d1d5db;
+      --tog-knob: #fff;
+      --focus-ring: rgba(59,130,246,0.08);
+      --pr-bg: #ecfdf5;
+      --pr-border: #d1fae5;
+      --pr-track: #a7f3d0;
+      --bd-bg-hover: #fef2f2;
+      --bd-border: #fecaca;
+      --msg-info-bg: #e3f2fd;
+      --msg-info-text: #1565c0;
+      --msg-success-bg: #e8f5e9;
+      --msg-success-text: #2e7d32;
+      --msg-warning-bg: #fff3e0;
+      --msg-warning-text: #ef6c00;
+      --msg-error-bg: #ffebee;
+      --msg-error-text: #c62828;
+      --color-ok: #2e7d32;
+      --color-warn: #ef6c00;
+      --color-error: #d32f2f;
+      --color-muted: #666;
+      --color-default: #333;
+      --copy-ok-bg: #4CAF50;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1e1e1e;
+        --bg-hover: #2a2a2a;
+        --bg-muted: #2d2d2d;
+        --border: #444;
+        --border-light: #383838;
+        --text: #e0e0e0;
+        --text-2: #a0a0a0;
+        --text-3: #777;
+        --blue: #5b9cf6;
+        --blue-dark: #4a8af4;
+        --red: #f87171;
+        --green: #34d399;
+        --tog-off: #555;
+        --tog-knob: #e0e0e0;
+        --focus-ring: rgba(91,156,246,0.15);
+        --pr-bg: #1a2e25;
+        --pr-border: #264d3b;
+        --pr-track: #1f6b4a;
+        --bd-bg-hover: #3a2020;
+        --bd-border: #6b3030;
+        --msg-info-bg: #1a2a3a;
+        --msg-info-text: #7ab8f5;
+        --msg-success-bg: #1a2e1a;
+        --msg-success-text: #6bcf7f;
+        --msg-warning-bg: #3a2a1a;
+        --msg-warning-text: #f0a050;
+        --msg-error-bg: #3a1a1a;
+        --msg-error-text: #f07070;
+        --color-ok: #6bcf7f;
+        --color-warn: #f0a050;
+        --color-error: #f07070;
+        --color-muted: #999;
+        --color-default: #e0e0e0;
+        --copy-ok-bg: #2e7d32;
+      }
     }
 
     /* Section */
@@ -71,11 +132,11 @@
     .zmp-tog input[type="checkbox"] { opacity: 0; width: 0; height: 0; position: absolute; }
     .zmp-tog-track {
       position: absolute; cursor: pointer; inset: 0;
-      background: #d1d5db; border-radius: 11px; transition: 0.2s;
+      background: var(--tog-off); border-radius: 11px; transition: 0.2s;
     }
     .zmp-tog-track::before {
       content: ""; position: absolute; width: 16px; height: 16px;
-      left: 3px; bottom: 3px; background: #fff; border-radius: 50%;
+      left: 3px; bottom: 3px; background: var(--tog-knob); border-radius: 50%;
       transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.15);
     }
     .zmp-tog input[type="checkbox"]:checked + .zmp-tog-track { background: var(--blue); }
@@ -91,7 +152,7 @@
       font-size: 13px; font-family: inherit; color: var(--text);
       background: var(--bg); outline: none; transition: 0.15s;
     }
-    .zmp-fi:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59,130,246,0.08); }
+    .zmp-fi:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--focus-ring); }
     .zmp-fi-s { max-width: 90px; }
     .zmp-fi-l { max-width: 100%; }
     .zmp-fi-mono { font-family: "SF Mono", Consolas, monospace; font-size: 12px; }
@@ -108,10 +169,10 @@
       transition: 0.1s;
     }
     .zmp-b:hover { background: var(--bg-muted); }
-    .zmp-bp { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .zmp-bp { background: var(--blue); color: var(--tog-knob); border-color: var(--blue); }
     .zmp-bp:hover { background: var(--blue-dark); }
-    .zmp-bd { color: var(--red); border-color: #fecaca; }
-    .zmp-bd:hover { background: #fef2f2; }
+    .zmp-bd { color: var(--red); border-color: var(--bd-border); }
+    .zmp-bd:hover { background: var(--bd-bg-hover); }
     .zmp-bg { display: flex; gap: 8px; margin-top: 14px; }
 
     /* Collapsible panel */
@@ -137,9 +198,9 @@
     .zmp-st-l { font-size: 10px; color: var(--text-3); margin-top: 1px; }
 
     /* Progress bar */
-    .zmp-pr { padding: 12px; background: #ecfdf5; border: 1px solid #d1fae5; border-radius: var(--r); margin: 10px 0; }
+    .zmp-pr { padding: 12px; background: var(--pr-bg); border: 1px solid var(--pr-border); border-radius: var(--r); margin: 10px 0; }
     .zmp-pr-h { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; }
-    .zmp-pr-t { height: 5px; background: #a7f3d0; border-radius: 3px; overflow: hidden; }
+    .zmp-pr-t { height: 5px; background: var(--pr-track); border-radius: 3px; overflow: hidden; }
     .zmp-pr-f { height: 100%; width: 0%; background: var(--green); border-radius: 3px; transition: width 0.3s ease; }
     .zmp-pr-d { font-size: 11px; color: var(--text-2); margin-top: 5px; }
 
@@ -154,7 +215,8 @@
       display: flex; flex-direction: column; align-items: center;
       padding: 20px 28px; background: var(--bg-muted); border-top: 1px solid var(--border);
     }
-    .zmp-ft img { width: 100px; height: 100px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--border); }
+    .zmp-ft-qr { display: inline-block; background: #fff; padding: 4px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--border); }
+    .zmp-ft-qr img { display: block; width: 100px; height: 100px; border-radius: 4px; }
     .zmp-ft-text { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-3); }
     .zmp-ft a { color: var(--blue); text-decoration: none; }
     .zmp-ft .zmp-d { color: var(--border); }
@@ -690,7 +752,9 @@
 
     <!-- ⑤ Footer -->
     <html:div class="zmp-ft">
-      <html:img src="chrome://__addonRef__/content/icons/mp-qrcode.jpg" alt="公众号二维码" />
+      <html:div class="zmp-ft-qr">
+        <html:img src="chrome://__addonRef__/content/icons/mp-qrcode.jpg" alt="公众号二维码" />
+      </html:div>
       <html:div class="zmp-ft-text">
         <html:label
           data-l10n-id="pref-help"

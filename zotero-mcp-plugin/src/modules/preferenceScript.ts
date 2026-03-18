@@ -222,8 +222,8 @@ function bindPrefEvents() {
       if (success) {
         const originalText = copyConfigButton.textContent;
         copyConfigButton.textContent = "已复制!";
-        copyConfigButton.style.backgroundColor = "#4CAF50";
-        copyConfigButton.style.color = "#fff";
+        copyConfigButton.style.backgroundColor = "var(--copy-ok-bg)";
+        copyConfigButton.style.color = "var(--tog-knob)";
         setTimeout(() => {
           copyConfigButton.textContent = originalText;
           copyConfigButton.style.backgroundColor = "";
@@ -527,7 +527,7 @@ function bindEmbeddingSettings(doc: Document) {
         const detectedDims = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.embedding.detectedDimensions", true);
         if (detectedDims) {
           testResult.textContent = `${getString("pref-embedding-detected-dims" as any) || "Detected dimensions"}: ${detectedDims}`;
-          testResult.style.color = "#666";
+          testResult.style.color = "var(--color-muted)";
         }
       }
     }
@@ -628,7 +628,7 @@ function bindEmbeddingSettings(doc: Document) {
   // Test connection button
   testButton?.addEventListener("click", async () => {
     testResult.textContent = getString("pref-embedding-testing" as any) || "Testing...";
-    testResult.style.color = "#666";
+    testResult.style.color = "var(--color-muted)";
     testButton.disabled = true;
 
     try {
@@ -639,7 +639,7 @@ function bindEmbeddingSettings(doc: Document) {
 
       if (!apiBase || !model) {
         testResult.textContent = getString("pref-embedding-test-failed" as any) + ": Missing API Base or Model";
-        testResult.style.color = "#d32f2f";
+        testResult.style.color = "var(--color-error)";
         testButton.disabled = false;
         return;
       }
@@ -684,18 +684,18 @@ function bindEmbeddingSettings(doc: Document) {
         testResult.innerHTML = "";
         const hintSpan = doc.createElement("span");
         hintSpan.textContent = `${getString("pref-embedding-test-failed" as any)} ${hint}`;
-        hintSpan.style.color = "#d32f2f";
+        hintSpan.style.color = "var(--color-error)";
         testResult.appendChild(hintSpan);
 
         if (responseBody) {
           const detailWrap = doc.createElement("details");
-          detailWrap.style.cssText = "margin-top:4px; font-size:11px; color:var(--text-2,#6b7280);";
+          detailWrap.style.cssText = "margin-top:4px; font-size:11px; color:var(--text-2);";
           const summary = doc.createElement("summary");
           summary.textContent = getString("pref-embedding-test-error-detail" as any) || "Show raw response";
-          summary.style.cssText = "cursor:pointer; color:var(--text-3,#9ca3af); user-select:none;";
+          summary.style.cssText = "cursor:pointer; color:var(--text-3); user-select:none;";
           const pre = doc.createElement("pre");
           pre.textContent = responseBody;
-          pre.style.cssText = "margin:4px 0 0; white-space:pre-wrap; word-break:break-all; font-size:11px; font-family:'SF Mono',Consolas,monospace; background:var(--bg-muted,#f4f5f7); padding:6px 8px; border-radius:4px; max-height:200px; overflow-y:auto;";
+          pre.style.cssText = "margin:4px 0 0; white-space:pre-wrap; word-break:break-all; font-size:11px; font-family:'SF Mono',Consolas,monospace; background:var(--bg-muted); padding:6px 8px; border-radius:4px; max-height:200px; overflow-y:auto; color:var(--text);";
           detailWrap.appendChild(summary);
           detailWrap.appendChild(pre);
           testResult.appendChild(detailWrap);
@@ -728,14 +728,14 @@ function bindEmbeddingSettings(doc: Document) {
         if (hasStoredVectors && storedDims && storedDims !== dims) {
           // Dimension mismatch with existing index - warn but don't auto-update
           testResult.textContent = `${getString("pref-embedding-test-success" as any)} (${dims} dims) - ⚠️ ${getString("pref-embedding-dimension-mismatch" as any) || `Index has ${storedDims} dims, API returns ${dims} dims. Rebuild index to use new dimensions.`}`;
-          testResult.style.color = "#ef6c00";
+          testResult.style.color = "var(--color-warn)";
 
           // Save detected dimensions but don't update config dimensions
           Zotero.Prefs.set("extensions.zotero.zotero-mcp-plugin.embedding.detectedDimensions", dims, true);
         } else {
           // No mismatch or no existing vectors - safe to update
           testResult.textContent = getString("pref-embedding-test-success" as any) + ` (${dims} dims)`;
-          testResult.style.color = "#2e7d32";
+          testResult.style.color = "var(--color-ok)";
 
           // Update dimensions
           if (dims > 0) {
@@ -760,7 +760,7 @@ function bindEmbeddingSettings(doc: Document) {
         }
       } else {
         testResult.textContent = getString("pref-embedding-test-failed" as any) + ": Invalid response";
-        testResult.style.color = "#d32f2f";
+        testResult.style.color = "var(--color-error)";
       }
     } catch (error: any) {
       // Network / timeout / other non-HTTP errors
@@ -800,18 +800,18 @@ function bindEmbeddingSettings(doc: Document) {
       testResult.innerHTML = "";
       const hintSpan = doc.createElement("span");
       hintSpan.textContent = `${getString("pref-embedding-test-failed" as any)} ${hint}`;
-      hintSpan.style.color = "#d32f2f";
+      hintSpan.style.color = "var(--color-error)";
       testResult.appendChild(hintSpan);
 
       // Collapsible raw response
       const detailWrap = doc.createElement("details");
-      detailWrap.style.cssText = "margin-top:4px; font-size:11px; color:var(--text-2,#6b7280);";
+      detailWrap.style.cssText = "margin-top:4px; font-size:11px; color:var(--text-2);";
       const summary = doc.createElement("summary");
       summary.textContent = getString("pref-embedding-test-error-detail" as any) || "Show raw response";
-      summary.style.cssText = "cursor:pointer; color:var(--text-3,#9ca3af); user-select:none;";
+      summary.style.cssText = "cursor:pointer; color:var(--text-3); user-select:none;";
       const pre = doc.createElement("pre");
       pre.textContent = rawContent;
-      pre.style.cssText = "margin:4px 0 0; white-space:pre-wrap; word-break:break-all; font-size:11px; font-family:'SF Mono',Consolas,monospace; background:var(--bg-muted,#f4f5f7); padding:6px 8px; border-radius:4px; max-height:200px; overflow-y:auto;";
+      pre.style.cssText = "margin:4px 0 0; white-space:pre-wrap; word-break:break-all; font-size:11px; font-family:'SF Mono',Consolas,monospace; background:var(--bg-muted); padding:6px 8px; border-radius:4px; max-height:200px; overflow-y:auto; color:var(--text);";
       detailWrap.appendChild(summary);
       detailWrap.appendChild(pre);
       testResult.appendChild(detailWrap);
@@ -1372,10 +1372,10 @@ function bindSemanticStatsSettings(doc: Document) {
 
     // Set style based on type
     const colors: Record<string, { bg: string; text: string }> = {
-      info: { bg: "#e3f2fd", text: "#1565c0" },
-      success: { bg: "#e8f5e9", text: "#2e7d32" },
-      warning: { bg: "#fff3e0", text: "#ef6c00" },
-      error: { bg: "#ffebee", text: "#c62828" }
+      info: { bg: "var(--msg-info-bg)", text: "var(--msg-info-text)" },
+      success: { bg: "var(--msg-success-bg)", text: "var(--msg-success-text)" },
+      warning: { bg: "var(--msg-warning-bg)", text: "var(--msg-warning-text)" },
+      error: { bg: "var(--msg-error-bg)", text: "var(--msg-error-text)" }
     };
 
     const color = colors[type] || colors.info;
@@ -1483,10 +1483,10 @@ function bindSemanticStatsSettings(doc: Document) {
           const configuredDimsNum = configuredDims ? parseInt(String(configuredDims), 10) : null;
           if (configuredDimsNum && configuredDimsNum !== stats.indexStats.storedDimensions) {
             dimensionsEl.textContent = `${stats.indexStats.storedDimensions} (${getString("pref-semantic-stats-dimensions-mismatch" as any) || "mismatch"}: ${configuredDims})`;
-            dimensionsEl.style.color = "#d32f2f";
+            dimensionsEl.style.color = "var(--color-error)";
           } else {
             dimensionsEl.textContent = String(stats.indexStats.storedDimensions);
-            dimensionsEl.style.color = "#333";
+            dimensionsEl.style.color = "var(--color-default)";
           }
         } else {
           dimensionsEl.textContent = '-';
@@ -1496,7 +1496,7 @@ function bindSemanticStatsSettings(doc: Document) {
         if (stats.indexStats.int8MigrationStatus) {
           const { migrated, total, percent } = stats.indexStats.int8MigrationStatus;
           int8StatusEl.textContent = `${migrated}/${total} (${percent}%)`;
-          int8StatusEl.style.color = percent === 100 ? "#2e7d32" : "#ef6c00";
+          int8StatusEl.style.color = percent === 100 ? "var(--color-ok)" : "var(--color-warn)";
         } else {
           int8StatusEl.textContent = '-';
         }
@@ -1519,7 +1519,7 @@ function bindSemanticStatsSettings(doc: Document) {
             } else {
               statusEl.textContent = errorStatus;
             }
-            statusEl.style.color = "#c62828";
+            statusEl.style.color = "var(--msg-error-text)";
           }
           // Also show error message in message area if available
           if (stats.indexProgress.error) {
@@ -1658,7 +1658,7 @@ function bindSemanticStatsSettings(doc: Document) {
         // Update status display
         if (statusEl) {
           statusEl.textContent = getStatusText('error');
-          statusEl.style.color = "#c62828";
+          statusEl.style.color = "var(--msg-error-text)";
         }
 
         isIndexing = false;
