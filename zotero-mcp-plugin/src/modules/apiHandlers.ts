@@ -285,7 +285,7 @@ export async function handleSearchCollections(
     const limit = parseInt(query.get("limit") || "100", 10);
     const offset = parseInt(query.get("offset") || "0", 10);
 
-    const allCollections = Zotero.Collections.getByLibrary(libraryID) || [];
+    const allCollections = Zotero.Collections.getByLibrary(libraryID, true) || [];
     const lowerCaseQuery = q.toLowerCase();
 
     const matchedCollections = allCollections.filter(
@@ -368,7 +368,7 @@ export async function handleGetCollectionDetails(
       status: 200,
       statusText: "OK",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify(formatCollectionDetails(collection, options)),
+      body: JSON.stringify(await formatCollectionDetails(collection, options)),
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));

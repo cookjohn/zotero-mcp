@@ -100,7 +100,7 @@ export function formatCollectionList(collections: Zotero.Collection[]) {
  * @param options - Formatting options.
  * @returns Detailed collection information.
  */
-export function formatCollectionDetails(
+export async function formatCollectionDetails(
   collection: Zotero.Collection,
   options: {
     includeItems?: boolean;
@@ -127,7 +127,7 @@ export function formatCollectionDetails(
   if (options.includeItems) {
     const limit = options.itemsLimit || childItemIDs.length;
     const items = Zotero.Items.get(childItemIDs.slice(0, limit));
-    response.items = formatItems(items);
+    response.items = await formatItems(items);
   }
 
   if (options.includeSubcollections) {
