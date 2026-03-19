@@ -7,6 +7,7 @@ import { formatItem, formatItems } from "./itemFormatter";
 import {
   formatCollectionList,
   formatCollectionDetails,
+  formatCollectionTree,
 } from "./collectionFormatter";
 import { handleSearchRequest } from "./searchEngine";
 import { FulltextService } from "./fulltextService";
@@ -531,30 +532,12 @@ export async function handleGetSubcollections(
     const subcollectionIDs = collection.getChildCollections(true, false);
     const total = subcollectionIDs.length;
     ztoolkit.log(`[ApiHandlers] Collection contains ${total} subcollections, IDs: [${subcollectionIDs.slice(0, 5).join(", ")}${subcollectionIDs.length > 5 ? "..." : ""}]`);
-    
-    const paginatedIDs = subcollectionIDs.slice(offset, offset + limit);
-    ztoolkit.log(`[ApiHandlers] Paginated IDs: [${paginatedIDs.join(", ")}]`);
-    
-    const subcollections = Zotero.Collections.get(paginatedIDs) as Zotero.Collection[];
-    ztoolkit.log(`[ApiHandlers] Retrieved ${subcollections.length} subcollection objects from Zotero`);
 
-    // Format subcollections
-    const formattedSubcollections = formatCollectionList(subcollections);
-    
-    // If recursive is enabled, add subcollection count for each
+    // If recursive is enabled, build the full nested tree (pagination does not apply)
     if (includeRecursive) {
-      const enrichedSubcollections = formattedSubcollections.map((sc: any) => {
-        const fullCollection = subcollections.find(c => c.key === sc.key);
-        if (fullCollection) {
-          const childCount = fullCollection.getChildCollections(true, false).length;
-          return {
-            ...sc,
-            numSubcollections: childCount,
-          };
-        }
-        return sc;
-      });
-      
+      const subcollections = Zotero.Collections.get(subcollectionIDs) as Zotero.Collection[];
+      const tree = subcollections.map(formatCollectionTree);
+      ztoolkit.log(`[ApiHandlers] Returning recursive tree with ${tree.length} top-level subcollections`);
       return {
         status: 200,
         statusText: "OK",
@@ -562,9 +545,18 @@ export async function handleGetSubcollections(
           "Content-Type": "application/json; charset=utf-8",
           "X-Total-Count": total.toString(),
         },
-        body: JSON.stringify(enrichedSubcollections),
+        body: JSON.stringify(tree),
       };
     }
+
+    const paginatedIDs = subcollectionIDs.slice(offset, offset + limit);
+    ztoolkit.log(`[ApiHandlers] Paginated IDs: [${paginatedIDs.join(", ")}]`);
+
+    const subcollections = Zotero.Collections.get(paginatedIDs) as Zotero.Collection[];
+    ztoolkit.log(`[ApiHandlers] Retrieved ${subcollections.length} subcollection objects from Zotero`);
+
+    // Format subcollections
+    const formattedSubcollections = formatCollectionList(subcollections);
 
     ztoolkit.log(`[ApiHandlers] Formatted ${formattedSubcollections.length} subcollections`);
 

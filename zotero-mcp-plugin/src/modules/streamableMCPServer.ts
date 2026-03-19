@@ -562,16 +562,16 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_subcollections',
-        description: 'Get subcollections (child collections) of a specific collection',
+        description: 'Get subcollections (child collections) of a specific collection. Use recursive=true to retrieve the full nested hierarchy of all descendant collections.',
         inputSchema: {
           type: 'object',
           properties: {
             collectionKey: { type: 'string', description: 'Parent collection key' },
-            limit: { type: 'number', description: 'Maximum results to return (default: 100)' },
-            offset: { type: 'number', description: 'Pagination offset (default: 0)' },
+            limit: { type: 'number', description: 'Maximum results to return (default: 100). Ignored when recursive=true.' },
+            offset: { type: 'number', description: 'Pagination offset (default: 0). Ignored when recursive=true.' },
             recursive: { 
               type: 'boolean', 
-              description: 'Include subcollection count for each subcollection (default: false)' 
+              description: 'When true, recursively return all descendant subcollections as a nested tree (default: false).' 
             },
           },
           required: ['collectionKey'],
