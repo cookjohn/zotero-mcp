@@ -6,7 +6,7 @@ _This README is also available in: [:gb: English](./README.md) | :cn: 简体中�
 [![zotero target version](https://img.shields.io/badge/Zotero-7-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue)](https://www.typescriptlang.org)
-[![Version](https://img.shields.io/badge/Version-1.4.3-brightgreen)]()
+[![Version](https://img.shields.io/badge/Version-1.4.4-brightgreen)]()
 [![EN doc](https://img.shields.io/badge/Document-English-blue.svg)](README.md)
 [![中文文档](https://img.shields.io/badge/文档-中文-blue.svg)](README-zh.md)
 

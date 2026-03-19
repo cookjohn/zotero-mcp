@@ -43,6 +43,9 @@ logs/
 # Claude Code
 .claude/
 
+# Documentation (local only)
+docs/
+
 # Zotero plugin specific
 zotero-mcp-plugin/addon/
 zotero-mcp-plugin/build/
