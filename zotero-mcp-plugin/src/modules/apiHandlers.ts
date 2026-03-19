@@ -199,10 +199,10 @@ export async function handleGetCollections(
     const offset = parseInt(query.get("offset") || "0", 10);
     const sort = query.get("sort") || "name";
     const direction = query.get("direction") || "asc";
-    const includeSubcollections = query.get("includeSubcollections") === "true";
+    const recursive = query.get("recursive") === "true";
     const parentCollection = query.get("parentCollection");
 
-    let collectionIDs;
+    let collections: Zotero.Collection[] = [];
     if (parentCollection) {
       const parent = Zotero.Collections.getByLibraryAndKey(
         libraryID,
@@ -218,16 +218,12 @@ export async function handleGetCollections(
           }),
         };
       }
-      collectionIDs = parent.getChildCollections(true);
+      const childIDs = parent.getChildCollections(true);
+      collections = Zotero.Collections.get(childIDs) as Zotero.Collection[];
     } else {
-      collectionIDs = Zotero.Collections.getByLibrary(libraryID).map(
-        (c) => c.id,
-      );
+      // getByLibrary without the second parameter returns only top-level collections
+      collections = Zotero.Collections.getByLibrary(libraryID) as Zotero.Collection[];
     }
-
-    const collections = Zotero.Collections.get(
-      collectionIDs,
-    ) as Zotero.Collection[];
 
     // Sorting
     collections.sort((a: any, b: any) => {
@@ -237,6 +233,20 @@ export async function handleGetCollections(
       if (aVal > bVal) return direction === "asc" ? 1 : -1;
       return 0;
     });
+
+    // When recursive, return the full nested tree (pagination does not apply)
+    if (recursive) {
+      const tree = collections.map(formatCollectionTree);
+      return {
+        status: 200,
+        statusText: "OK",
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Total-Count": collections.length.toString(),
+        },
+        body: JSON.stringify(tree),
+      };
+    }
 
     const total = collections.length;
     const paginated = collections.slice(offset, offset + limit);
