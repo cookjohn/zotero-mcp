@@ -1083,7 +1083,12 @@ export class StreamableMCPServer {
       }
     }
     
-    const response = await handleSearch(searchParams);
+    const SEARCH_TIMEOUT_MS = 25000; // 25 秒超时，低于 keepAlive 的 30 秒
+    const searchPromise = handleSearch(searchParams);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Search timed out after 25 seconds. Try narrowing your query or reducing the limit.")), SEARCH_TIMEOUT_MS);
+    });
+    const response = await Promise.race([searchPromise, timeoutPromise]);
     let result = response.body ? JSON.parse(response.body) : response;
     
     // Add mode information to metadata

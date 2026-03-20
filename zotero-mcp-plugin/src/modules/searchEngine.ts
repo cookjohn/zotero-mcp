@@ -108,6 +108,42 @@ const SUPPORTED_SORT_FIELDS = [
   "relevance",
 ];
 
+/**
+ * 使用预计算排序键排序 items（Schwartzian transform），每 200 条让出主线程
+ */
+async function sortItemsWithYield(
+  items: Zotero.Item[],
+  sort: string,
+  direction: string,
+): Promise<Zotero.Item[]> {
+  // 预计算排序键
+  const sortKeyMap = new Map<number, string>();
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    let key: string;
+    if (sort === "creator") {
+      key = item.getCreators().map((c) => c.lastName).join(", ").toLowerCase();
+    } else {
+      key = String(item.getField(sort as any) || "").toLowerCase();
+    }
+    sortKeyMap.set(item.id, key);
+
+    if (i > 0 && i % 200 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  }
+
+  items.sort((a, b) => {
+    const valA = sortKeyMap.get(a.id) || "";
+    const valB = sortKeyMap.get(b.id) || "";
+    if (valA < valB) return direction === "asc" ? -1 : 1;
+    if (valA > valB) return direction === "asc" ? 1 : -1;
+    return 0;
+  });
+
+  return items;
+}
+
 // 高级搜索辅助函数
 
 /**
@@ -308,33 +344,34 @@ async function performFulltextSearch(
   operator: "contains" | "exact" | "regex" = "contains"
 ): Promise<{ itemIDs: number[], matchDetails: Map<number, any> }> {
   const matchDetails = new Map<number, any>();
-  let itemIDs: number[] = [];
+  const itemIDSet = new Set<number>();
 
   try {
     if (mode === "attachment" || mode === "both") {
       // 使用Zotero.Search搜索附件全文
       const attachmentSearch = new Zotero.Search();
       (attachmentSearch as any).libraryID = libraryID;
-      
+
       // 搜索附件内容
       const searchOperator = operator === "exact" ? "is" : "contains";
       attachmentSearch.addCondition("fulltextContent", searchOperator, query);
       attachmentSearch.addCondition("itemType", "is", "attachment");
-      
+
       const attachmentIDs = await attachmentSearch.search();
-      
-      for (const attachmentID of attachmentIDs) {
+
+      for (let i = 0; i < attachmentIDs.length; i++) {
+        const attachmentID = attachmentIDs[i];
         const attachment = Zotero.Items.get(attachmentID);
         if (attachment && attachment.isAttachment()) {
           const parentItem = attachment.parentItem;
           const targetID = parentItem ? parentItem.id : attachment.id;
-          
-          if (parentItem && !itemIDs.includes(parentItem.id)) {
-            itemIDs.push(parentItem.id);
-          } else if (!parentItem && !itemIDs.includes(attachment.id)) {
-            itemIDs.push(attachment.id);
+
+          if (parentItem) {
+            itemIDSet.add(parentItem.id);
+          } else {
+            itemIDSet.add(attachment.id);
           }
-          
+
           // 记录匹配详情
           if (!matchDetails.has(targetID)) {
             matchDetails.set(targetID, {
@@ -343,26 +380,37 @@ async function performFulltextSearch(
               score: 0
             });
           }
-          
+
           const details = matchDetails.get(targetID);
-          
-          // 尝试获取匹配片段
+
+          // 尝试通过 SQL 直接提取 snippet，避免加载完整附件文本
           let snippet = '';
           try {
-            const content = await attachment.attachmentText || '';
-            if (content) {
-              const queryPos = content.toLowerCase().indexOf(query.toLowerCase());
-              if (queryPos >= 0) {
-                const start = Math.max(0, queryPos - 50);
-                const end = Math.min(content.length, queryPos + query.length + 50);
-                snippet = '...' + content.substring(start, end) + '...';
-              }
+            const sqlResult = await Zotero.DB.valueQueryAsync(
+              `SELECT substr(content, max(1, instr(lower(content), lower(?1)) - 50), 150) FROM fulltextContent WHERE itemID = ?2`,
+              [query, attachment.id]
+            );
+            if (sqlResult) {
+              snippet = '...' + sqlResult + '...';
             }
-          } catch (e) {
-            // 获取片段失败，使用空字符串
-            snippet = '';
+          } catch (_dbErr) {
+            // Fallback: 加载文本但限制前 50KB
+            try {
+              const content = await attachment.attachmentText || '';
+              if (content) {
+                const searchContent = content.length > 50000 ? content.substring(0, 50000) : content;
+                const queryPos = searchContent.toLowerCase().indexOf(query.toLowerCase());
+                if (queryPos >= 0) {
+                  const start = Math.max(0, queryPos - 50);
+                  const end = Math.min(searchContent.length, queryPos + query.length + 50);
+                  snippet = '...' + searchContent.substring(start, end) + '...';
+                }
+              }
+            } catch (_e) {
+              snippet = '';
+            }
           }
-          
+
           details.attachments.push({
             attachmentID: attachment.id,
             filename: attachment.attachmentFilename || '',
@@ -370,6 +418,11 @@ async function performFulltextSearch(
             score: 1
           });
           details.score += 1;
+        }
+
+        // 每 10 个附件让出主线程
+        if (i > 0 && i % 10 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0));
         }
       }
     }
@@ -379,21 +432,21 @@ async function performFulltextSearch(
       const s = new Zotero.Search();
       (s as any).libraryID = libraryID;
       s.addCondition("itemType", "is", "note");
-      
+
       // 根据操作符设置搜索条件
       const searchOperator = operator === "exact" ? "is" : "contains";
       s.addCondition("note", searchOperator, query);
-      
+
       const noteIDs = await s.search();
-      
+
       for (const noteID of noteIDs) {
         const note = Zotero.Items.get(noteID);
         if (note && note.isNote()) {
           const parentItem = note.parentItem;
-          if (parentItem && !itemIDs.includes(parentItem.id)) {
-            itemIDs.push(parentItem.id);
+          if (parentItem) {
+            itemIDSet.add(parentItem.id);
           }
-          
+
           const targetID = parentItem ? parentItem.id : note.id;
           if (!matchDetails.has(targetID)) {
             matchDetails.set(targetID, {
@@ -428,7 +481,7 @@ async function performFulltextSearch(
       }
     }
 
-    return { itemIDs: [...new Set(itemIDs)], matchDetails };
+    return { itemIDs: Array.from(itemIDSet), matchDetails };
   } catch (error) {
     ztoolkit.log(`[SearchEngine] Fulltext search error: ${error}`, "error");
     return { itemIDs: [], matchDetails };
@@ -754,8 +807,7 @@ export async function handleSearchRequest(
     };
   }
 
-  // --- 5. 高级标签过滤 (内存中处理) ---
-  let items = await Zotero.Items.getAsync(initialItemIDs);
+  // --- 5. 判断是否需要内存过滤/排序 ---
   const queryTags = Array.isArray(params.tags)
     ? params.tags
     : params.tags
@@ -763,177 +815,170 @@ export async function handleSearchRequest(
       : [];
   const matchedTagsStats: Record<string, number> = {};
 
-  if (queryTags.length > 0) {
-    const tagMatch = params.tagMatch || "exact";
-    const tagMode = params.tagMode || "any";
+  const advancedFilterKeys = [
+    "yearRange", "dateAddedRange", "dateModifiedRange", "numPagesRange",
+    "titleOperator", "creatorOperator", "abstractOperator",
+    "publicationTitleOperator", "language", "rights", "url", "extra",
+  ];
+  const needsInMemoryFiltering =
+    queryTags.length > 0 ||
+    params.relevanceScoring === "true" ||
+    sort === "relevance" ||
+    Object.keys(params).some((key) => advancedFilterKeys.includes(key));
 
-    const filteredItems: Zotero.Item[] = [];
-    items.forEach((item) => {
-      const itemTags = item.getTags().map((t) => t.tag);
-      const matchedTags: string[] = [];
-
-      for (const queryTag of queryTags) {
-        const isMatch = itemTags.some((itemTag) => {
-          switch (tagMatch) {
-            case "contains":
-              return itemTag.toLowerCase().includes(queryTag.toLowerCase());
-            case "startsWith":
-              return itemTag.toLowerCase().startsWith(queryTag.toLowerCase());
-            case "exact":
-            default:
-              return itemTag.toLowerCase() === queryTag.toLowerCase();
-          }
-        });
-        if (isMatch) {
-          matchedTags.push(queryTag);
-        }
-      }
-
-      const uniqueMatched = [...new Set(matchedTags)];
-      let shouldInclude = false;
-      switch (tagMode) {
-        case "all":
-          shouldInclude = uniqueMatched.length === queryTags.length;
-          break;
-        case "none":
-          shouldInclude = uniqueMatched.length === 0;
-          break;
-        case "any":
-        default:
-          shouldInclude = uniqueMatched.length > 0;
-          break;
-      }
-
-      if (shouldInclude) {
-        (item as any).matchedTags = uniqueMatched; // 附加匹配的标签
-        filteredItems.push(item);
-        uniqueMatched.forEach((tag) => {
-          matchedTagsStats[tag] = (matchedTagsStats[tag] || 0) + 1;
-        });
-      }
-    });
-    items = filteredItems;
-  }
-
-  // --- 5.5. 应用高级过滤条件 ---
-  if (
-    Object.keys(params).some((key) =>
-      [
-        "yearRange",
-        "dateAddedRange",
-        "dateModifiedRange",
-        "numPagesRange",
-        "titleOperator",
-        "creatorOperator",
-        "abstractOperator",
-        "publicationTitleOperator",
-        "language",
-        "rights",
-        "url",
-        "extra",
-      ].includes(key),
-    )
-  ) {
-    items = applyAdvancedFilters(items, params);
-  }
-
-  // --- 6. 相关性评分和排序 ---
   const useRelevanceScoring =
     params.relevanceScoring === "true" || sort === "relevance";
   let scoredItems: ScoredItem[] = [];
+  let items: Zotero.Item[];
 
-  if (useRelevanceScoring) {
-    scoredItems = items.map((item) => {
-      const { score, matchedFields } = calculateRelevanceScore(item, params);
-      return {
-        item,
-        relevanceScore: score,
-        matchedFields,
-      };
-    });
+  if (!needsInMemoryFiltering) {
+    // --- 快速路径：无需内存过滤，尽量在 ID 层面处理 ---
+    const canSortByID = sort === "dateAdded" || sort === "dateModified";
 
-    if (sort === "relevance") {
-      // 按相关性排序
-      scoredItems.sort((a, b) => {
-        const scoreA = a.relevanceScore;
-        const scoreB = b.relevanceScore;
-        return direction === "asc" ? scoreA - scoreB : scoreB - scoreA;
-      });
-      items = scoredItems.map((si) => si.item);
+    if (canSortByID) {
+      // dateAdded/dateModified 可利用 ID 的大致插入顺序
+      if (direction === "desc") {
+        initialItemIDs.reverse();
+      }
+      const paginatedIDs = initialItemIDs.slice(offset, offset + limit);
+      items = await Zotero.Items.getAsync(paginatedIDs);
     } else {
-      // 非相关性排序，但保留评分信息
-      items.sort((a, b) => {
-        let valA: any, valB: any;
-        if (sort === "creator") {
-          valA = a
-            .getCreators()
-            .map((c) => c.lastName)
-            .join(", ");
-          valB = b
-            .getCreators()
-            .map((c) => c.lastName)
-            .join(", ");
-        } else {
-          valA = a.getField(sort as any) || "";
-          valB = b.getField(sort as any) || "";
-        }
-        if (typeof valA === "string") valA = valA.toLowerCase();
-        if (typeof valB === "string") valB = valB.toLowerCase();
-
-        if (valA < valB) return direction === "asc" ? -1 : 1;
-        if (valA > valB) return direction === "asc" ? 1 : -1;
-        return 0;
-      });
+      // 其他排序字段需要加载 items，但限制上限
+      const cappedIDs = initialItemIDs.slice(0, Math.min(initialItemIDs.length, 2000));
+      items = await Zotero.Items.getAsync(cappedIDs);
+      // 使用预计算排序键（Schwartzian transform）
+      items = await sortItemsWithYield(items, sort, direction);
     }
   } else {
-    // 传统排序
-    items.sort((a, b) => {
-      let valA: any, valB: any;
-      if (sort === "creator") {
-        valA = a
-          .getCreators()
-          .map((c) => c.lastName)
-          .join(", ");
-        valB = b
-          .getCreators()
-          .map((c) => c.lastName)
-          .join(", ");
-      } else {
-        valA = a.getField(sort as any) || "";
-        valB = b.getField(sort as any) || "";
-      }
-      if (typeof valA === "string") valA = valA.toLowerCase();
-      if (typeof valB === "string") valB = valB.toLowerCase();
+    // --- 慢路径：需要内存过滤，加载全部 ---
+    items = await Zotero.Items.getAsync(initialItemIDs);
 
-      if (valA < valB) return direction === "asc" ? -1 : 1;
-      if (valA > valB) return direction === "asc" ? 1 : -1;
-      return 0;
-    });
+    // 标签过滤（改为 for 循环 + yield）
+    if (queryTags.length > 0) {
+      const tagMatch = params.tagMatch || "exact";
+      const tagMode = params.tagMode || "any";
+
+      const filteredItems: Zotero.Item[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const itemTags = item.getTags().map((t) => t.tag);
+        const matchedTags: string[] = [];
+
+        for (const queryTag of queryTags) {
+          const isMatch = itemTags.some((itemTag) => {
+            switch (tagMatch) {
+              case "contains":
+                return itemTag.toLowerCase().includes(queryTag.toLowerCase());
+              case "startsWith":
+                return itemTag.toLowerCase().startsWith(queryTag.toLowerCase());
+              case "exact":
+              default:
+                return itemTag.toLowerCase() === queryTag.toLowerCase();
+            }
+          });
+          if (isMatch) {
+            matchedTags.push(queryTag);
+          }
+        }
+
+        const uniqueMatched = [...new Set(matchedTags)];
+        let shouldInclude = false;
+        switch (tagMode) {
+          case "all":
+            shouldInclude = uniqueMatched.length === queryTags.length;
+            break;
+          case "none":
+            shouldInclude = uniqueMatched.length === 0;
+            break;
+          case "any":
+          default:
+            shouldInclude = uniqueMatched.length > 0;
+            break;
+        }
+
+        if (shouldInclude) {
+          (item as any).matchedTags = uniqueMatched;
+          filteredItems.push(item);
+          uniqueMatched.forEach((tag) => {
+            matchedTagsStats[tag] = (matchedTagsStats[tag] || 0) + 1;
+          });
+        }
+
+        // 每 100 条让出主线程
+        if (i > 0 && i % 100 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      }
+      items = filteredItems;
+    }
+
+    // 应用高级过滤条件
+    if (Object.keys(params).some((key) => advancedFilterKeys.includes(key))) {
+      items = applyAdvancedFilters(items, params);
+    }
+
+    // --- 6. 相关性评分和排序 ---
+    if (useRelevanceScoring) {
+      if (sort === "relevance") {
+        // 按相关性排序：对全部评分后排序
+        scoredItems = items.map((item) => {
+          const { score, matchedFields } = calculateRelevanceScore(item, params);
+          return { item, relevanceScore: score, matchedFields };
+        });
+        scoredItems.sort((a, b) => {
+          return direction === "asc"
+            ? a.relevanceScore - b.relevanceScore
+            : b.relevanceScore - a.relevanceScore;
+        });
+        items = scoredItems.map((si) => si.item);
+      } else {
+        // 非相关性排序：先排序，评分延后到分页后再算
+        items = await sortItemsWithYield(items, sort, direction);
+      }
+    } else {
+      items = await sortItemsWithYield(items, sort, direction);
+    }
   }
 
   // --- 7. 分页和格式化 ---
-  const total = items.length;
-  const paginatedItems = items.slice(offset, offset + limit);
-  const results = paginatedItems.map((item) => {
+  // 快速路径中 items 可能已是分页后的结果，使用 initialItemIDs.length 作为总数
+  const isFastPathPaginated = !needsInMemoryFiltering && (sort === "dateAdded" || sort === "dateModified");
+  const total = isFastPathPaginated ? initialItemIDs.length : items.length;
+  const paginatedItems = isFastPathPaginated ? items : items.slice(offset, offset + limit);
+
+  // 预构建评分 Map，避免 O(n) find
+  const scoreMap = useRelevanceScoring
+    ? new Map(scoredItems.map((si) => [si.item.id, si]))
+    : null;
+
+  const results: Record<string, any>[] = [];
+  for (let i = 0; i < paginatedItems.length; i++) {
+    const item = paginatedItems[i];
     const formatted = formatItemBrief(item);
 
-    // 添加附件路径信息
+    // 添加附件信息（不含 filePath，避免同步文件 I/O）
     try {
       const attachmentIDs = item.getAttachments();
       if (attachmentIDs && attachmentIDs.length > 0) {
-        formatted.attachments = attachmentIDs.map((id: number) => {
+        // 限制每个 item 最多 3 个附件
+        const cappedIDs = attachmentIDs.slice(0, 3);
+        const attachments: any[] = [];
+        for (const id of cappedIDs) {
           const attachment = Zotero.Items.get(id);
           if (attachment && attachment.isAttachment()) {
-            return {
+            attachments.push({
               key: attachment.key,
               filename: attachment.attachmentFilename || '',
-              filePath: attachment.getFilePath() || '',
               contentType: attachment.attachmentContentType || '',
               linkMode: attachment.attachmentLinkMode
-            };
+            });
           }
-          return null;
-        }).filter((att: any) => att !== null);
+        }
+        formatted.attachments = attachments;
+        if (attachmentIDs.length > 3) {
+          formatted.attachmentsTruncated = true;
+          formatted.totalAttachments = attachmentIDs.length;
+        }
       } else {
         formatted.attachments = [];
       }
@@ -949,10 +994,18 @@ export async function handleSearchRequest(
 
     // 添加相关性评分信息
     if (useRelevanceScoring) {
-      const scoredItem = scoredItems.find((si) => si.item.id === item.id);
-      if (scoredItem) {
-        formatted.relevanceScore = scoredItem.relevanceScore;
-        formatted.matchedFields = scoredItem.matchedFields;
+      if (scoreMap) {
+        // sort=relevance 时评分已预计算
+        const scoredItem = scoreMap.get(item.id);
+        if (scoredItem) {
+          formatted.relevanceScore = scoredItem.relevanceScore;
+          formatted.matchedFields = scoredItem.matchedFields;
+        }
+      } else {
+        // 非 relevance 排序：延后到分页后，只评当前页的 items
+        const { score, matchedFields } = calculateRelevanceScore(item, params);
+        formatted.relevanceScore = score;
+        formatted.matchedFields = matchedFields;
       }
     }
 
@@ -968,8 +1021,13 @@ export async function handleSearchRequest(
       };
     }
 
-    return formatted;
-  });
+    results.push(formatted);
+
+    // 每 5 个 item 让出主线程，避免 UI 冻结
+    if (i > 0 && i % 5 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  }
 
   // --- 8. 返回最终结果 ---
   const response: Record<string, any> = {
