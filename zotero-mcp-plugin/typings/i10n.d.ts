@@ -86,6 +86,8 @@ export type FluentMessageId =
   | 'pref-content-mode-label'
   | 'pref-copy-config-button'
   | 'pref-copy-config-button-text'
+  | 'pref-copy-instr-button'
+  | 'pref-copy-instr-button-text'
   | 'pref-custom-settings-hint'
   | 'pref-custom-settings-title'
   | 'pref-detail-api-section'
