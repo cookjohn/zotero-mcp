@@ -95,12 +95,29 @@ export function formatCollectionList(collections: Zotero.Collection[]) {
 }
 
 /**
+ * Recursively builds a hierarchical tree of a collection and all its descendants.
+ * @param collection - The root Zotero.Collection object.
+ * @returns A formatted collection object with nested `subcollections` arrays.
+ */
+export function formatCollectionTree(collection: Zotero.Collection): any {
+  const formatted: any = formatCollectionBrief(collection);
+  const childCollectionIDs = collection.getChildCollections(true);
+  if (childCollectionIDs.length > 0) {
+    const children = Zotero.Collections.get(childCollectionIDs) as Zotero.Collection[];
+    formatted.subcollections = children.map(formatCollectionTree);
+  } else {
+    formatted.subcollections = [];
+  }
+  return formatted;
+}
+
+/**
  * Formats collection details, including items and subcollections.
  * @param collection - The Zotero.Collection object.
  * @param options - Formatting options.
  * @returns Detailed collection information.
  */
-export function formatCollectionDetails(
+export async function formatCollectionDetails(
   collection: Zotero.Collection,
   options: {
     includeItems?: boolean;
@@ -127,7 +144,7 @@ export function formatCollectionDetails(
   if (options.includeItems) {
     const limit = options.itemsLimit || childItemIDs.length;
     const items = Zotero.Items.get(childItemIDs.slice(0, limit));
-    response.items = formatItems(items);
+    response.items = await formatItems(items);
   }
 
   if (options.includeSubcollections) {

@@ -7,6 +7,7 @@ import { formatItem, formatItems } from "./itemFormatter";
 import {
   formatCollectionList,
   formatCollectionDetails,
+  formatCollectionTree,
 } from "./collectionFormatter";
 import { handleSearchRequest } from "./searchEngine";
 import { FulltextService } from "./fulltextService";
@@ -198,10 +199,10 @@ export async function handleGetCollections(
     const offset = parseInt(query.get("offset") || "0", 10);
     const sort = query.get("sort") || "name";
     const direction = query.get("direction") || "asc";
-    const includeSubcollections = query.get("includeSubcollections") === "true";
+    const recursive = query.get("recursive") === "true";
     const parentCollection = query.get("parentCollection");
 
-    let collectionIDs;
+    let collections: Zotero.Collection[] = [];
     if (parentCollection) {
       const parent = Zotero.Collections.getByLibraryAndKey(
         libraryID,
@@ -217,16 +218,12 @@ export async function handleGetCollections(
           }),
         };
       }
-      collectionIDs = parent.getChildCollections(true);
+      const childIDs = parent.getChildCollections(true);
+      collections = Zotero.Collections.get(childIDs) as Zotero.Collection[];
     } else {
-      collectionIDs = Zotero.Collections.getByLibrary(libraryID).map(
-        (c) => c.id,
-      );
+      // getByLibrary without the second parameter returns only top-level collections
+      collections = Zotero.Collections.getByLibrary(libraryID) as Zotero.Collection[];
     }
-
-    const collections = Zotero.Collections.get(
-      collectionIDs,
-    ) as Zotero.Collection[];
 
     // Sorting
     collections.sort((a: any, b: any) => {
@@ -236,6 +233,20 @@ export async function handleGetCollections(
       if (aVal > bVal) return direction === "asc" ? 1 : -1;
       return 0;
     });
+
+    // When recursive, return the full nested tree (pagination does not apply)
+    if (recursive) {
+      const tree = collections.map(formatCollectionTree);
+      return {
+        status: 200,
+        statusText: "OK",
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Total-Count": collections.length.toString(),
+        },
+        body: JSON.stringify(tree),
+      };
+    }
 
     const total = collections.length;
     const paginated = collections.slice(offset, offset + limit);
@@ -285,7 +296,7 @@ export async function handleSearchCollections(
     const limit = parseInt(query.get("limit") || "100", 10);
     const offset = parseInt(query.get("offset") || "0", 10);
 
-    const allCollections = Zotero.Collections.getByLibrary(libraryID) || [];
+    const allCollections = Zotero.Collections.getByLibrary(libraryID, true) || [];
     const lowerCaseQuery = q.toLowerCase();
 
     const matchedCollections = allCollections.filter(
@@ -368,7 +379,7 @@ export async function handleGetCollectionDetails(
       status: 200,
       statusText: "OK",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify(formatCollectionDetails(collection, options)),
+      body: JSON.stringify(await formatCollectionDetails(collection, options)),
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
@@ -531,30 +542,12 @@ export async function handleGetSubcollections(
     const subcollectionIDs = collection.getChildCollections(true, false);
     const total = subcollectionIDs.length;
     ztoolkit.log(`[ApiHandlers] Collection contains ${total} subcollections, IDs: [${subcollectionIDs.slice(0, 5).join(", ")}${subcollectionIDs.length > 5 ? "..." : ""}]`);
-    
-    const paginatedIDs = subcollectionIDs.slice(offset, offset + limit);
-    ztoolkit.log(`[ApiHandlers] Paginated IDs: [${paginatedIDs.join(", ")}]`);
-    
-    const subcollections = Zotero.Collections.get(paginatedIDs) as Zotero.Collection[];
-    ztoolkit.log(`[ApiHandlers] Retrieved ${subcollections.length} subcollection objects from Zotero`);
 
-    // Format subcollections
-    const formattedSubcollections = formatCollectionList(subcollections);
-    
-    // If recursive is enabled, add subcollection count for each
+    // If recursive is enabled, build the full nested tree (pagination does not apply)
     if (includeRecursive) {
-      const enrichedSubcollections = formattedSubcollections.map((sc: any) => {
-        const fullCollection = subcollections.find(c => c.key === sc.key);
-        if (fullCollection) {
-          const childCount = fullCollection.getChildCollections(true, false).length;
-          return {
-            ...sc,
-            numSubcollections: childCount,
-          };
-        }
-        return sc;
-      });
-      
+      const subcollections = Zotero.Collections.get(subcollectionIDs) as Zotero.Collection[];
+      const tree = subcollections.map(formatCollectionTree);
+      ztoolkit.log(`[ApiHandlers] Returning recursive tree with ${tree.length} top-level subcollections`);
       return {
         status: 200,
         statusText: "OK",
@@ -562,9 +555,18 @@ export async function handleGetSubcollections(
           "Content-Type": "application/json; charset=utf-8",
           "X-Total-Count": total.toString(),
         },
-        body: JSON.stringify(enrichedSubcollections),
+        body: JSON.stringify(tree),
       };
     }
+
+    const paginatedIDs = subcollectionIDs.slice(offset, offset + limit);
+    ztoolkit.log(`[ApiHandlers] Paginated IDs: [${paginatedIDs.join(", ")}]`);
+
+    const subcollections = Zotero.Collections.get(paginatedIDs) as Zotero.Collection[];
+    ztoolkit.log(`[ApiHandlers] Retrieved ${subcollections.length} subcollection objects from Zotero`);
+
+    // Format subcollections
+    const formattedSubcollections = formatCollectionList(subcollections);
 
     ztoolkit.log(`[ApiHandlers] Formatted ${formattedSubcollections.length} subcollections`);
 
