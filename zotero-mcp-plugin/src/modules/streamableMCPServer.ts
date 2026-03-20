@@ -7,7 +7,12 @@ import {
   handleGetCollectionItems,
   handleGetSubcollections,
   handleSearchFulltext,
-  handleGetItemAbstract
+  handleGetItemAbstract,
+  handleCreateCollection,
+  handleUpdateCollection,
+  handleDeleteCollection,
+  handleAddItemsToCollection,
+  handleRemoveItemsFromCollection,
 } from './apiHandlers';
 import { UnifiedContentExtractor } from './unifiedContentExtractor';
 import { SmartAnnotationExtractor } from './smartAnnotationExtractor';
@@ -586,6 +591,84 @@ export class StreamableMCPServer {
         },
       },
       {
+        name: 'create_collection',
+        description: 'Create a new collection in the library. Optionally nest it under a parent collection.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Name of the new collection' },
+            parentCollection: {
+              type: 'string',
+              description: 'Key of the parent collection. If omitted, creates a top-level collection.'
+            },
+          },
+          required: ['name'],
+        },
+      },
+      {
+        name: 'update_collection',
+        description: 'Rename or move an existing collection. Provide name to rename, parentCollection to move (empty string moves to top level).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            collectionKey: { type: 'string', description: 'Key of the collection to update' },
+            name: { type: 'string', description: 'New name for the collection' },
+            parentCollection: {
+              type: 'string',
+              description: 'Key of the new parent collection. Use empty string "" to move to top level.'
+            },
+          },
+          required: ['collectionKey'],
+        },
+      },
+      {
+        name: 'delete_collection',
+        description: 'Delete a collection. WARNING: This is a destructive operation. By default, items in the collection are NOT deleted (only removed from the collection). Set deleteItems=true to also send items to trash.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            collectionKey: { type: 'string', description: 'Key of the collection to delete' },
+            deleteItems: {
+              type: 'boolean',
+              description: 'If true, also send items in the collection to trash. Default: false (items remain in library).'
+            },
+          },
+          required: ['collectionKey'],
+        },
+      },
+      {
+        name: 'add_items_to_collection',
+        description: 'Add one or more items to a collection by their item keys.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            collectionKey: { type: 'string', description: 'Key of the target collection' },
+            itemKeys: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Array of item keys to add to the collection'
+            },
+          },
+          required: ['collectionKey', 'itemKeys'],
+        },
+      },
+      {
+        name: 'remove_items_from_collection',
+        description: 'Remove one or more items from a collection. Items are NOT deleted from the library, only removed from this collection.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            collectionKey: { type: 'string', description: 'Key of the collection' },
+            itemKeys: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Array of item keys to remove from the collection'
+            },
+          },
+          required: ['collectionKey', 'itemKeys'],
+        },
+      },
+      {
         name: 'search_fulltext',
         description: 'Search within full-text content of all documents. Returns matching passages with context. Use get_content with itemKey for complete text of a result.',
         inputSchema: {
@@ -872,7 +955,9 @@ export class StreamableMCPServer {
 
     // Filter out write tools if write operations are disabled (default: disabled)
     const writeEnabled = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
-    const writeToolNames = new Set(['write_note', 'write_tag', 'write_metadata', 'write_item']);
+    const writeToolNames = new Set([
+      'write_note', 'write_tag', 'write_metadata', 'write_item',
+    ]);
     const finalTools = writeEnabled === true
       ? filteredTools
       : filteredTools.filter((t: any) => !writeToolNames.has(t.name));
@@ -949,6 +1034,72 @@ export class StreamableMCPServer {
           result = await this.callGetSubcollections(args);
           break;
 
+        case 'create_collection': {
+          const writeEnabledCC = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
+          if (writeEnabledCC !== true) {
+            throw new Error('Write operations are currently disabled. Please go to Zotero → Tools → Add-ons → Zotero MCP Plugin → Preferences, and enable "Write Operations" to use this feature.');
+          }
+          if (!args?.name) {
+            throw new Error('name is required');
+          }
+          result = await this.callCreateCollection(args);
+          break;
+        }
+
+        case 'update_collection': {
+          const writeEnabledUC = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
+          if (writeEnabledUC !== true) {
+            throw new Error('Write operations are currently disabled. Please go to Zotero → Tools → Add-ons → Zotero MCP Plugin → Preferences, and enable "Write Operations" to use this feature.');
+          }
+          if (!args?.collectionKey) {
+            throw new Error('collectionKey is required');
+          }
+          result = await this.callUpdateCollection(args);
+          break;
+        }
+
+        case 'delete_collection': {
+          const writeEnabledDC = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
+          if (writeEnabledDC !== true) {
+            throw new Error('Write operations are currently disabled. Please go to Zotero → Tools → Add-ons → Zotero MCP Plugin → Preferences, and enable "Write Operations" to use this feature.');
+          }
+          if (!args?.collectionKey) {
+            throw new Error('collectionKey is required');
+          }
+          result = await this.callDeleteCollection(args);
+          break;
+        }
+
+        case 'add_items_to_collection': {
+          const writeEnabledAI = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
+          if (writeEnabledAI !== true) {
+            throw new Error('Write operations are currently disabled. Please go to Zotero → Tools → Add-ons → Zotero MCP Plugin → Preferences, and enable "Write Operations" to use this feature.');
+          }
+          if (!args?.collectionKey) {
+            throw new Error('collectionKey is required');
+          }
+          if (!args?.itemKeys || !Array.isArray(args.itemKeys) || args.itemKeys.length === 0) {
+            throw new Error('itemKeys array is required');
+          }
+          result = await this.callAddItemsToCollection(args);
+          break;
+        }
+
+        case 'remove_items_from_collection': {
+          const writeEnabledRI = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
+          if (writeEnabledRI !== true) {
+            throw new Error('Write operations are currently disabled. Please go to Zotero → Tools → Add-ons → Zotero MCP Plugin → Preferences, and enable "Write Operations" to use this feature.');
+          }
+          if (!args?.collectionKey) {
+            throw new Error('collectionKey is required');
+          }
+          if (!args?.itemKeys || !Array.isArray(args.itemKeys) || args.itemKeys.length === 0) {
+            throw new Error('itemKeys array is required');
+          }
+          result = await this.callRemoveItemsFromCollection(args);
+          break;
+        }
+
         case 'search_fulltext':
           if (!args?.q) {
             throw new Error('q (query) is required');
@@ -994,7 +1145,7 @@ export class StreamableMCPServer {
         case 'write_note': {
           const writeEnabled = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
           if (writeEnabled !== true) {
-            throw new Error('Write operations are disabled. Enable them in Zotero MCP Plugin preferences.');
+            throw new Error('Write operations are currently disabled. Please go to Zotero → Tools → Add-ons → Zotero MCP Plugin → Preferences, and enable "Write Operations" to use this feature.');
           }
           if (!args?.action || !args?.content) {
             throw new Error('action and content are required');
@@ -1006,7 +1157,7 @@ export class StreamableMCPServer {
         case 'write_tag': {
           const writeEnabled2 = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
           if (writeEnabled2 !== true) {
-            throw new Error('Write operations are disabled. Enable them in Zotero MCP Plugin preferences.');
+            throw new Error('Write operations are currently disabled. Please go to Zotero → Tools → Add-ons → Zotero MCP Plugin → Preferences, and enable "Write Operations" to use this feature.');
           }
           if (!args?.action || !args?.itemKey || !args?.tags) {
             throw new Error('action, itemKey, and tags are required');
@@ -1018,7 +1169,7 @@ export class StreamableMCPServer {
         case 'write_metadata': {
           const writeEnabled3 = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
           if (writeEnabled3 !== true) {
-            throw new Error('Write operations are disabled. Enable them in Zotero MCP Plugin preferences.');
+            throw new Error('Write operations are currently disabled. Please go to Zotero → Tools → Add-ons → Zotero MCP Plugin → Preferences, and enable "Write Operations" to use this feature.');
           }
           if (!args?.itemKey) {
             throw new Error('itemKey is required');
@@ -1033,7 +1184,7 @@ export class StreamableMCPServer {
         case 'write_item': {
           const writeEnabled4 = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
           if (writeEnabled4 !== true) {
-            throw new Error('Write operations are disabled. Enable them in Zotero MCP Plugin preferences.');
+            throw new Error('Write operations are currently disabled. Please go to Zotero → Tools → Add-ons → Zotero MCP Plugin → Preferences, and enable "Write Operations" to use this feature.');
           }
           if (!args?.action) {
             throw new Error('action is required');
@@ -1266,6 +1417,37 @@ export class StreamableMCPServer {
     return result;
   }
 
+  private async callCreateCollection(args: any): Promise<any> {
+    const response = await handleCreateCollection({
+      name: args.name,
+      parentCollection: args.parentCollection,
+    });
+    return response.body ? JSON.parse(response.body) : response;
+  }
+
+  private async callUpdateCollection(args: any): Promise<any> {
+    const { collectionKey, ...body } = args;
+    const response = await handleUpdateCollection({ 1: collectionKey }, body);
+    return response.body ? JSON.parse(response.body) : response;
+  }
+
+  private async callDeleteCollection(args: any): Promise<any> {
+    const { collectionKey, ...body } = args;
+    const response = await handleDeleteCollection({ 1: collectionKey }, body);
+    return response.body ? JSON.parse(response.body) : response;
+  }
+
+  private async callAddItemsToCollection(args: any): Promise<any> {
+    const { collectionKey, itemKeys } = args;
+    const response = await handleAddItemsToCollection({ 1: collectionKey }, { itemKeys });
+    return response.body ? JSON.parse(response.body) : response;
+  }
+
+  private async callRemoveItemsFromCollection(args: any): Promise<any> {
+    const { collectionKey, itemKeys } = args;
+    const response = await handleRemoveItemsFromCollection({ 1: collectionKey }, { itemKeys });
+    return response.body ? JSON.parse(response.body) : response;
+  }
 
   private async callSearchFulltext(args: any): Promise<any> {
     // Apply mode-based defaults before creating search params

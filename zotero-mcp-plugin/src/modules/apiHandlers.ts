@@ -5,6 +5,8 @@
 
 import { formatItem, formatItems } from "./itemFormatter";
 import {
+  formatCollection,
+  formatCollectionBrief,
   formatCollectionList,
   formatCollectionDetails,
   formatCollectionTree,
@@ -924,6 +926,436 @@ export async function handleGetItemAbstract(
       statusText: "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify({ error: "An unexpected error occurred" }),
+    };
+  }
+}
+
+/**
+ * Handles creating a new collection.
+ */
+export async function handleCreateCollection(
+  body: { name: string; parentCollection?: string },
+): Promise<HttpResponse> {
+  try {
+    if (!body.name || body.name.trim().length === 0) {
+      return {
+        status: 400,
+        statusText: "Bad Request",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "Missing required parameter 'name'" }),
+      };
+    }
+
+    const libraryID = Zotero.Libraries.userLibraryID;
+    const collection = new Zotero.Collection();
+    (collection as any).libraryID = libraryID;
+    collection.name = body.name.trim();
+
+    if (body.parentCollection) {
+      const parent = Zotero.Collections.getByLibraryAndKey(
+        libraryID,
+        body.parentCollection,
+      );
+      if (!parent) {
+        return {
+          status: 404,
+          statusText: "Not Found",
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify({
+            error: `Parent collection ${body.parentCollection} not found`,
+          }),
+        };
+      }
+      collection.parentKey = body.parentCollection;
+    }
+
+    await collection.saveTx();
+    ztoolkit.log(`[ApiHandlers] Created collection: ${collection.key} - ${collection.name}`);
+
+    return {
+      status: 201,
+      statusText: "Created",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify(formatCollectionBrief(collection)),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    Zotero.logError(error);
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: error.message }),
+    };
+  }
+}
+
+/**
+ * Handles updating an existing collection (rename/move).
+ */
+export async function handleUpdateCollection(
+  params: Record<string, string>,
+  body: { name?: string; parentCollection?: string },
+): Promise<HttpResponse> {
+  try {
+    const collectionKey = params[1];
+    if (!collectionKey) {
+      return {
+        status: 400,
+        statusText: "Bad Request",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "Missing collectionKey parameter" }),
+      };
+    }
+
+    const libraryID = Zotero.Libraries.userLibraryID;
+    const collection = Zotero.Collections.getByLibraryAndKey(
+      libraryID,
+      collectionKey,
+    );
+
+    if (!collection) {
+      return {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({
+          error: `Collection with key ${collectionKey} not found`,
+        }),
+      };
+    }
+
+    if (body.name !== undefined) {
+      if (body.name.trim().length === 0) {
+        return {
+          status: 400,
+          statusText: "Bad Request",
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify({ error: "Collection name cannot be empty" }),
+        };
+      }
+      collection.name = body.name.trim();
+    }
+
+    if (body.parentCollection !== undefined) {
+      if (body.parentCollection === "") {
+        // Move to top level
+        (collection as any).parentKey = false;
+      } else {
+        if (body.parentCollection === collectionKey) {
+          return {
+            status: 400,
+            statusText: "Bad Request",
+            headers: { "Content-Type": "application/json; charset=utf-8" },
+            body: JSON.stringify({ error: "Cannot move a collection into itself" }),
+          };
+        }
+        const parent = Zotero.Collections.getByLibraryAndKey(
+          libraryID,
+          body.parentCollection,
+        );
+        if (!parent) {
+          return {
+            status: 404,
+            statusText: "Not Found",
+            headers: { "Content-Type": "application/json; charset=utf-8" },
+            body: JSON.stringify({
+              error: `Parent collection ${body.parentCollection} not found`,
+            }),
+          };
+        }
+        if (collection.hasDescendent("collection", parent.id)) {
+          return {
+            status: 400,
+            statusText: "Bad Request",
+            headers: { "Content-Type": "application/json; charset=utf-8" },
+            body: JSON.stringify({
+              error: "Cannot move a collection into one of its descendants",
+            }),
+          };
+        }
+        collection.parentKey = body.parentCollection;
+      }
+    }
+
+    await collection.saveTx();
+    ztoolkit.log(`[ApiHandlers] Updated collection: ${collection.key} - ${collection.name}`);
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify(formatCollectionBrief(collection)),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    Zotero.logError(error);
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: error.message }),
+    };
+  }
+}
+
+/**
+ * Handles deleting a collection.
+ */
+export async function handleDeleteCollection(
+  params: Record<string, string>,
+  body: { deleteItems?: boolean },
+): Promise<HttpResponse> {
+  try {
+    const collectionKey = params[1];
+    if (!collectionKey) {
+      return {
+        status: 400,
+        statusText: "Bad Request",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "Missing collectionKey parameter" }),
+      };
+    }
+
+    const libraryID = Zotero.Libraries.userLibraryID;
+    const collection = Zotero.Collections.getByLibraryAndKey(
+      libraryID,
+      collectionKey,
+    );
+
+    if (!collection) {
+      return {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({
+          error: `Collection with key ${collectionKey} not found`,
+        }),
+      };
+    }
+
+    const name = collection.name;
+    const numItems = collection.getChildItems(true).length;
+    const numSubcollections = collection.getChildCollections(true).length;
+
+    await collection.eraseTx({ deleteItems: body.deleteItems ?? false });
+    ztoolkit.log(`[ApiHandlers] Deleted collection: ${collectionKey} - ${name}`);
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        success: true,
+        deleted: {
+          key: collectionKey,
+          name,
+          numItems,
+          numSubcollections,
+          itemsDeleted: body.deleteItems ?? false,
+        },
+      }),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    Zotero.logError(error);
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: error.message }),
+    };
+  }
+}
+
+/**
+ * Handles adding items to a collection.
+ */
+export async function handleAddItemsToCollection(
+  params: Record<string, string>,
+  body: { itemKeys: string[] },
+): Promise<HttpResponse> {
+  try {
+    const collectionKey = params[1];
+    if (!collectionKey) {
+      return {
+        status: 400,
+        statusText: "Bad Request",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "Missing collectionKey parameter" }),
+      };
+    }
+
+    if (!body.itemKeys || !Array.isArray(body.itemKeys) || body.itemKeys.length === 0) {
+      return {
+        status: 400,
+        statusText: "Bad Request",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "Missing or empty itemKeys array" }),
+      };
+    }
+
+    const libraryID = Zotero.Libraries.userLibraryID;
+    const collection = Zotero.Collections.getByLibraryAndKey(
+      libraryID,
+      collectionKey,
+    );
+
+    if (!collection) {
+      return {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({
+          error: `Collection with key ${collectionKey} not found`,
+        }),
+      };
+    }
+
+    const added: string[] = [];
+    const notFound: string[] = [];
+    const alreadyInCollection: string[] = [];
+
+    for (const itemKey of body.itemKeys) {
+      const item = Zotero.Items.getByLibraryAndKey(libraryID, itemKey);
+      if (!item) {
+        notFound.push(itemKey);
+        continue;
+      }
+      if (collection.hasItem(item)) {
+        alreadyInCollection.push(itemKey);
+        continue;
+      }
+      added.push(itemKey);
+    }
+
+    if (added.length > 0) {
+      const itemIDs = added.map(
+        (key: string) => (Zotero.Items.getByLibraryAndKey(libraryID, key) as Zotero.Item).id,
+      );
+      await collection.addItems(itemIDs);
+    }
+
+    ztoolkit.log(
+      `[ApiHandlers] Added ${added.length} items to collection ${collectionKey}`,
+    );
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        success: true,
+        collectionKey,
+        added,
+        notFound,
+        alreadyInCollection,
+      }),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    Zotero.logError(error);
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: error.message }),
+    };
+  }
+}
+
+/**
+ * Handles removing items from a collection.
+ */
+export async function handleRemoveItemsFromCollection(
+  params: Record<string, string>,
+  body: { itemKeys: string[] },
+): Promise<HttpResponse> {
+  try {
+    const collectionKey = params[1];
+    if (!collectionKey) {
+      return {
+        status: 400,
+        statusText: "Bad Request",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "Missing collectionKey parameter" }),
+      };
+    }
+
+    if (!body.itemKeys || !Array.isArray(body.itemKeys) || body.itemKeys.length === 0) {
+      return {
+        status: 400,
+        statusText: "Bad Request",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "Missing or empty itemKeys array" }),
+      };
+    }
+
+    const libraryID = Zotero.Libraries.userLibraryID;
+    const collection = Zotero.Collections.getByLibraryAndKey(
+      libraryID,
+      collectionKey,
+    );
+
+    if (!collection) {
+      return {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({
+          error: `Collection with key ${collectionKey} not found`,
+        }),
+      };
+    }
+
+    const removed: string[] = [];
+    const notFound: string[] = [];
+    const notInCollection: string[] = [];
+
+    for (const itemKey of body.itemKeys) {
+      const item = Zotero.Items.getByLibraryAndKey(libraryID, itemKey);
+      if (!item) {
+        notFound.push(itemKey);
+        continue;
+      }
+      if (!collection.hasItem(item)) {
+        notInCollection.push(itemKey);
+        continue;
+      }
+      removed.push(itemKey);
+    }
+
+    if (removed.length > 0) {
+      const itemIDs = removed.map(
+        (key: string) => (Zotero.Items.getByLibraryAndKey(libraryID, key) as Zotero.Item).id,
+      );
+      await collection.removeItems(itemIDs);
+    }
+
+    ztoolkit.log(
+      `[ApiHandlers] Removed ${removed.length} items from collection ${collectionKey}`,
+    );
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        success: true,
+        collectionKey,
+        removed,
+        notFound,
+        notInCollection,
+      }),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    Zotero.logError(error);
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: error.message }),
     };
   }
 }
