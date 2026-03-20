@@ -180,6 +180,7 @@ function bindPrefEvents() {
   const serverNameInput = doc?.querySelector("#server-name-input") as HTMLInputElement;
   const generateButton = doc?.querySelector("#generate-config-button") as HTMLButtonElement;
   const copyConfigButton = doc?.querySelector("#copy-config-button") as HTMLButtonElement;
+  const copyInstrButton = doc?.querySelector("#copy-instr-button") as HTMLButtonElement;
   const configOutput = doc?.querySelector("#config-output") as HTMLElement;
   const configGuide = doc?.querySelector("#config-guide") as HTMLElement;
 
@@ -208,6 +209,7 @@ function bindPrefEvents() {
 
       // Enable copy button
       copyConfigButton.disabled = false;
+      copyInstrButton.disabled = false;
 
       ztoolkit.log(`[PreferenceScript] Generated config for ${clientType}`);
     } catch (error) {
@@ -235,6 +237,28 @@ function bindPrefEvents() {
     } catch (error) {
       addon.data.prefs!.window.alert(`复制失败: ${error}`);
       ztoolkit.log(`[PreferenceScript] Copy failed: ${error}`, "error");
+    }
+  });
+
+  copyInstrButton?.addEventListener("click", async () => {
+    try {
+      const success = await ClientConfigGenerator.copyToClipboard(currentGuide);
+      if (success) {
+        const originalText = copyInstrButton.textContent;
+        copyInstrButton.textContent = "已复制!";
+        copyInstrButton.style.backgroundColor = "var(--copy-ok-bg)";
+        copyInstrButton.style.color = "var(--tog-knob)";
+        setTimeout(() => {
+          copyInstrButton.textContent = originalText;
+          copyInstrButton.style.backgroundColor = "";
+          copyInstrButton.style.color = "";
+        }, 2000);
+      } else {
+        addon.data.prefs!.window.alert("自动复制失败，请手动复制说明内容");
+      }
+    } catch (error) {
+      addon.data.prefs!.window.alert(`复制失败: ${error}`);
+      ztoolkit.log(`[PreferenceScript] Copy instructions failed: ${error}`, "error");
     }
   });
 
