@@ -1233,7 +1233,9 @@ export async function handleAddItemsToCollection(
       const itemIDs = added.map(
         (key: string) => (Zotero.Items.getByLibraryAndKey(libraryID, key) as Zotero.Item).id,
       );
-      await collection.addItems(itemIDs);
+      await Zotero.DB.executeTransaction(async () => {
+        await collection.addItems(itemIDs);
+      });
     }
 
     ztoolkit.log(
@@ -1329,7 +1331,9 @@ export async function handleRemoveItemsFromCollection(
       const itemIDs = removed.map(
         (key: string) => (Zotero.Items.getByLibraryAndKey(libraryID, key) as Zotero.Item).id,
       );
-      await collection.removeItems(itemIDs);
+      await Zotero.DB.executeTransaction(async () => {
+        await collection.removeItems(itemIDs);
+      });
     }
 
     ztoolkit.log(
