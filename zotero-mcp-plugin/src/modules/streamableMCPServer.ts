@@ -294,10 +294,13 @@ export class StreamableMCPServer {
     const tools = [
       {
         name: 'get_libraries',
-        description: 'List all Zotero libraries available in the current client. Returns minimal library metadata for each library.',
+        description: 'List all Zotero libraries available in the current client. Returns minimal library metadata for each library as a paginated array.',
         inputSchema: {
           type: 'object',
-          properties: {},
+          properties: {
+            limit: { type: 'number', description: 'Maximum results to return' },
+            offset: { type: 'number', description: 'Pagination offset' },
+          },
         },
       },
       {
@@ -1020,7 +1023,7 @@ export class StreamableMCPServer {
       
       switch (name) {
         case 'get_libraries':
-          result = await this.callGetLibraries();
+          result = await this.callGetLibraries(args);
           break;
 
         case 'search_libraries':
@@ -1272,8 +1275,15 @@ export class StreamableMCPServer {
     }
   }
 
-  private async callGetLibraries(): Promise<any> {
-    const response = await handleGetLibraries();
+  private async callGetLibraries(args: any): Promise<any> {
+    const queryParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(args || {})) {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, String(value));
+      }
+    }
+
+    const response = await handleGetLibraries(queryParams);
     const result = response.body ? JSON.parse(response.body) : response;
     return result;
   }

@@ -61,11 +61,20 @@ export async function handlePing(): Promise<HttpResponse> {
 
 /**
  * Handles listing all available Zotero libraries.
+ * @param query - URL query parameters.
  * @returns A promise that resolves to an HttpResponse.
  */
-export async function handleGetLibraries(): Promise<HttpResponse> {
+export async function handleGetLibraries(
+  query: URLSearchParams,
+): Promise<HttpResponse> {
   try {
-    const libraries = Zotero.Libraries.getAll().map((library) => ({
+    const limit = parseInt(query.get("limit") || "100", 10);
+    const offset = parseInt(query.get("offset") || "0", 10);
+
+    const allLibraries = Zotero.Libraries.getAll();
+    const total = allLibraries.length;
+    const paginated = allLibraries.slice(offset, offset + limit);
+    const libraries = paginated.map((library) => ({
       libraryID: library.libraryID,
       name: library.name,
       libraryType: library.libraryType,
@@ -74,8 +83,11 @@ export async function handleGetLibraries(): Promise<HttpResponse> {
     return {
       status: 200,
       statusText: "OK",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ libraries }),
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "X-Total-Count": total.toString(),
+      },
+      body: JSON.stringify(libraries),
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));

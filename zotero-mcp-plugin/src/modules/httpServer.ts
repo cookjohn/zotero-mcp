@@ -768,9 +768,12 @@ private getCapabilities() {
     tools: [
       {
         name: "get_libraries",
-        description: "List all Zotero libraries available in the current client. Returns: {libraries: [{libraryID, name, libraryType}]}",
+        description: "List all Zotero libraries available in the current client. Returns: [{libraryID, name, libraryType}]",
         category: "retrieval",
-        parameters: {}
+        parameters: {
+          limit: { type: "number", description: "Maximum results to return", required: false },
+          offset: { type: "number", description: "Pagination offset", required: false }
+        }
       },
       {
         name: "search_libraries",
