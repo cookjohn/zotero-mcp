@@ -41,6 +41,36 @@ export async function handlePing(): Promise<HttpResponse> {
 }
 
 /**
+ * Handles listing all available Zotero libraries.
+ * @returns A promise that resolves to an HttpResponse.
+ */
+export async function handleGetLibraries(): Promise<HttpResponse> {
+  try {
+    const libraries = Zotero.Libraries.getAll().map((library) => ({
+      libraryID: library.libraryID,
+      name: library.name,
+      libraryType: library.libraryType,
+    }));
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ libraries }),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    Zotero.logError(error);
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "An unexpected error occurred" }),
+    };
+  }
+}
+
+/**
  * Handles the /items/:itemKey endpoint to retrieve a single item.
  * @param params - URL parameters, where params[1] is the itemKey.
  * @param query - URL query parameters, may contain 'fields'.

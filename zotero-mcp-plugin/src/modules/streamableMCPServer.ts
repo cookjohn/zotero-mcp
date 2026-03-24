@@ -1,4 +1,5 @@
 import {
+  handleGetLibraries,
   handleSearch,
   handleGetItem,
   handleGetCollections,
@@ -291,6 +292,14 @@ export class StreamableMCPServer {
   private handleToolsList(request: MCPRequest): MCPResponse {
     const tools = [
       {
+        name: 'get_libraries',
+        description: 'List all Zotero libraries available in the current client. Returns minimal library metadata for each library.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      {
         name: 'search_library',
         description: 'Search the Zotero library with advanced parameters, boolean operators, relevance scoring, and pagination. Results are from user\'s personal library. Use itemKey with get_content for full text. To find standalone PDFs without metadata, use itemType="attachment" with includeAttachments="true".',
         inputSchema: {
@@ -514,7 +523,6 @@ export class StreamableMCPServer {
           description: 'Requires either itemKey or attachmentKey parameter'
         },
       },
-      {
         name: 'get_collections',
         description: 'Get collections in the library. By default returns a flat, paginated list of top-level collections. Use recursive=true to retrieve the complete nested collection tree (all levels) in one call. Use parentCollection to scope to a specific parent\'s direct children.',
         inputSchema: {
@@ -972,6 +980,10 @@ export class StreamableMCPServer {
       let result;
       
       switch (name) {
+        case 'get_libraries':
+          result = await this.callGetLibraries();
+          break;
+
         case 'search_library':
           result = await this.callSearchLibrary(args);
           break;
@@ -1212,6 +1224,12 @@ export class StreamableMCPServer {
       return this.createError(request.id ?? null, -32603, 
         `Error executing ${name}: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  private async callGetLibraries(): Promise<any> {
+    const response = await handleGetLibraries();
+    const result = response.body ? JSON.parse(response.body) : response;
+    return result;
   }
 
   private async callSearchLibrary(args: any): Promise<any> {
@@ -2480,6 +2498,7 @@ export class StreamableMCPServer {
         'ping'
       ],
       availableTools: [
+        'get_libraries',
         'search_library',
         'search_annotations',
         'get_item_details',

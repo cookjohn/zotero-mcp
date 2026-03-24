@@ -767,6 +767,12 @@ private getCapabilities() {
     },
     tools: [
       {
+        name: "get_libraries",
+        description: "List all Zotero libraries available in the current client. Returns: {libraries: [{libraryID, name, libraryType}]}",
+        category: "retrieval",
+        parameters: {}
+      },
+      {
         name: "search_library",
         description: "Search the Zotero library with advanced parameters including boolean operators, relevance scoring, fulltext search, and pagination. Returns: {query, pagination, searchTime, results: [{key, title, creators, date, attachments: [{key, filename, filePath, contentType, linkMode}], fulltextMatch: {query, mode, attachments: [{snippet, score}], notes: [{snippet, score}]}}], searchFeatures, version}",
         category: "search",
