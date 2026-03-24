@@ -7,15 +7,17 @@ declare let Zotero: any;
 declare let ztoolkit: ZToolkit;
 
 export class FulltextService {
-  
   /**
    * Get comprehensive fulltext content for an item
    * @param itemKey - The item key
    * @returns Object containing all available text content
    */
-  async getItemFulltext(itemKey: string): Promise<any> {
+  async getItemFulltext(
+    itemKey: string,
+    libraryID: number = Zotero.Libraries.userLibraryID,
+  ): Promise<any> {
     try {
-      const item = Zotero.Items.getByLibraryAndKey(Zotero.Libraries.userLibraryID, itemKey);
+      const item = Zotero.Items.getByLibraryAndKey(libraryID, itemKey);
       if (!item) {
         throw new Error(`Item with key ${itemKey} not found`);
       }
@@ -271,12 +273,12 @@ export class FulltextService {
   async searchFulltext(query: string, options: any = {}): Promise<any> {
     try {
       const {
+        libraryID,
         itemKeys = null,
         contextLength = 200,
         maxResults = 50,
         caseSensitive = false
       } = options;
-
       ztoolkit.log(`[FulltextService] Searching fulltext for: "${query}"`);
 
       const results = [];
@@ -289,11 +291,11 @@ export class FulltextService {
       let itemsToSearch;
       if (itemKeys && Array.isArray(itemKeys)) {
         itemsToSearch = itemKeys.map(key => 
-          Zotero.Items.getByLibraryAndKey(Zotero.Libraries.userLibraryID, key)
+          Zotero.Items.getByLibraryAndKey(libraryID, key)
         ).filter(item => item);
       } else {
         // Search all items (limit for performance)
-        const allItems = await Zotero.Items.getAll(Zotero.Libraries.userLibraryID);
+        const allItems = await Zotero.Items.getAll(libraryID);
         itemsToSearch = allItems.slice(0, 1000); // Limit for performance
       }
 
@@ -301,7 +303,7 @@ export class FulltextService {
         if (results.length >= maxResults) break;
 
         try {
-          const fulltext = await this.getItemFulltext(item.key);
+          const fulltext = await this.getItemFulltext(item.key, libraryID);
           const matches = [];
 
           // Search in different content types

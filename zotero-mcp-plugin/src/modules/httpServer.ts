@@ -767,10 +767,30 @@ private getCapabilities() {
     },
     tools: [
       {
+        name: "get_libraries",
+        description: "List all Zotero libraries available in the current client. Returns: [{libraryID, name, libraryType}]",
+        category: "retrieval",
+        parameters: {
+          limit: { type: "number", description: "Maximum results to return", required: false },
+          offset: { type: "number", description: "Pagination offset", required: false }
+        }
+      },
+      {
+        name: "search_libraries",
+        description: "Search libraries by name. Returns: [{libraryID, name, libraryType}]",
+        category: "retrieval",
+        parameters: {
+          q: { type: "string", description: "Library name search query", required: true },
+          limit: { type: "number", description: "Maximum results to return", required: false },
+          offset: { type: "number", description: "Pagination offset", required: false }
+        }
+      },
+      {
         name: "search_library",
         description: "Search the Zotero library with advanced parameters including boolean operators, relevance scoring, fulltext search, and pagination. Returns: {query, pagination, searchTime, results: [{key, title, creators, date, attachments: [{key, filename, filePath, contentType, linkMode}], fulltextMatch: {query, mode, attachments: [{snippet, score}], notes: [{snippet, score}]}}], searchFeatures, version}",
         category: "search",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           q: { type: "string", description: "General search query", required: false },
           title: { type: "string", description: "Title search", required: false },
           titleOperator: { 
@@ -816,6 +836,7 @@ private getCapabilities() {
         description: "Search all notes, PDF annotations and highlights with smart content processing",
         category: "search",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           q: { type: "string", description: "Search query for content, comments, and tags", required: false },
           type: { 
             type: "string", 
@@ -837,6 +858,7 @@ private getCapabilities() {
         description: "Get detailed information for a specific item including metadata, abstract, attachments info, notes, and tags but not fulltext content. Returns: {key, title, creators, date, itemType, publicationTitle, volume, issue, pages, DOI, url, abstractNote, tags, notes: [note_content], attachments: [{key, title, path, contentType, filename, url, linkMode, hasFulltext, size}]}",
         category: "retrieval",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           itemKey: { type: "string", description: "Unique item key", required: true }
         },
         examples: [
@@ -878,6 +900,7 @@ private getCapabilities() {
         description: "Get list of all collections in the library",
         category: "collections",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           limit: { type: "number", description: "Maximum results to return", required: false },
           offset: { type: "number", description: "Pagination offset", required: false }
         }
@@ -887,8 +910,10 @@ private getCapabilities() {
         description: "Search collections by name",
         category: "collections",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           q: { type: "string", description: "Collection name search query", required: true },
-          limit: { type: "number", description: "Maximum results to return", required: false }
+          limit: { type: "number", description: "Maximum results to return", required: false },
+          offset: { type: "number", description: "Pagination offset", required: false }
         }
       },
       {
@@ -896,7 +921,8 @@ private getCapabilities() {
         description: "Get detailed information about a specific collection",
         category: "collections",
         parameters: {
-          collectionKey: { type: "string", description: "Collection key", required: true }
+          collectionKey: { type: "string", description: "Collection key", required: true },
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false }
         }
       },
       {
@@ -905,6 +931,7 @@ private getCapabilities() {
         category: "collections",
         parameters: {
           collectionKey: { type: "string", description: "Collection key", required: true },
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           limit: { type: "number", description: "Maximum results to return", required: false },
           offset: { type: "number", description: "Pagination offset", required: false }
         }
@@ -939,6 +966,7 @@ private getCapabilities() {
         description: "Search within fulltext content of items with context and relevance scoring",
         category: "fulltext",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           q: { type: "string", description: "Search query", required: true },
           itemKeys: { type: "array", items: { type: "string" }, description: "Limit search to specific items (optional)", required: false },
           contextLength: { type: "number", description: "Context length around matches (default: 200)", required: false },
@@ -955,6 +983,7 @@ private getCapabilities() {
         description: "Get the abstract/summary of a specific item",
         category: "retrieval",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           itemKey: { type: "string", description: "Item key", required: true },
           format: { type: "string", enum: ["json", "text"], description: "Response format (default: json)", required: false }
         }
