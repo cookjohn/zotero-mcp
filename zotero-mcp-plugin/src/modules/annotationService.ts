@@ -128,9 +128,11 @@ export class AnnotationService {
    * @param itemKey 可选，特定文献的笔记
    * @returns 笔记列表
    */
-  async getAllNotes(itemKey?: string, libraryID?: number): Promise<AnnotationContent[]> {
+  async getAllNotes(
+    itemKey?: string,
+    libraryID: number = Zotero.Libraries.userLibraryID,
+  ): Promise<AnnotationContent[]> {
     try {
-      const targetLibraryID = libraryID ?? Zotero.Libraries.userLibraryID;
       ztoolkit.log(
         `[AnnotationService] Getting all notes${itemKey ? " for item " + itemKey : ""}`,
       );
@@ -140,7 +142,7 @@ export class AnnotationService {
       if (itemKey) {
         // 获取特定文献的笔记
         const parentItem = Zotero.Items.getByLibraryAndKey(
-          targetLibraryID,
+          libraryID,
           itemKey,
         );
         if (!parentItem) {
@@ -152,7 +154,7 @@ export class AnnotationService {
       } else {
         // 获取所有笔记
         const search = new Zotero.Search();
-        (search as any).libraryID = targetLibraryID;
+        (search as any).libraryID = libraryID;
         search.addCondition("itemType", "is", "note");
 
         const itemIds = await search.search();
@@ -191,15 +193,17 @@ export class AnnotationService {
    * @param itemKey PDF文献的Key
    * @returns 注释列表
    */
-  async getPDFAnnotations(itemKey: string, libraryID?: number): Promise<AnnotationContent[]> {
+  async getPDFAnnotations(
+    itemKey: string,
+    libraryID: number = Zotero.Libraries.userLibraryID,
+  ): Promise<AnnotationContent[]> {
     try {
-      const targetLibraryID = libraryID ?? Zotero.Libraries.userLibraryID;
       ztoolkit.log(
         `[AnnotationService] Getting PDF annotations for ${itemKey}`,
       );
 
       const item = Zotero.Items.getByLibraryAndKey(
-        targetLibraryID,
+        libraryID,
         itemKey,
       );
 
@@ -287,7 +291,7 @@ export class AnnotationService {
     );
 
     try {
-      const targetLibraryID = params.libraryID ?? Zotero.Libraries.userLibraryID;
+      const libraryID = params.libraryID ?? Zotero.Libraries.userLibraryID;
       const allAnnotations: AnnotationContent[] = [];
 
       // 获取笔记
@@ -296,21 +300,21 @@ export class AnnotationService {
         params.type === "note" ||
         (Array.isArray(params.type) && params.type.includes("note"))
       ) {
-        const notes = await this.getAllNotes(params.itemKey, targetLibraryID);
+        const notes = await this.getAllNotes(params.itemKey, libraryID);
         allAnnotations.push(...notes);
       }
 
       // 获取PDF注释
       if (!params.type || params.type !== "note") {
         if (params.itemKey) {
-          const pdfAnnotations = await this.getPDFAnnotations(params.itemKey, targetLibraryID);
+          const pdfAnnotations = await this.getPDFAnnotations(params.itemKey, libraryID);
           allAnnotations.push(...pdfAnnotations);
         } else {
           // 直接搜索所有 annotation 类型的 items（更快更准确）
           ztoolkit.log(`[AnnotationService] Searching for all annotation items directly`);
           try {
             const search = new Zotero.Search();
-            (search as any).libraryID = targetLibraryID;
+            (search as any).libraryID = libraryID;
             search.addCondition("itemType", "is", "annotation");
             const annotationIds = await search.search();
             ztoolkit.log(`[AnnotationService] Found ${annotationIds.length} annotation items via search`);
@@ -337,14 +341,14 @@ export class AnnotationService {
           } catch (searchError) {
             ztoolkit.log(`[AnnotationService] Direct annotation search failed: ${searchError}, falling back to item iteration`, "warn");
             // Fallback to old method
-            const allItems = await Zotero.Items.getAll(targetLibraryID);
+            const allItems = await Zotero.Items.getAll(libraryID);
             const itemLimit = 100;
             let processedCount = 0;
             for (const item of allItems) {
               if (processedCount >= itemLimit) break;
               if (item.isRegularItem() && !item.isNote() && !item.isAttachment()) {
                 try {
-                  const pdfAnnotations = await this.getPDFAnnotations(item.key, targetLibraryID);
+                  const pdfAnnotations = await this.getPDFAnnotations(item.key, libraryID);
                   allAnnotations.push(...pdfAnnotations);
                   processedCount++;
                 } catch (e) {
@@ -649,24 +653,26 @@ export class AnnotationService {
   /**
    * 根据ID获取注释的完整内容
    */
-  async getAnnotationById(annotationId: string, libraryID?: number): Promise<AnnotationContent | null> {
+  async getAnnotationById(
+    annotationId: string,
+    libraryID: number = Zotero.Libraries.userLibraryID,
+  ): Promise<AnnotationContent | null> {
     try {
-      const targetLibraryID = libraryID ?? Zotero.Libraries.userLibraryID;
       ztoolkit.log(`[AnnotationService] Getting annotation by ID: ${annotationId}`);
       
       // 尝试从笔记中查找
-      const notes = await this.getAllNotes(undefined, targetLibraryID);
+      const notes = await this.getAllNotes(undefined, libraryID);
       const note = notes.find(n => n.id === annotationId);
       if (note) {
         return note;
       }
 
       // 从所有PDF注释中查找
-      const allItems = await Zotero.Items.getAll(targetLibraryID);
+      const allItems = await Zotero.Items.getAll(libraryID);
       for (const item of allItems.slice(0, 100)) { // 限制搜索范围避免性能问题
         if (item.isRegularItem() && !item.isNote() && !item.isAttachment()) {
           try {
-            const annotations = await this.getPDFAnnotations(item.key, targetLibraryID);
+            const annotations = await this.getPDFAnnotations(item.key, libraryID);
             const annotation = annotations.find(a => a.id === annotationId);
             if (annotation) {
               return annotation;

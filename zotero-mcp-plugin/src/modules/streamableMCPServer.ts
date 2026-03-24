@@ -662,6 +662,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             name: { type: 'string', description: 'Name of the new collection' },
             parentCollection: {
               type: 'string',
@@ -677,6 +681,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             collectionKey: { type: 'string', description: 'Key of the collection to update' },
             name: { type: 'string', description: 'New name for the collection' },
             parentCollection: {
@@ -693,6 +701,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             collectionKey: { type: 'string', description: 'Key of the collection to delete' },
             deleteItems: {
               type: 'boolean',
@@ -708,6 +720,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             collectionKey: { type: 'string', description: 'Key of the target collection' },
             itemKeys: {
               type: 'array',
@@ -724,6 +740,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             collectionKey: { type: 'string', description: 'Key of the collection' },
             itemKeys: {
               type: 'array',
@@ -880,6 +900,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             action: {
               type: 'string',
               enum: ['create', 'update', 'append'],
@@ -912,6 +936,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             action: {
               type: 'string',
               enum: ['add', 'remove', 'set'],
@@ -936,6 +964,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             itemKey: {
               type: 'string',
               description: 'Item key to update metadata on'
@@ -972,6 +1004,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             action: {
               type: 'string',
               enum: ['create', 'reparent'],
@@ -1539,6 +1575,7 @@ export class StreamableMCPServer {
 
   private async callCreateCollection(args: any): Promise<any> {
     const response = await handleCreateCollection({
+      libraryID: args.libraryID,
       name: args.name,
       parentCollection: args.parentCollection,
     });
@@ -1558,14 +1595,14 @@ export class StreamableMCPServer {
   }
 
   private async callAddItemsToCollection(args: any): Promise<any> {
-    const { collectionKey, itemKeys } = args;
-    const response = await handleAddItemsToCollection({ 1: collectionKey }, { itemKeys });
+    const { collectionKey, itemKeys, libraryID } = args;
+    const response = await handleAddItemsToCollection({ 1: collectionKey }, { itemKeys, libraryID });
     return response.body ? JSON.parse(response.body) : response;
   }
 
   private async callRemoveItemsFromCollection(args: any): Promise<any> {
-    const { collectionKey, itemKeys } = args;
-    const response = await handleRemoveItemsFromCollection({ 1: collectionKey }, { itemKeys });
+    const { collectionKey, itemKeys, libraryID } = args;
+    const response = await handleRemoveItemsFromCollection({ 1: collectionKey }, { itemKeys, libraryID });
     return response.body ? JSON.parse(response.body) : response;
   }
 
@@ -1921,7 +1958,7 @@ export class StreamableMCPServer {
    * Handle write_note tool calls: create, update, append notes
    */
   private async callWriteNote(args: any): Promise<any> {
-    const { action, parentKey, noteKey, content, tags } = args;
+    const { action, parentKey, noteKey, content, tags, libraryID = Zotero.Libraries.userLibraryID } = args;
 
     try {
       const htmlContent = this.markdownToNoteHtml(content);
@@ -1929,14 +1966,14 @@ export class StreamableMCPServer {
       switch (action) {
         case 'create': {
           const note = new Zotero.Item('note');
-          note.libraryID = Zotero.Libraries.userLibraryID;
+          note.libraryID = libraryID;
 
           if (parentKey) {
             const parentItem = Zotero.Items.getByLibraryAndKey(
-              Zotero.Libraries.userLibraryID, parentKey
+              libraryID, parentKey
             );
             if (!parentItem) {
-              throw new Error(`Parent item not found: ${parentKey}`);
+              throw new Error(`Parent item not found in library ${libraryID}: ${parentKey}`);
             }
             if (parentItem.isNote()) {
               throw new Error('Cannot attach a note to another note');
@@ -1984,10 +2021,10 @@ export class StreamableMCPServer {
           }
 
           const existingNote = Zotero.Items.getByLibraryAndKey(
-            Zotero.Libraries.userLibraryID, noteKey
+            libraryID, noteKey
           );
           if (!existingNote) {
-            throw new Error(`Note not found: ${noteKey}`);
+            throw new Error(`Note not found in library ${libraryID}: ${noteKey}`);
           }
           if (!existingNote.isNote()) {
             throw new Error(`Item ${noteKey} is not a note`);
@@ -2028,10 +2065,10 @@ export class StreamableMCPServer {
           }
 
           const existingNote = Zotero.Items.getByLibraryAndKey(
-            Zotero.Libraries.userLibraryID, noteKey
+            libraryID, noteKey
           );
           if (!existingNote) {
-            throw new Error(`Note not found: ${noteKey}`);
+            throw new Error(`Note not found in library ${libraryID}: ${noteKey}`);
           }
           if (!existingNote.isNote()) {
             throw new Error(`Item ${noteKey} is not a note`);
@@ -2085,14 +2122,14 @@ export class StreamableMCPServer {
    * Handle write_tag tool calls: add, remove, set tags on items
    */
   private async callWriteTag(args: any): Promise<any> {
-    const { action, itemKey, tags } = args;
+    const { action, itemKey, tags, libraryID = Zotero.Libraries.userLibraryID } = args;
 
     try {
       const item = Zotero.Items.getByLibraryAndKey(
-        Zotero.Libraries.userLibraryID, itemKey
+        libraryID, itemKey
       );
       if (!item) {
-        throw new Error(`Item not found: ${itemKey}`);
+        throw new Error(`Item not found in library ${libraryID}: ${itemKey}`);
       }
 
       const beforeTags = item.getTags().map((t: any) => t.tag);
@@ -2161,14 +2198,14 @@ export class StreamableMCPServer {
    * Handle write_metadata tool calls: update fields and creators on items
    */
   private async callWriteMetadata(args: any): Promise<any> {
-    const { itemKey, fields, creators } = args;
+    const { itemKey, fields, creators, libraryID = Zotero.Libraries.userLibraryID } = args;
 
     try {
       const item = Zotero.Items.getByLibraryAndKey(
-        Zotero.Libraries.userLibraryID, itemKey
+        libraryID, itemKey
       );
       if (!item) {
-        throw new Error(`Item not found: ${itemKey}`);
+        throw new Error(`Item not found in library ${libraryID}: ${itemKey}`);
       }
       if (!item.isRegularItem()) {
         throw new Error(`Item ${itemKey} is not a regular item (it is a ${item.itemType}). Use write_note for notes.`);
@@ -2248,7 +2285,7 @@ export class StreamableMCPServer {
    * Handle write_item tool calls: create items and reparent attachments
    */
   private async callWriteItem(args: any): Promise<any> {
-    const { action, itemType, fields, creators, tags, attachmentKeys, parentKey } = args;
+    const { action, itemType, fields, creators, tags, attachmentKeys, parentKey, libraryID = Zotero.Libraries.userLibraryID } = args;
 
     try {
       switch (action) {
@@ -2259,7 +2296,7 @@ export class StreamableMCPServer {
 
           // Create new item
           const item = new Zotero.Item(itemType);
-          item.libraryID = Zotero.Libraries.userLibraryID;
+          item.libraryID = libraryID;
 
           // Set fields
           if (fields && typeof fields === 'object') {
@@ -2302,14 +2339,14 @@ export class StreamableMCPServer {
           if (attachmentKeys && Array.isArray(attachmentKeys)) {
             for (const attKey of attachmentKeys) {
               const attachment = Zotero.Items.getByLibraryAndKey(
-                Zotero.Libraries.userLibraryID, attKey
+                libraryID, attKey
               );
               if (!attachment) {
-                ztoolkit.log(`[StreamableMCP] Attachment not found: ${attKey}`, 'warn');
+                ztoolkit.log(`[StreamableMCP] Attachment not found in library ${libraryID}: ${attKey}`, 'warn');
                 continue;
               }
               if (!attachment.isAttachment()) {
-                ztoolkit.log(`[StreamableMCP] Item ${attKey} is not an attachment, skipping`, 'warn');
+                ztoolkit.log(`[StreamableMCP] Item ${attKey} is not an attachment (type: ${attachment.itemType}), skipping`, 'warn');
                 continue;
               }
               attachment.parentKey = item.key;
@@ -2348,10 +2385,10 @@ export class StreamableMCPServer {
 
           // Verify parent exists
           const parentItem = Zotero.Items.getByLibraryAndKey(
-            Zotero.Libraries.userLibraryID, parentKey
+            libraryID, parentKey
           );
           if (!parentItem) {
-            throw new Error(`Parent item not found: ${parentKey}`);
+            throw new Error(`Parent item not found in library ${libraryID}: ${parentKey}`);
           }
           if (!parentItem.isRegularItem()) {
             throw new Error(`Parent ${parentKey} is not a regular item (type: ${parentItem.itemType})`);
@@ -2361,10 +2398,10 @@ export class StreamableMCPServer {
           for (const attKey of attachmentKeys) {
             try {
               const attachment = Zotero.Items.getByLibraryAndKey(
-                Zotero.Libraries.userLibraryID, attKey
+                libraryID, attKey
               );
               if (!attachment) {
-                results.push({ key: attKey, success: false, error: 'Not found' });
+                results.push({ key: attKey, success: false, error: `Not found in library ${libraryID}` });
                 continue;
               }
               if (!attachment.isAttachment() && !attachment.isNote()) {

@@ -1059,7 +1059,7 @@ export async function handleGetItemAbstract(
  * Handles creating a new collection.
  */
 export async function handleCreateCollection(
-  body: { name: string; parentCollection?: string },
+  body: { name: string; parentCollection?: string; libraryID?: number },
 ): Promise<HttpResponse> {
   try {
     if (!body.name || body.name.trim().length === 0) {
@@ -1071,7 +1071,7 @@ export async function handleCreateCollection(
       };
     }
 
-    const libraryID = Zotero.Libraries.userLibraryID;
+    const libraryID = body.libraryID ?? Zotero.Libraries.userLibraryID;
     const collection = new Zotero.Collection();
     (collection as any).libraryID = libraryID;
     collection.name = body.name.trim();
@@ -1087,7 +1087,7 @@ export async function handleCreateCollection(
           statusText: "Not Found",
           headers: { "Content-Type": "application/json; charset=utf-8" },
           body: JSON.stringify({
-            error: `Parent collection ${body.parentCollection} not found`,
+            error: `Parent collection ${body.parentCollection} not found in library ${libraryID}`,
           }),
         };
       }
@@ -1120,7 +1120,7 @@ export async function handleCreateCollection(
  */
 export async function handleUpdateCollection(
   params: Record<string, string>,
-  body: { name?: string; parentCollection?: string },
+  body: { name?: string; parentCollection?: string; libraryID?: number },
 ): Promise<HttpResponse> {
   try {
     const collectionKey = params[1];
@@ -1133,7 +1133,7 @@ export async function handleUpdateCollection(
       };
     }
 
-    const libraryID = Zotero.Libraries.userLibraryID;
+    const libraryID = body.libraryID ?? Zotero.Libraries.userLibraryID;
     const collection = Zotero.Collections.getByLibraryAndKey(
       libraryID,
       collectionKey,
@@ -1145,7 +1145,7 @@ export async function handleUpdateCollection(
         statusText: "Not Found",
         headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({
-          error: `Collection with key ${collectionKey} not found`,
+          error: `Collection with key ${collectionKey} not found in library ${libraryID}`,
         }),
       };
     }
@@ -1185,7 +1185,7 @@ export async function handleUpdateCollection(
             statusText: "Not Found",
             headers: { "Content-Type": "application/json; charset=utf-8" },
             body: JSON.stringify({
-              error: `Parent collection ${body.parentCollection} not found`,
+              error: `Parent collection ${body.parentCollection} not found in library ${libraryID}`,
             }),
           };
         }
@@ -1229,7 +1229,7 @@ export async function handleUpdateCollection(
  */
 export async function handleDeleteCollection(
   params: Record<string, string>,
-  body: { deleteItems?: boolean },
+  body: { deleteItems?: boolean; libraryID?: number },
 ): Promise<HttpResponse> {
   try {
     const collectionKey = params[1];
@@ -1242,7 +1242,7 @@ export async function handleDeleteCollection(
       };
     }
 
-    const libraryID = Zotero.Libraries.userLibraryID;
+    const libraryID = body.libraryID ?? Zotero.Libraries.userLibraryID;
     const collection = Zotero.Collections.getByLibraryAndKey(
       libraryID,
       collectionKey,
@@ -1254,7 +1254,7 @@ export async function handleDeleteCollection(
         statusText: "Not Found",
         headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({
-          error: `Collection with key ${collectionKey} not found`,
+          error: `Collection with key ${collectionKey} not found in library ${libraryID}`,
         }),
       };
     }
@@ -1298,7 +1298,7 @@ export async function handleDeleteCollection(
  */
 export async function handleAddItemsToCollection(
   params: Record<string, string>,
-  body: { itemKeys: string[] },
+  body: { itemKeys: string[]; libraryID?: number },
 ): Promise<HttpResponse> {
   try {
     const collectionKey = params[1];
@@ -1320,7 +1320,7 @@ export async function handleAddItemsToCollection(
       };
     }
 
-    const libraryID = Zotero.Libraries.userLibraryID;
+    const libraryID = body.libraryID ?? Zotero.Libraries.userLibraryID;
     const collection = Zotero.Collections.getByLibraryAndKey(
       libraryID,
       collectionKey,
@@ -1332,7 +1332,7 @@ export async function handleAddItemsToCollection(
         statusText: "Not Found",
         headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({
-          error: `Collection with key ${collectionKey} not found`,
+          error: `Collection with key ${collectionKey} not found in library ${libraryID}`,
         }),
       };
     }
@@ -1396,7 +1396,7 @@ export async function handleAddItemsToCollection(
  */
 export async function handleRemoveItemsFromCollection(
   params: Record<string, string>,
-  body: { itemKeys: string[] },
+  body: { itemKeys: string[]; libraryID?: number },
 ): Promise<HttpResponse> {
   try {
     const collectionKey = params[1];
@@ -1418,7 +1418,7 @@ export async function handleRemoveItemsFromCollection(
       };
     }
 
-    const libraryID = Zotero.Libraries.userLibraryID;
+    const libraryID = body.libraryID ?? Zotero.Libraries.userLibraryID;
     const collection = Zotero.Collections.getByLibraryAndKey(
       libraryID,
       collectionKey,
@@ -1430,7 +1430,7 @@ export async function handleRemoveItemsFromCollection(
         statusText: "Not Found",
         headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({
-          error: `Collection with key ${collectionKey} not found`,
+          error: `Collection with key ${collectionKey} not found in library ${libraryID}`,
         }),
       };
     }

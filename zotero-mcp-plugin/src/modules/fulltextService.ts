@@ -12,10 +12,12 @@ export class FulltextService {
    * @param itemKey - The item key
    * @returns Object containing all available text content
    */
-  async getItemFulltext(itemKey: string, libraryID?: number): Promise<any> {
+  async getItemFulltext(
+    itemKey: string,
+    libraryID: number = Zotero.Libraries.userLibraryID,
+  ): Promise<any> {
     try {
-      const targetLibraryID = libraryID ?? Zotero.Libraries.userLibraryID;
-      const item = Zotero.Items.getByLibraryAndKey(targetLibraryID, itemKey);
+      const item = Zotero.Items.getByLibraryAndKey(libraryID, itemKey);
       if (!item) {
         throw new Error(`Item with key ${itemKey} not found`);
       }
@@ -277,8 +279,6 @@ export class FulltextService {
         maxResults = 50,
         caseSensitive = false
       } = options;
-      const targetLibraryID = libraryID ?? Zotero.Libraries.userLibraryID;
-
       ztoolkit.log(`[FulltextService] Searching fulltext for: "${query}"`);
 
       const results = [];
@@ -291,11 +291,11 @@ export class FulltextService {
       let itemsToSearch;
       if (itemKeys && Array.isArray(itemKeys)) {
         itemsToSearch = itemKeys.map(key => 
-          Zotero.Items.getByLibraryAndKey(targetLibraryID, key)
+          Zotero.Items.getByLibraryAndKey(libraryID, key)
         ).filter(item => item);
       } else {
         // Search all items (limit for performance)
-        const allItems = await Zotero.Items.getAll(targetLibraryID);
+        const allItems = await Zotero.Items.getAll(libraryID);
         itemsToSearch = allItems.slice(0, 1000); // Limit for performance
       }
 
@@ -303,7 +303,7 @@ export class FulltextService {
         if (results.length >= maxResults) break;
 
         try {
-          const fulltext = await this.getItemFulltext(item.key, targetLibraryID);
+          const fulltext = await this.getItemFulltext(item.key, libraryID);
           const matches = [];
 
           // Search in different content types
