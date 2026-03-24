@@ -376,6 +376,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             q: { type: 'string', description: 'Search query (optional if colors or tags provided)' },
             itemKeys: {
               type: 'array',
@@ -428,6 +432,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             itemKey: { type: 'string', description: 'Unique item key' },
             mode: {
               type: 'string',
@@ -444,6 +452,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             itemKey: { type: 'string', description: 'Get all annotations for this item' },
             annotationId: { type: 'string', description: 'Get specific annotation by ID' },
             annotationIds: {
@@ -491,6 +503,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             itemKey: { type: 'string', description: 'Item key to get all content from this item' },
             attachmentKey: { type: 'string', description: 'Attachment key to get content from specific attachment' },
             mode: {
@@ -724,6 +740,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             q: { type: 'string', description: 'Search query' },
             itemKeys: { 
               type: 'array', 
@@ -748,6 +768,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             itemKey: { type: 'string', description: 'Item key' },
             format: {
               type: 'string',
@@ -1353,7 +1377,7 @@ export class StreamableMCPServer {
   }
 
   private async callGetItemDetails(args: any): Promise<any> {
-    const { itemKey, mode } = args;
+    const { itemKey, mode, libraryID } = args;
     
     // Import the specific handler for item details
     const { handleGetItem } = await import('./apiHandlers');
@@ -1363,6 +1387,9 @@ export class StreamableMCPServer {
     
     // Create query params with mode-based field selection
     const queryParams = new URLSearchParams();
+    if (libraryID !== undefined && libraryID !== null) {
+      queryParams.append('libraryID', String(libraryID));
+    }
     if (effectiveMode !== 'complete') {
       // Apply field filtering based on mode (this could be enhanced in apiHandlers)
       const modeConfig = this.getItemDetailsModeConfiguration(effectiveMode);
@@ -1394,7 +1421,7 @@ export class StreamableMCPServer {
   }
 
   private async callGetContent(args: any): Promise<any> {
-    const { itemKey, attachmentKey, include, format, mode, contentControl } = args;
+    const { itemKey, attachmentKey, include, format, mode, contentControl, libraryID } = args;
     const extractor = new UnifiedContentExtractor();
     
     try {
@@ -1402,10 +1429,10 @@ export class StreamableMCPServer {
       
       if (itemKey) {
         // Get content from item with unified mode control and content control parameters
-        result = await extractor.getItemContent(itemKey, include || {}, mode, contentControl);
+        result = await extractor.getItemContent(itemKey, include || {}, mode, contentControl, libraryID);
       } else if (attachmentKey) {
         // Get content from specific attachment with unified mode control and content control parameters
-        result = await extractor.getAttachmentContent(attachmentKey, mode, contentControl);
+        result = await extractor.getAttachmentContent(attachmentKey, mode, contentControl, libraryID);
       } else {
         throw new Error('Either itemKey or attachmentKey must be provided');
       }

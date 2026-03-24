@@ -56,9 +56,10 @@ export class UnifiedContentExtractor {
   /**
    * Extract content from an item with mode control and intelligent processing
    */
-  async getItemContent(itemKey: string, include: ContentIncludeOptions = {}, mode?: string, contentControl?: ContentControl): Promise<ContentResult> {
+  async getItemContent(itemKey: string, include: ContentIncludeOptions = {}, mode?: string, contentControl?: ContentControl, libraryID?: number): Promise<ContentResult> {
     try {
-      const item = Zotero.Items.getByLibraryAndKey(Zotero.Libraries.userLibraryID, itemKey);
+      const targetLibraryID = libraryID ?? Zotero.Libraries.userLibraryID;
+      const item = Zotero.Items.getByLibraryAndKey(targetLibraryID, itemKey);
       if (!item) {
         throw new Error(`Item with key ${itemKey} not found`);
       }
@@ -155,9 +156,10 @@ export class UnifiedContentExtractor {
   /**
    * Extract content from a specific attachment with mode control (replaces get_attachment_content)
    */
-  async getAttachmentContent(attachmentKey: string, mode?: string, contentControl?: ContentControl): Promise<any> {
+  async getAttachmentContent(attachmentKey: string, mode?: string, contentControl?: ContentControl, libraryID?: number): Promise<any> {
     try {
-      const attachment = Zotero.Items.getByLibraryAndKey(Zotero.Libraries.userLibraryID, attachmentKey);
+      const targetLibraryID = libraryID ?? Zotero.Libraries.userLibraryID;
+      const attachment = Zotero.Items.getByLibraryAndKey(targetLibraryID, attachmentKey);
       if (!attachment?.isAttachment()) {
         throw new Error(`Attachment with key ${attachmentKey} not found`);
       }

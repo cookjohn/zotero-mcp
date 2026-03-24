@@ -836,6 +836,7 @@ private getCapabilities() {
         description: "Search all notes, PDF annotations and highlights with smart content processing",
         category: "search",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           q: { type: "string", description: "Search query for content, comments, and tags", required: false },
           type: { 
             type: "string", 
@@ -857,6 +858,7 @@ private getCapabilities() {
         description: "Get detailed information for a specific item including metadata, abstract, attachments info, notes, and tags but not fulltext content. Returns: {key, title, creators, date, itemType, publicationTitle, volume, issue, pages, DOI, url, abstractNote, tags, notes: [note_content], attachments: [{key, title, path, contentType, filename, url, linkMode, hasFulltext, size}]}",
         category: "retrieval",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           itemKey: { type: "string", description: "Unique item key", required: true }
         },
         examples: [
@@ -964,6 +966,7 @@ private getCapabilities() {
         description: "Search within fulltext content of items with context and relevance scoring",
         category: "fulltext",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           q: { type: "string", description: "Search query", required: true },
           itemKeys: { type: "array", items: { type: "string" }, description: "Limit search to specific items (optional)", required: false },
           contextLength: { type: "number", description: "Context length around matches (default: 200)", required: false },
@@ -980,6 +983,7 @@ private getCapabilities() {
         description: "Get the abstract/summary of a specific item",
         category: "retrieval",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           itemKey: { type: "string", description: "Item key", required: true },
           format: { type: "string", enum: ["json", "text"], description: "Response format (default: json)", required: false }
         }

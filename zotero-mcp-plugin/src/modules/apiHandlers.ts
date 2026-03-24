@@ -179,8 +179,9 @@ export async function handleGetItem(
   }
 
   try {
+    const libraryID = resolveLibraryID(query);
     const item = Zotero.Items.getByLibraryAndKey(
-      Zotero.Libraries.userLibraryID,
+      libraryID,
       itemKey,
     );
 
@@ -205,12 +206,13 @@ export async function handleGetItem(
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     Zotero.logError(error);
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }
@@ -924,10 +926,12 @@ export async function handleSearchFulltext(
   ztoolkit.log(`[MCP ApiHandlers] Searching fulltext for: "${q}"`);
 
   try {
+    const libraryID = resolveLibraryID(query);
     const fulltextService = new FulltextService();
     
     // Parse search options
     const options = {
+      libraryID,
       itemKeys: query.get("itemKeys")?.split(",") || null,
       contextLength: parseInt(query.get("contextLength") || "200", 10),
       maxResults: Math.min(parseInt(query.get("maxResults") || "50", 10), 200),
@@ -944,6 +948,7 @@ export async function handleSearchFulltext(
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     ztoolkit.log(
       `[MCP ApiHandlers] Error in handleSearchFulltext: ${error.message}`,
       "error",
@@ -951,10 +956,10 @@ export async function handleSearchFulltext(
     Zotero.logError(error);
 
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }
@@ -982,8 +987,9 @@ export async function handleGetItemAbstract(
   ztoolkit.log(`[MCP ApiHandlers] Getting abstract for item ${itemKey}`);
 
   try {
+    const libraryID = resolveLibraryID(query);
     const item = Zotero.Items.getByLibraryAndKey(
-      Zotero.Libraries.userLibraryID,
+      libraryID,
       itemKey,
     );
 
@@ -1033,6 +1039,7 @@ export async function handleGetItemAbstract(
     }
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     ztoolkit.log(
       `[MCP ApiHandlers] Error in handleGetItemAbstract: ${error.message}`,
       "error",
@@ -1040,10 +1047,10 @@ export async function handleGetItemAbstract(
     Zotero.logError(error);
 
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }
