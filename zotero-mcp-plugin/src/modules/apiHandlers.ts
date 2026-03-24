@@ -90,6 +90,63 @@ export async function handleGetLibraries(): Promise<HttpResponse> {
 }
 
 /**
+ * Handles searching Zotero libraries by name.
+ * @param query - URL query parameters.
+ * @returns A promise that resolves to an HttpResponse.
+ */
+export async function handleSearchLibraries(
+  query: URLSearchParams,
+): Promise<HttpResponse> {
+  try {
+    const q = query.get("q");
+    if (!q) {
+      return {
+        status: 400,
+        statusText: "Bad Request",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "Missing query parameter 'q'" }),
+      };
+    }
+
+    const limit = parseInt(query.get("limit") || "100", 10);
+    const offset = parseInt(query.get("offset") || "0", 10);
+    const lowerCaseQuery = q.toLowerCase();
+
+    const matchedLibraries = Zotero.Libraries.getAll().filter((library) =>
+      library.name.toLowerCase().includes(lowerCaseQuery),
+    );
+
+    const total = matchedLibraries.length;
+    const paginated = matchedLibraries.slice(offset, offset + limit);
+    const libraries = paginated.map((library) => ({
+      libraryID: library.libraryID,
+      name: library.name,
+      libraryType: library.libraryType,
+    }));
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "X-Total-Count": total.toString(),
+      },
+      body: JSON.stringify(libraries),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
+    Zotero.logError(error);
+    return {
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
+    };
+  }
+}
+
+/**
  * Handles the /items/:itemKey endpoint to retrieve a single item.
  * @param params - URL parameters, where params[1] is the itemKey.
  * @param query - URL query parameters, may contain 'fields'.

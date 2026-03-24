@@ -773,6 +773,16 @@ private getCapabilities() {
         parameters: {}
       },
       {
+        name: "search_libraries",
+        description: "Search libraries by name. Returns: [{libraryID, name, libraryType}]",
+        category: "retrieval",
+        parameters: {
+          q: { type: "string", description: "Library name search query", required: true },
+          limit: { type: "number", description: "Maximum results to return", required: false },
+          offset: { type: "number", description: "Pagination offset", required: false }
+        }
+      },
+      {
         name: "search_library",
         description: "Search the Zotero library with advanced parameters including boolean operators, relevance scoring, fulltext search, and pagination. Returns: {query, pagination, searchTime, results: [{key, title, creators, date, attachments: [{key, filename, filePath, contentType, linkMode}], fulltextMatch: {query, mode, attachments: [{snippet, score}], notes: [{snippet, score}]}}], searchFeatures, version}",
         category: "search",
@@ -897,7 +907,8 @@ private getCapabilities() {
         parameters: {
           libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           q: { type: "string", description: "Collection name search query", required: true },
-          limit: { type: "number", description: "Maximum results to return", required: false }
+          limit: { type: "number", description: "Maximum results to return", required: false },
+          offset: { type: "number", description: "Pagination offset", required: false }
         }
       },
       {

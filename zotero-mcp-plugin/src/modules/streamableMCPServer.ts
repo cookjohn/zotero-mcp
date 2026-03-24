@@ -1,5 +1,6 @@
 import {
   handleGetLibraries,
+  handleSearchLibraries,
   handleSearch,
   handleGetItem,
   handleGetCollections,
@@ -351,6 +352,19 @@ export class StreamableMCPServer {
             limit: { type: 'number', description: 'Maximum results to return (overrides mode default)' },
             offset: { type: 'number', description: 'Pagination offset' },
           },
+        },
+      },
+      {
+        name: 'search_libraries',
+        description: 'Search libraries by name',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            q: { type: 'string', description: 'Library name search query' },
+            limit: { type: 'number', description: 'Maximum results to return' },
+            offset: { type: 'number', description: 'Pagination offset' },
+          },
+          required: ['q'],
         },
       },
       {
@@ -1009,6 +1023,13 @@ export class StreamableMCPServer {
           result = await this.callGetLibraries();
           break;
 
+        case 'search_libraries':
+          if (!args?.q) {
+            throw new Error('q is required');
+          }
+          result = await this.callSearchLibraries(args);
+          break;
+
         case 'search_library':
           result = await this.callSearchLibrary(args);
           break;
@@ -1253,6 +1274,18 @@ export class StreamableMCPServer {
 
   private async callGetLibraries(): Promise<any> {
     const response = await handleGetLibraries();
+    const result = response.body ? JSON.parse(response.body) : response;
+    return result;
+  }
+
+  private async callSearchLibraries(args: any): Promise<any> {
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(args || {})) {
+      if (value !== undefined && value !== null) {
+        searchParams.append(key, String(value));
+      }
+    }
+    const response = await handleSearchLibraries(searchParams);
     const result = response.body ? JSON.parse(response.body) : response;
     return result;
   }
@@ -2531,6 +2564,7 @@ export class StreamableMCPServer {
       ],
       availableTools: [
         'get_libraries',
+        'search_libraries',
         'search_library',
         'search_annotations',
         'get_item_details',
