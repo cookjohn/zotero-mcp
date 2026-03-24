@@ -11,7 +11,7 @@ import {
   formatCollectionDetails,
   formatCollectionTree,
 } from "./collectionFormatter";
-import { handleSearchRequest } from "./searchEngine";
+import { handleSearchRequest, MCPError } from "./searchEngine";
 import { FulltextService } from "./fulltextService";
 
 declare let ztoolkit: ZToolkit;
@@ -22,6 +22,25 @@ interface HttpResponse {
   statusText: string;
   headers?: Record<string, string>;
   body?: string;
+}
+
+function resolveLibraryID(query: URLSearchParams): number {
+  const rawLibraryID = query.get("libraryID");
+  if (rawLibraryID === null) {
+    return Zotero.Libraries.userLibraryID;
+  }
+
+  // Treat empty or whitespace-only values the same as an omitted libraryID.
+  if (!rawLibraryID.trim()) {
+    return Zotero.Libraries.userLibraryID;
+  }
+
+  const libraryID = Number(rawLibraryID);
+  if (!Number.isInteger(libraryID) || !Number.isFinite(libraryID)) {
+    throw new MCPError(400, "Invalid libraryID: must be an integer");
+  }
+
+  return libraryID;
 }
 
 /**
@@ -153,6 +172,11 @@ export async function handleSearch(
       }
     }
 
+    const libraryID = resolveLibraryID(query);
+    if (query.has("libraryID")) {
+      searchParams.libraryID = String(libraryID);
+    }
+
     // Backward compatibility: if 'tag' is present but 'tags' is not, use 'tag'
     if (searchParams.tag && !searchParams.tags) {
       searchParams.tags = [searchParams.tag];
@@ -224,9 +248,7 @@ export async function handleGetCollections(
   query: URLSearchParams,
 ): Promise<HttpResponse> {
   try {
-    const libraryID =
-      parseInt(query.get("libraryID") || "", 10) ||
-      Zotero.Libraries.userLibraryID;
+    const libraryID = resolveLibraryID(query);
     const limit = parseInt(query.get("limit") || "100", 10);
     const offset = parseInt(query.get("offset") || "0", 10);
     const sort = query.get("sort") || "name";
@@ -294,12 +316,13 @@ export async function handleGetCollections(
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     Zotero.logError(error);
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }
@@ -322,9 +345,7 @@ export async function handleSearchCollections(
         body: JSON.stringify({ error: "Missing query parameter 'q'" }),
       };
     }
-    const libraryID =
-      parseInt(query.get("libraryID") || "", 10) ||
-      Zotero.Libraries.userLibraryID;
+    const libraryID = resolveLibraryID(query);
     const limit = parseInt(query.get("limit") || "100", 10);
     const offset = parseInt(query.get("offset") || "0", 10);
 
@@ -351,12 +372,13 @@ export async function handleSearchCollections(
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     Zotero.logError(error);
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }
@@ -381,9 +403,7 @@ export async function handleGetCollectionDetails(
         body: JSON.stringify({ error: "Missing collectionKey parameter" }),
       };
     }
-    const libraryID =
-      parseInt(query.get("libraryID") || "", 10) ||
-      Zotero.Libraries.userLibraryID;
+    const libraryID = resolveLibraryID(query);
 
     const collection = Zotero.Collections.getByLibraryAndKey(
       libraryID,
@@ -415,12 +435,13 @@ export async function handleGetCollectionDetails(
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     Zotero.logError(error);
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }
@@ -447,9 +468,7 @@ export async function handleGetCollectionItems(
         body: JSON.stringify({ error: "Missing collectionKey parameter" }),
       };
     }
-    const libraryID =
-      parseInt(query.get("libraryID") || "", 10) ||
-      Zotero.Libraries.userLibraryID;
+    const libraryID = resolveLibraryID(query);
 
     ztoolkit.log(`[ApiHandlers] Using libraryID: ${libraryID}`);
 
@@ -504,14 +523,15 @@ export async function handleGetCollectionItems(
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     ztoolkit.log(`[ApiHandlers] Error in handleGetCollectionItems: ${error.message}`, "error");
     ztoolkit.log(`[ApiHandlers] Error stack: ${error.stack}`, "error");
     Zotero.logError(error);
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }
@@ -539,9 +559,7 @@ export async function handleGetSubcollections(
       };
     }
     
-    const libraryID =
-      parseInt(query.get("libraryID") || "", 10) ||
-      Zotero.Libraries.userLibraryID;
+    const libraryID = resolveLibraryID(query);
 
     ztoolkit.log(`[ApiHandlers] Using libraryID: ${libraryID}`);
 
@@ -613,14 +631,15 @@ export async function handleGetSubcollections(
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     ztoolkit.log(`[ApiHandlers] Error in handleGetSubcollections: ${error.message}`, "error");
     ztoolkit.log(`[ApiHandlers] Error stack: ${error.stack}`, "error");
     Zotero.logError(error);
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }

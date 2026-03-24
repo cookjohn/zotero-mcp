@@ -305,6 +305,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             q: { type: 'string', description: 'General search query' },
             title: { type: 'string', description: 'Title search' },
             titleOperator: {
@@ -523,11 +527,16 @@ export class StreamableMCPServer {
           description: 'Requires either itemKey or attachmentKey parameter'
         },
       },
+      {
         name: 'get_collections',
         description: 'Get collections in the library. By default returns a flat, paginated list of top-level collections. Use recursive=true to retrieve the complete nested collection tree (all levels) in one call. Use parentCollection to scope to a specific parent\'s direct children.',
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             mode: {
               type: 'string',
               enum: ['minimal', 'preview', 'standard', 'complete'],
@@ -552,6 +561,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             q: { type: 'string', description: 'Collection name search query' },
             limit: { type: 'number', description: 'Maximum results to return' },
           },
@@ -564,6 +577,10 @@ export class StreamableMCPServer {
           type: 'object',
           properties: {
             collectionKey: { type: 'string', description: 'Collection key' },
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
           },
           required: ['collectionKey'],
         },
@@ -575,6 +592,10 @@ export class StreamableMCPServer {
           type: 'object',
           properties: {
             collectionKey: { type: 'string', description: 'Collection key' },
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             limit: { type: 'number', description: 'Maximum results to return' },
             offset: { type: 'number', description: 'Pagination offset' },
           },
@@ -588,6 +609,10 @@ export class StreamableMCPServer {
           type: 'object',
           properties: {
             collectionKey: { type: 'string', description: 'Parent collection key' },
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             limit: { type: 'number', description: 'Maximum results to return (default: 100). Ignored when recursive=true.' },
             offset: { type: 'number', description: 'Pagination offset (default: 0). Ignored when recursive=true.' },
             recursive: { 
@@ -1029,7 +1054,7 @@ export class StreamableMCPServer {
           if (!args?.collectionKey) {
             throw new Error('collectionKey is required');
           }
-          result = await this.callGetCollectionDetails(args.collectionKey);
+          result = await this.callGetCollectionDetails(args);
           break;
 
         case 'get_collection_items':
@@ -1403,8 +1428,15 @@ export class StreamableMCPServer {
     return result;
   }
 
-  private async callGetCollectionDetails(collectionKey: string): Promise<any> {
-    const response = await handleGetCollectionDetails({ 1: collectionKey }, new URLSearchParams());
+  private async callGetCollectionDetails(args: any): Promise<any> {
+    const { collectionKey, ...otherArgs } = args;
+    const detailParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(otherArgs)) {
+      if (value !== undefined && value !== null) {
+        detailParams.append(key, String(value));
+      }
+    }
+    const response = await handleGetCollectionDetails({ 1: collectionKey }, detailParams);
     const result = response.body ? JSON.parse(response.body) : response;
     return result;
   }
