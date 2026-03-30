@@ -211,7 +211,7 @@ export class TextChunker {
 
   constructor(options: Partial<ChunkerOptions> = {}) {
     this.options = {
-      maxChunkSize: options.maxChunkSize || 500,
+      maxChunkSize: options.maxChunkSize || 300,
       minChunkSize: options.minChunkSize || 50,
       overlapSentences: options.overlapSentences || 1,
       skipReferences: options.skipReferences ?? true,
