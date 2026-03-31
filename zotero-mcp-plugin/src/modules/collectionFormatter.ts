@@ -3,6 +3,30 @@ import { formatItem, formatItems } from "./itemFormatter";
 declare let Zotero: any;
 
 /**
+ * Safely read collection name as a JS Unicode string.
+ * Prefer Zotero's JSON serialization path when available.
+ */
+export function getCollectionName(collection: Zotero.Collection): string {
+  if (!collection) {
+    return "";
+  }
+
+  try {
+    if (typeof (collection as any).toJSON === "function") {
+      const json = (collection as any).toJSON();
+      if (json && typeof json.name === "string") {
+        return json.name;
+      }
+    }
+  } catch {
+    // Fall through to direct property access.
+  }
+
+  const name = (collection as any).name;
+  return name === null || name === undefined ? "" : String(name);
+}
+
+/**
  * Get the full hierarchical path of a collection
  * @param collection - The Zotero.Collection object
  * @returns Full path like "Parent > Child > Grandchild"
@@ -12,7 +36,7 @@ export function getCollectionPath(collection: Zotero.Collection): string {
   let current: Zotero.Collection | null = collection;
 
   while (current) {
-    pathParts.unshift(current.name);
+    pathParts.unshift(getCollectionName(current));
     if (current.parentKey) {
       current = Zotero.Collections.getByLibraryAndKey(
         current.libraryID,
@@ -59,7 +83,7 @@ export function formatCollection(collection: Zotero.Collection) {
     key: collection.key,
     version: collection.version,
     libraryID: collection.libraryID,
-    name: collection.name,
+    name: getCollectionName(collection),
     path: getCollectionPath(collection),
     depth: getCollectionDepth(collection),
     parentCollection: collection.parentKey,
@@ -78,7 +102,7 @@ export function formatCollectionBrief(collection: Zotero.Collection) {
   }
   return {
     key: collection.key,
-    name: collection.name,
+    name: getCollectionName(collection),
     path: getCollectionPath(collection),
     depth: getCollectionDepth(collection),
     parentCollection: collection.parentKey,

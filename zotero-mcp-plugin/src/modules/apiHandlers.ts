@@ -10,6 +10,7 @@ import {
   formatCollectionList,
   formatCollectionDetails,
   formatCollectionTree,
+  getCollectionName,
 } from "./collectionFormatter";
 import { handleSearchRequest } from "./searchEngine";
 import { FulltextService } from "./fulltextService";
@@ -229,8 +230,8 @@ export async function handleGetCollections(
 
     // Sorting
     collections.sort((a: any, b: any) => {
-      const aVal = a[sort] || "";
-      const bVal = b[sort] || "";
+      const aVal = sort === "name" ? getCollectionName(a) : (a[sort] || "");
+      const bVal = sort === "name" ? getCollectionName(b) : (b[sort] || "");
       if (aVal < bVal) return direction === "asc" ? -1 : 1;
       if (aVal > bVal) return direction === "asc" ? 1 : -1;
       return 0;
@@ -303,7 +304,7 @@ export async function handleSearchCollections(
 
     const matchedCollections = allCollections.filter(
       (collection: Zotero.Collection) =>
-        collection.name.toLowerCase().includes(lowerCaseQuery),
+        getCollectionName(collection).toLowerCase().includes(lowerCaseQuery),
     );
 
     const collections = matchedCollections;
