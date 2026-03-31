@@ -29,6 +29,53 @@ function getByteLength(str: string): number {
 }
 
 /**
+ * Slice string by UTF-8 byte length without splitting multibyte characters.
+ */
+function sliceByUtf8Bytes(str: string, maxBytes: number): string {
+  if (maxBytes <= 0 || !str) {
+    return "";
+  }
+
+  let bytes = 0;
+  let end = 0;
+
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    let charBytes = 0;
+
+    if (code < 0x80) {
+      charBytes = 1;
+    } else if (code < 0x800) {
+      charBytes = 2;
+    } else if (code >= 0xd800 && code <= 0xdbff && i + 1 < str.length) {
+      const next = str.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        charBytes = 4;
+      } else {
+        charBytes = 3;
+      }
+    } else {
+      charBytes = 3;
+    }
+
+    if (bytes + charBytes > maxBytes) {
+      break;
+    }
+
+    bytes += charBytes;
+    end = i + 1;
+
+    // Skip low surrogate after consuming a valid pair.
+    if (charBytes === 4) {
+      i++;
+      end = i + 1;
+    }
+  }
+
+  return str.substring(0, end);
+}
+
+/**
  * Write string to output stream with correct UTF-8 encoding
  */
 function writeStringToStream(output: any, str: string): void {
@@ -346,13 +393,14 @@ export class HttpServer {
           // Step 2: Read body based on Content-Length (for POST requests)
           if (headersComplete && contentLength > 0) {
             const bodyStart = bodyStartIndex + 4; // Skip \r\n\r\n
-            const currentBodyLength = requestText.length - bodyStart;
-            const remainingBodyBytes = contentLength - currentBodyLength;
+            const getCurrentBodyBytes = () => getByteLength(requestText.substring(bodyStart));
+            const currentBodyBytes = getCurrentBodyBytes();
+            const remainingBodyBytes = contentLength - currentBodyBytes;
 
-            ztoolkit.log(`[HttpServer] Reading body: Content-Length=${contentLength}, current=${currentBodyLength}, remaining=${remainingBodyBytes}`);
+            ztoolkit.log(`[HttpServer] Reading body: Content-Length=${contentLength}, current=${currentBodyBytes}, remaining=${remainingBodyBytes}`);
 
             waitAttempts = 0; // Reset wait counter for body reading
-            while (remainingBodyBytes > 0 && (requestText.length - bodyStart) < contentLength) {
+            while (getCurrentBodyBytes() < contentLength) {
               const available = input.available();
 
               if (available === 0) {
@@ -365,7 +413,7 @@ export class HttpServer {
                 continue;
               }
 
-              const bytesToRead = Math.min(8192, contentLength - (requestText.length - bodyStart), available);
+              const bytesToRead = Math.min(8192, contentLength - getCurrentBodyBytes(), available);
               let chunk = "";
               try {
                 const str: { value?: string } = {};
@@ -378,7 +426,7 @@ export class HttpServer {
               }
 
               requestText += chunk;
-              totalBytesRead += chunk.length;
+              totalBytesRead += getByteLength(chunk);
             }
           }
         } catch (readError) {
@@ -464,10 +512,11 @@ export class HttpServer {
               // Only consume the current request body. Extra bytes may belong to
               // a pipelined next request on the same socket.
               if (contentLength > 0) {
-                requestBody = rawBody.substring(0, contentLength);
-                if (rawBody.length > contentLength) {
+                requestBody = sliceByUtf8Bytes(rawBody, contentLength);
+                const rawBodyBytes = getByteLength(rawBody);
+                if (rawBodyBytes > contentLength) {
                   ztoolkit.log(
-                    `[HttpServer] Detected trailing bytes after request body (${rawBody.length - contentLength} bytes), ignoring extra data for this request`,
+                    `[HttpServer] Detected trailing bytes after request body (${rawBodyBytes - contentLength} bytes), ignoring extra data for this request`,
                     "warn",
                   );
                 }
