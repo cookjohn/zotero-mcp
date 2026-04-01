@@ -200,9 +200,8 @@ url = "http://127.0.0.1:${port}/mcp"
       configTemplate: (port: number, serverName = "zotero-mcp") => ({
         mcpServers: {
           [serverName]: {
-            command: "npx",
-            args: ["mcp-remote", `http://127.0.0.1:${port}/mcp`],
-            env: {}
+            url: `http://127.0.0.1:${port}/mcp`,
+            transport: "http"
           }
         }
       }),
