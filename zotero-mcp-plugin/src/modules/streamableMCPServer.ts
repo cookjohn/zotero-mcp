@@ -958,9 +958,49 @@ export class StreamableMCPServer {
     const writeToolNames = new Set([
       'write_note', 'write_tag', 'write_metadata', 'write_item',
     ]);
-    const finalTools = writeEnabled === true
+    const filteredTools2 = writeEnabled === true
       ? filteredTools
       : filteredTools.filter((t: any) => !writeToolNames.has(t.name));
+
+    // Add Zotero Local Connector proxy tools (always available)
+    const localConnectorTools = [
+      {
+        name: 'connector_health',
+        description: 'Check Zotero Local Connector health on port 23119. Returns status of Zotero connector, URL opener, and basic connectivity.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            port: { type: 'number', default: 23119, description: 'Zotero Local Connector port (default: 23119)' }
+          }
+        }
+      },
+      {
+        name: 'import_pdf',
+        description: 'Import a PDF file into Zotero. This uses Zotero\'s built-in connector to add PDFs with automatic metadata recognition. Provide pdf_content (base64-encoded) and optional pdf_filename. The server automatically saves to temp and imports via Zotero Local Connector.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pdf_content: { type: 'string', description: 'Base64-encoded PDF content' },
+            pdf_filename: { type: 'string', description: 'Filename for the PDF (e.g., "paper.pdf")' },
+            collection: { type: 'string', description: 'Optional collection name to import into' }
+          },
+          required: ['pdf_content']
+        }
+      },
+      {
+        name: 'list_collections',
+        description: 'List all collections from Zotero via the Local Connector API on port 23119. Returns collection keys and names.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            port: { type: 'number', default: 23119, description: 'Zotero Local Connector port (default: 23119)' },
+            limit: { type: 'number', default: 10000, description: 'Maximum number of collections to return' }
+          }
+        }
+      }
+    ];
+
+    const finalTools = [...filteredTools2, ...localConnectorTools];
 
     return this.createResponse(request.id ?? null, { tools: finalTools });
   }
@@ -1192,6 +1232,22 @@ export class StreamableMCPServer {
           result = await this.callWriteItem(args);
           break;
         }
+
+        // Zotero Local Connector Proxy Tools (port 23119)
+        case 'connector_health':
+          result = await this.callZoteroDoctor(args);
+          break;
+
+        case 'import_pdf':
+          if (!args?.pdf_content) {
+            throw new Error('pdf_content is required');
+          }
+          result = await this.callZoteroImport(args);
+          break;
+
+        case 'list_collections':
+          result = await this.callZoteroListCollections(args);
+          break;
 
         default:
           throw new Error(`Unknown tool: ${name}`);
@@ -2602,4 +2658,513 @@ export class StreamableMCPServer {
 
     return modeConfigs[mode as keyof typeof modeConfigs] || modeConfigs['standard'];
   }
+
+  // ============ Zotero Local Connector Proxy Methods (Port 23119) ============
+
+  /**
+   * Call Zotero Local Connector doctor/health check
+   */
+  private async callZoteroDoctor(args: any): Promise<any> {
+    const port = args?.port || 23119;
+    const url = `http://127.0.0.1:${port}/connector/ping`;
+    
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Zotero-API-Version': '3' }
+      });
+      
+      const connectorOk = response.status === 200;
+      
+      // Also try the API endpoint
+      let apiOk = false;
+      try {
+        const apiResponse = await fetch(`http://127.0.0.1:${port}/api/users/0/collections?limit=1`, {
+          method: 'GET',
+          headers: { 'Zotero-API-Version': '3' }
+        });
+        apiOk = apiResponse.status === 200;
+      } catch (e) {
+        // API check failed
+      }
+
+      return {
+        status: connectorOk ? 'healthy' : 'unhealthy',
+        port: port,
+        connector_ping: connectorOk,
+        api_accessible: apiOk,
+        message: connectorOk 
+          ? `Zotero Local Connector is healthy on port ${port}` 
+          : `Zotero Local Connector is not responding on port ${port}. Ensure Zotero desktop app is running.`,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        port: port,
+        error: error instanceof Error ? error.message : String(error),
+        message: `Failed to connect to Zotero Local Connector on port ${port}. Ensure Zotero desktop app is running with the connector enabled.`,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
+  /**
+   * Save PDF content to a temp file
+   * This is the first step of callZoteroImport when pdf_content is provided
+   *
+   * @param pdfContent - Base64-encoded PDF content
+   * @param filename - Optional filename for the PDF
+   * @returns Object with tempFilePath and fileData, or error object
+   */
+  private async savePdfContentToTemp(pdfContent: string, filename: string = 'imported.pdf'): Promise<{ tempFilePath: string; fileData: Uint8Array } | { error: string; message: string }> {
+    try {
+      // Get temp directory using nsIFile/DirectoryService
+      const dirService = (Components.classes as any)['@mozilla.org/file/directory_service;1']
+        .getService(Components.interfaces.nsIProperties);
+      const tmpDir = dirService.get('TmpD', Components.interfaces.nsIFile);
+      const tempDir = PathUtils.join(tmpDir.path, 'zotero-mcp-imports');
+      await IOUtils.makeDirectory(tempDir, { createAncestors: true });
+
+      // Generate unique filename
+      const timestamp = Date.now().toString(36);
+      const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const tempFilename = `mcp-${timestamp}-${safeFilename}`;
+      const tempFilePath = PathUtils.join(tempDir, tempFilename);
+
+      // Decode base64
+      const binaryString = atob(pdfContent);
+      const fileData = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        fileData[i] = binaryString.charCodeAt(i);
+      }
+
+      // Write file to temp location
+      await IOUtils.write(tempFilePath, fileData);
+      ztoolkit.log(`[callZoteroImport] PDF saved to temp location: ${tempFilePath}`);
+
+      return { tempFilePath, fileData };
+    } catch (e) {
+      return {
+        error: 'Failed to save temp file',
+        message: 'Failed to save PDF to temp location: ' + (e instanceof Error ? e.message : String(e))
+      };
+    }
+  }
+
+  /**
+   * Import PDF via Zotero Local Connector
+   *
+   * Flow:
+   * 1. Save PDF content to temp location
+   * 2. Call Zotero Local Connector (port 23119) with temp file path
+   * 3. Clean up temp file after import
+   *
+   * @param args - pdf_content (base64), pdf_filename (optional), collection (optional)
+   */
+  private async callZoteroImport(args: any): Promise<any> {
+    const port = 23119; // Fixed port for Zotero Local Connector
+    const collection = args?.collection;
+    const pdfContent = args.pdf_content;
+    const pdfFilename = args.pdf_filename || 'imported.pdf';
+
+    // Validate pdf_content is provided
+    if (!pdfContent) {
+      return {
+        success: false,
+        error: 'Missing required parameter',
+        message: 'pdf_content (base64-encoded) is required',
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    let tempFilePath: string | null = null;
+    let shouldCleanup = false;
+
+    try {
+      // Step 1: Save PDF content to temp file
+      const saveResult = await this.savePdfContentToTemp(pdfContent, pdfFilename);
+
+      if ('error' in saveResult) {
+        return {
+          success: false,
+          error: saveResult.error,
+          message: saveResult.message,
+          timestamp: new Date().toISOString()
+        };
+      }
+
+      // Successfully saved to temp
+      tempFilePath = saveResult.tempFilePath;
+      shouldCleanup = true;
+
+      // Step 2: Import using Zotero Local Connector
+      const result = await this.importPdfToZotero(tempFilePath, port, collection);
+
+      // Step 3: Clean up temp file
+      if (shouldCleanup && tempFilePath) {
+        try {
+          await IOUtils.remove(tempFilePath);
+        } catch (cleanupError) {
+          ztoolkit.log(`Failed to clean up temp file ${tempFilePath}: ${cleanupError}`);
+        }
+      }
+
+      return result;
+
+    } catch (error) {
+      // Clean up temp file on error
+      if (shouldCleanup && tempFilePath) {
+        try {
+          await IOUtils.remove(tempFilePath);
+        } catch (cleanupError) {
+          ztoolkit.log(`Failed to clean up temp file ${tempFilePath}: ${cleanupError}`);
+        }
+      }
+
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        message: `Failed to import PDF via Zotero Local Connector`,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
+  /**
+   * Import PDF to Zotero using Local Connector API
+   * This calls port 23119 with the actual file path
+   *
+   * @param pdfPath - Absolute path to the PDF file on the host
+   * @param port - Zotero Local Connector port (default: 23119)
+   * @param collection - Optional collection name to import into
+   */
+  private async importPdfToZotero(pdfPath: string, port: number, collection?: string): Promise<any> {
+    // Check if file exists first
+    try {
+      const exists = await IOUtils.exists(pdfPath);
+      if (!exists) {
+        return {
+          success: false,
+          error: 'File not found',
+          message: `PDF file does not exist: ${pdfPath}`,
+          timestamp: new Date().toISOString()
+        };
+      }
+    } catch (e) {
+      return {
+        success: false,
+        error: 'File check failed',
+        message: `Failed to check if PDF exists: ${e instanceof Error ? e.message : String(e)}`,
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    // Convert path to file URL format
+    const fileUrl = 'file:///' + pdfPath.replace(/\\/g, '/');
+
+    // Build metadata object - include collection if specified
+    const metadata: any = {
+      sessionID: 'mcp-' + Date.now().toString(36),
+      url: fileUrl
+    };
+
+    // If collection is specified, we need to get its key first
+    // The Zotero Local Connector expects a collection key, not name
+    if (collection) {
+      try {
+        const collectionKey = await this.getCollectionKeyByName(collection, port);
+        if (collectionKey) {
+          metadata.collection = collectionKey;
+        } else {
+          ztoolkit.log(`Collection "${collection}" not found, importing to library root`);
+        }
+      } catch (e) {
+        ztoolkit.log(`Failed to lookup collection "${collection}": ${e}`);
+      }
+    }
+
+    const url = `http://127.0.0.1:${port}/connector/saveStandaloneAttachment`;
+
+    ztoolkit.log(`[importPdfToZotero] Importing PDF: ${pdfPath}`);
+    ztoolkit.log(`[importPdfToZotero] Target URL: ${url}`);
+    ztoolkit.log(`[importPdfToZotero] Metadata: ${JSON.stringify(metadata)}`);
+
+    try {
+      // Read file as binary from the actual path
+      const fileData = await IOUtils.read(pdfPath);
+      ztoolkit.log(`[importPdfToZotero] Read ${fileData.length} bytes from file`);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/pdf',
+          'X-Metadata': JSON.stringify(metadata)
+        },
+        body: fileData
+      });
+
+      const resultText = await response.text();
+      ztoolkit.log(`[importPdfToZotero] Response status: ${response.status}`);
+      ztoolkit.log(`[importPdfToZotero] Response body: ${resultText.substring(0, 500)}`);
+
+      if (response.status === 201) {
+        return {
+          success: true,
+          status: response.status,
+          message: `PDF imported successfully via Zotero Local Connector`,
+          pdf_path: pdfPath,
+          collection: collection || null,
+          response: resultText,
+          timestamp: new Date().toISOString()
+        };
+      } else {
+        return {
+          success: false,
+          status: response.status,
+          message: `Import failed with status ${response.status}: ${resultText}`,
+          response: resultText,
+          timestamp: new Date().toISOString()
+        };
+      }
+    } catch (error) {
+      ztoolkit.log(`[importPdfToZotero] Error: ${error}`);
+      throw new Error(`Failed to import PDF to Zotero: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Get collection key by name from Zotero Local Connector
+   */
+  private async getCollectionKeyByName(collectionName: string, port: number): Promise<string | null> {
+    try {
+      const url = `http://127.0.0.1:${port}/api/users/0/collections?limit=10000`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Zotero-API-Version': '3' }
+      });
+
+      if (response.status !== 200) {
+        ztoolkit.log(`[getCollectionKeyByName] Failed to list collections: ${response.status}`);
+        return null;
+      }
+
+      const collections = await response.json();
+      if (!Array.isArray(collections)) {
+        ztoolkit.log('[getCollectionKeyByName] Unexpected response format');
+        return null;
+      }
+
+      // Find collection by name (case-insensitive)
+      const lowerName = collectionName.toLowerCase();
+      const collection = collections.find((c: any) =>
+        c.data?.name?.toLowerCase() === lowerName
+      );
+
+      if (collection?.key) {
+        ztoolkit.log(`[getCollectionKeyByName] Found collection "${collectionName}" with key: ${collection.key}`);
+        return collection.key;
+      }
+
+      ztoolkit.log(`[getCollectionKeyByName] Collection "${collectionName}" not found`);
+      return null;
+    } catch (error) {
+      ztoolkit.log(`[getCollectionKeyByName] Error: ${error}`);
+      return null;
+    }
+  }
+
+  /**
+   * List collections via Zotero Local Connector
+   */
+  private async callZoteroListCollections(args: any): Promise<any> {
+    const port = args?.port || 23119;
+    const limit = args?.limit || 10000;
+    const url = `http://127.0.0.1:${port}/api/users/0/collections?limit=${limit}`;
+    
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Zotero-API-Version': '3' }
+      });
+      
+      if (response.status !== 200) {
+        return {
+          success: false,
+          status: response.status,
+          message: `Failed to list collections from Zotero Local Connector`,
+          timestamp: new Date().toISOString()
+        };
+      }
+      
+      const jsonData = await response.json();
+      
+      // Ensure we have an array
+      const collections = Array.isArray(jsonData) ? jsonData : [];
+      
+      if (!Array.isArray(jsonData)) {
+        return {
+          success: false,
+          status: response.status,
+          message: `Invalid response format from Zotero Local Connector`,
+          data: jsonData,
+          timestamp: new Date().toISOString()
+        };
+      }
+      
+      // Format the response
+      const formatted = collections.map((c: any) => ({
+        key: c.key,
+        name: c.data?.name || 'Unnamed',
+        parentCollection: c.data?.parentCollection || null,
+        itemCount: c.meta?.numItems || 0
+      }));
+      
+      return {
+        success: true,
+        count: formatted.length,
+        collections: formatted,
+        port: port,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        message: `Failed to list collections from Zotero Local Connector on port ${port}`,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
+/**
+ * Handle PDF upload to temp location
+ * Accepts raw binary PDF data or base64-encoded JSON
+ * Returns the temp file path for use with zotero_import
+ */
+private async handlePdfUpload(requestText: string, requestBody: string, method: string): Promise<any> {
+  if (method !== "POST") {
+    return {
+      status: 405,
+      statusText: "Method Not Allowed",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        success: false,
+        error: "Method not allowed",
+        message: "Use POST to upload PDF files"
+      }),
+    };
+  }
+
+  try {
+    // Parse Content-Type to determine upload format
+    const contentTypeMatch = requestText.match(/Content-Type:\s*([^\r\n]+)/i);
+    const contentType = contentTypeMatch ? contentTypeMatch[1].trim() : "application/octet-stream";
+
+    let fileData: Uint8Array;
+    let filename: string = "uploaded.pdf";
+
+    if (contentType.includes("application/json")) {
+      // JSON format with base64-encoded content
+      try {
+        const jsonBody = JSON.parse(requestBody);
+        if (!jsonBody.pdf_content) {
+          return {
+            status: 400,
+            statusText: "Bad Request",
+            headers: { "Content-Type": "application/json; charset=utf-8" },
+            body: JSON.stringify({
+              success: false,
+              error: "Missing pdf_content field",
+              message: "JSON upload requires pdf_content field with base64-encoded PDF"
+            }),
+          };
+        }
+        // Decode base64
+        const binaryString = atob(jsonBody.pdf_content);
+        fileData = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          fileData[i] = binaryString.charCodeAt(i);
+        }
+        if (jsonBody.filename) {
+          filename = jsonBody.filename;
+        }
+      } catch (e) {
+        return {
+          status: 400,
+          statusText: "Bad Request",
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify({
+            success: false,
+            error: "Invalid JSON",
+            message: e instanceof Error ? e.message : String(e)
+          }),
+        };
+      }
+    } else {
+      // Raw binary upload (application/pdf or octet-stream)
+      // For raw binary, we need to re-read from input stream since requestBody is UTF-8 decoded
+      return {
+        status: 415,
+        statusText: "Unsupported Media Type",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({
+          success: false,
+          error: "Raw binary upload not supported via this endpoint",
+          message: "Use application/json with base64-encoded pdf_content field",
+          example: {
+            filename: "document.pdf",
+            pdf_content: "base64_encoded_pdf_content_here"
+          }
+        }),
+      };
+    }
+
+    // Create temp directory
+    const dirService = (Components.classes as any)["@mozilla.org/file/directory_service;1"]
+      .getService(Components.interfaces.nsIProperties);
+    const tmpDir = dirService.get("TmpD", Components.interfaces.nsIFile);
+    const tempDir = PathUtils.join(tmpDir.path, "zotero-mcp-uploads");
+    await IOUtils.makeDirectory(tempDir, { createAncestors: true });
+
+    // Generate unique filename
+    const timestamp = Date.now().toString(36);
+    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const tempFilename = `upload-${timestamp}-${safeFilename}`;
+    const tempFilePath = PathUtils.join(tempDir, tempFilename);
+
+    // Write file to temp location
+    await IOUtils.write(tempFilePath, fileData);
+
+    ztoolkit.log(`[HttpServer] PDF uploaded to temp location: ${tempFilePath}`);
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        success: true,
+        message: "PDF uploaded successfully",
+        temp_path: tempFilePath,
+        filename: safeFilename,
+        size: fileData.length,
+        timestamp: new Date().toISOString()
+      }),
+    };
+
+  } catch (error) {
+    ztoolkit.log(`[HttpServer] Error handling PDF upload: ${error}`, "error");
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        success: false,
+        error: "Upload failed",
+        message: error instanceof Error ? error.message : String(error)
+      }),
+    };
+  }
+}
+
 }
