@@ -1,18 +1,18 @@
 {
   "manifest_version": 2,
-  "name": "__addonName__",
-  "version": "__buildVersion__",
-  "description": "__description__",
-  "homepage_url": "__homepage__",
-  "author": "__author__",
+  "name": "Zotero MCP Plugin",
+  "version": "1.4.7",
+  "description": "Zotero MCP Plugin",
+  "homepage_url": "https://github.com/cookjohn/zotero-mcp#readme",
+  "author": "cookjohn",
   "icons": {
     "48": "content/icons/favicon@0.5x.png",
     "96": "content/icons/favicon.png"
   },
   "applications": {
     "zotero": {
-      "id": "__addonID__",
-      "update_url": "__updateURL__",
+      "id": "zotero-mcp-plugin@autoagent.my",
+      "update_url": "https://github.com/cookjohn/zotero-mcp/releases/latest/download/update.json",
       "strict_min_version": "6.999",
       "strict_max_version": "9.*"
     }

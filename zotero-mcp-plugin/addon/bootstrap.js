@@ -15,7 +15,7 @@ async function startup({ id, version, resourceURI, rootURI }, reason) {
   ].getService(Components.interfaces.amIAddonManagerStartup);
   var manifestURI = Services.io.newURI(rootURI + "manifest.json");
   chromeHandle = aomStartup.registerChrome(manifestURI, [
-    ["content", "__addonRef__", rootURI + "content/"],
+    ["content", "zotero-mcp-plugin", rootURI + "content/"],
   ]);
 
   /**
@@ -28,24 +28,24 @@ async function startup({ id, version, resourceURI, rootURI }, reason) {
   ctx._globalThis = ctx;
 
   Services.scriptloader.loadSubScript(
-    `${rootURI}/content/scripts/__addonRef__.js`,
+    `${rootURI}/content/scripts/zotero-mcp-plugin.js`,
     ctx,
   );
-  await Zotero.__addonInstance__.hooks.onStartup();
+  await Zotero.ZoteroMCP.hooks.onStartup();
 }
 
 async function onMainWindowLoad({ window }, reason) {
-  await Zotero.__addonInstance__?.hooks.onMainWindowLoad(window);
+  await Zotero.ZoteroMCP?.hooks.onMainWindowLoad(window);
 }
 
 async function onMainWindowUnload({ window }, reason) {
-  await Zotero.__addonInstance__?.hooks.onMainWindowUnload(window);
+  await Zotero.ZoteroMCP?.hooks.onMainWindowUnload(window);
 }
 
 async function shutdown({ id, version, resourceURI, rootURI }, reason) {
   // 始终执行清理 - 即使是 APP_SHUTDOWN 也要关闭 HTTP 服务器和定时器
   // 否则 server socket 会阻止进程退出
-  await Zotero.__addonInstance__?.hooks.onShutdown();
+  await Zotero.ZoteroMCP?.hooks.onShutdown();
 
   if (reason === APP_SHUTDOWN) {
     return;
