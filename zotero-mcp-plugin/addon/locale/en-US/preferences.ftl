@@ -108,6 +108,22 @@ pref-rate-limit-rpm-label = Requests per Minute:
 pref-rate-limit-tpm-label = Tokens per Minute:
 pref-rate-limit-cost-label = $/1M Tokens
 pref-rate-limit-zero-hint = 0 = unlimited
+pref-reranking-title = Reranking
+pref-reranking-enable-text = Enable Reranking
+pref-reranking-enable-sub = Improve search results by reordering with semantic relevance
+pref-reranking-provider-label = Provider
+pref-reranking-provider-local = Local (Keyword-based)
+pref-reranking-provider-custom = Custom
+pref-reranking-api-base-label = API Base URL
+pref-reranking-api-key-label = API Key
+pref-reranking-model-label = Model
+pref-reranking-topk-label = Top K
+pref-reranking-test-button =
+    .label = Test Connection
+pref-reranking-test-button-text = Test Connection
+pref-reranking-test-success = ✓ Connection successful
+pref-reranking-test-failed = ✗ Connection failed
+pref-reranking-testing = Testing...
 pref-section-index-label = Index
 
 pref-api-usage-title = API Usage Statistics

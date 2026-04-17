@@ -108,6 +108,22 @@ pref-rate-limit-rpm-label = 每分钟请求数：
 pref-rate-limit-tpm-label = 每分钟令牌数：
 pref-rate-limit-cost-label = $/1M 令牌
 pref-rate-limit-zero-hint = 0 = 不限
+pref-reranking-title = 重排
+pref-reranking-enable-text = 启用重排
+pref-reranking-enable-sub = 通过语义相关性重新排序搜索结果
+pref-reranking-provider-label = 提供商
+pref-reranking-provider-local = 本地（基于关键词）
+pref-reranking-provider-custom = 自定义
+pref-reranking-api-base-label = API 基础 URL
+pref-reranking-api-key-label = API 密钥
+pref-reranking-model-label = 模型
+pref-reranking-topk-label = Top K
+pref-reranking-test-button =
+    .label = 测试连接
+pref-reranking-test-button-text = 测试连接
+pref-reranking-test-success = ✓ 连接成功
+pref-reranking-test-failed = ✗ 连接失败
+pref-reranking-testing = 测试中...
 pref-section-index-label = 索引
 
 pref-api-usage-title = API 使用统计
