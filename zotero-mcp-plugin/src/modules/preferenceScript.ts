@@ -1205,16 +1205,27 @@ function bindSemanticStatsSettings(doc: Document) {
   let lastErrorInfo: { message: string; type: string; retryable: boolean } | null = null;
   let messageTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  // Load stats on page load
-  loadSemanticStats();
+  if (!buildButton) {
+    ztoolkit.log("[PreferenceScript] build-semantic-index-button not found", "warn");
+  }
 
-  // Register error callback for semantic service
-  registerErrorCallback();
+  const safeInvoke = (fn: () => any, label: string) => {
+    try {
+      const maybePromise = fn();
+      if (maybePromise && typeof maybePromise.then === "function") {
+        maybePromise.catch((error: any) => {
+          ztoolkit.log(`[PreferenceScript] ${label} failed: ${error}`, "warn");
+        });
+      }
+    } catch (error) {
+      ztoolkit.log(`[PreferenceScript] ${label} failed: ${error}`, "warn");
+    }
+  };
 
   // Unified refresh: updates semantic stats, API usage, and detail summary
   function refreshAllStats(silent = false) {
     _silentRefresh = silent;
-    loadSemanticStats(silent);
+    safeInvoke(() => loadSemanticStats(silent), "loadSemanticStats(refresh)");
     const apiRefreshBtn = doc?.querySelector("#refresh-api-usage-button") as HTMLButtonElement;
     apiRefreshBtn?.click();
     _silentRefresh = false;
@@ -1831,4 +1842,8 @@ function bindSemanticStatsSettings(doc: Document) {
       ztoolkit.log(`[PreferenceScript] Failed to register error callback: ${error}`, "warn");
     }
   }
+
+  // Defer initialization so that event listeners are always bound first.
+  safeInvoke(() => loadSemanticStats(), "loadSemanticStats(init)");
+  safeInvoke(() => registerErrorCallback(), "registerErrorCallback(init)");
 }
