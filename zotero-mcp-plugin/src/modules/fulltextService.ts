@@ -3,6 +3,8 @@
  * Handles extraction and retrieval of full-text content from various sources
  */
 
+import { performFulltextSearch } from "./searchEngine";
+
 declare let Zotero: any;
 declare let ztoolkit: ZToolkit;
 
@@ -277,11 +279,73 @@ export class FulltextService {
         caseSensitive = false
       } = options;
 
-      ztoolkit.log(`[FulltextService] Searching fulltext for: "${query}"`);
+      const normalizedQuery = (query || "").trim();
+      ztoolkit.log(`[FulltextService] Searching fulltext for: "${normalizedQuery}"`);
 
       const results = [];
+
+      // Fast path: global case-insensitive search uses Zotero indexed fulltext,
+      // avoiding expensive extraction across large libraries.
+      if ((!itemKeys || !Array.isArray(itemKeys) || itemKeys.length === 0) && !caseSensitive) {
+        const { itemIDs, matchDetails } = await performFulltextSearch(
+          normalizedQuery,
+          Zotero.Libraries.userLibraryID,
+          "both",
+          "contains"
+        );
+
+        const rankedItemIDs = itemIDs
+          .sort((a, b) => {
+            const scoreA = matchDetails.get(a)?.score || 0;
+            const scoreB = matchDetails.get(b)?.score || 0;
+            return scoreB - scoreA;
+          })
+          .slice(0, maxResults);
+
+        const maxContextChars = Math.max(120, contextLength * 2 + normalizedQuery.length + 20);
+        for (const itemID of rankedItemIDs) {
+          const item = Zotero.Items.get(itemID);
+          const details = matchDetails.get(itemID);
+          if (!item || !details) continue;
+
+          const attachmentMatches = (details.attachments || []).map((att: any) => ({
+            type: "attachment",
+            filename: att.filename || null,
+            match: normalizedQuery,
+            context: String(att.snippet || "").slice(0, maxContextChars).trim(),
+            position: 0,
+          }));
+          const noteMatches = (details.notes || []).map((note: any) => ({
+            type: "note",
+            filename: null,
+            match: normalizedQuery,
+            context: String(note.snippet || "").slice(0, maxContextChars).trim(),
+            position: 0,
+          }));
+          const matches = [...attachmentMatches, ...noteMatches].filter((m) => m.context);
+          if (matches.length === 0) continue;
+
+          results.push({
+            itemKey: item.key,
+            title: item.getDisplayTitle(),
+            itemType: item.itemType,
+            totalMatches: matches.length,
+            matches: matches.slice(0, 10),
+            relevanceScore: details.score || matches.length,
+          });
+        }
+
+        return {
+          query: normalizedQuery,
+          totalResults: results.length,
+          results: results.slice(0, maxResults),
+          searchOptions: options,
+          searchedAt: new Date().toISOString(),
+        };
+      }
+
       const searchRegex = new RegExp(
-        query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 
+        normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
         caseSensitive ? 'g' : 'gi'
       );
 
@@ -294,7 +358,7 @@ export class FulltextService {
       } else {
         // Search all items (limit for performance)
         const allItems = await Zotero.Items.getAll(Zotero.Libraries.userLibraryID);
-        itemsToSearch = allItems.slice(0, 1000); // Limit for performance
+        itemsToSearch = allItems.slice(0, 200); // Tight limit to avoid MCP timeout
       }
 
       for (const item of itemsToSearch) {
@@ -353,7 +417,7 @@ export class FulltextService {
       results.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
       return {
-        query,
+        query: normalizedQuery,
         totalResults: results.length,
         results: results.slice(0, maxResults),
         searchOptions: options,

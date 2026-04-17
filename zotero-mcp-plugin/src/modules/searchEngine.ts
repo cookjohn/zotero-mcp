@@ -337,7 +337,7 @@ function calculateRelevanceScore(
  * @param operator 操作符
  * @returns 匹配的项目ID列表
  */
-async function performFulltextSearch(
+export async function performFulltextSearch(
   query: string,
   libraryID: number,
   mode: "attachment" | "note" | "both" = "both",
