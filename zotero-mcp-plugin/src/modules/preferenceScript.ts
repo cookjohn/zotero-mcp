@@ -288,6 +288,9 @@ function bindPrefEvents() {
   // ============ Embedding API Settings ============
   bindEmbeddingSettings(doc);
 
+  // ============ Reranking Settings ============
+  bindRerankingSettings(doc);
+
   // ============ API Usage Stats ============
   bindApiUsageStats(doc);
 
@@ -321,6 +324,7 @@ function bindCollapsiblePanels(doc: Document) {
     { toggle: '#custom-settings-toggle', panel: '#custom-settings-panel' },
     { toggle: '#rate-limit-toggle', panel: '#rate-limit-panel' },
     { toggle: '#detail-stats-toggle', panel: '#detail-stats-panel' },
+    { toggle: '#reranking-toggle', panel: '#reranking-panel' },
   ];
 
   for (const { toggle, panel } of panels) {
@@ -332,6 +336,140 @@ function bindCollapsiblePanels(doc: Document) {
       });
     }
   }
+}
+
+function bindRerankingSettings(doc: Document) {
+  const enabledCheckbox = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-reranking-enabled`) as HTMLInputElement;
+  const configContainer = doc?.querySelector('#reranking-config-container') as HTMLElement;
+  const providerSelect = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-reranking-provider`) as HTMLSelectElement;
+  const apiSettingsDiv = doc?.querySelector('#reranking-api-settings') as HTMLElement;
+  const apiBaseInput = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-reranking-api-base`) as HTMLInputElement;
+  const apiKeyInput = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-reranking-api-key`) as HTMLInputElement;
+  const modelInput = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-reranking-model`) as HTMLInputElement;
+  const topKInput = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-reranking-topk`) as HTMLInputElement;
+  const testButton = doc?.querySelector('#test-reranking-button') as HTMLButtonElement;
+  const testResult = doc?.querySelector('#reranking-test-result') as HTMLSpanElement;
+  const rerankingSummary = doc?.querySelector('#reranking-summary') as HTMLElement;
+
+  if (!enabledCheckbox) return;
+
+  const updateApiSettingsVisibility = () => {
+    const currentProvider = providerSelect?.value || 'local';
+    if (apiSettingsDiv) {
+      apiSettingsDiv.style.display = currentProvider === 'local' ? 'none' : '';
+    }
+  };
+
+  const updateRerankingSummary = () => {
+    if (!rerankingSummary) return;
+    const enabled = enabledCheckbox.checked;
+    const provider = providerSelect?.value || 'local';
+    rerankingSummary.textContent = enabled ? provider : 'disabled';
+  };
+
+  const initValue = (input: HTMLInputElement | null, prefKey: string, defaultValue: string) => {
+    if (!input) return;
+    const value = Zotero.Prefs.get(prefKey, true);
+    input.value = value ? String(value) : defaultValue;
+  };
+
+  const enabled = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.reranking.enabled', true) !== false;
+  const provider = (Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.reranking.provider', true) as string) || 'local';
+  enabledCheckbox.checked = enabled;
+  if (configContainer) configContainer.style.display = enabled ? '' : 'none';
+  if (providerSelect) providerSelect.value = provider;
+  initValue(apiBaseInput, 'extensions.zotero.zotero-mcp-plugin.reranking.apiBase', '');
+  initValue(apiKeyInput, 'extensions.zotero.zotero-mcp-plugin.reranking.apiKey', '');
+  initValue(modelInput, 'extensions.zotero.zotero-mcp-plugin.reranking.model', 'bge-reranker-v2-m3');
+  initValue(topKInput, 'extensions.zotero.zotero-mcp-plugin.reranking.topK', '10');
+  updateApiSettingsVisibility();
+  updateRerankingSummary();
+
+  enabledCheckbox.addEventListener('change', () => {
+    const checked = enabledCheckbox.checked;
+    Zotero.Prefs.set('extensions.zotero.zotero-mcp-plugin.reranking.enabled', checked, true);
+    if (configContainer) configContainer.style.display = checked ? '' : 'none';
+    updateRerankingSummary();
+  });
+
+  providerSelect?.addEventListener('change', () => {
+    Zotero.Prefs.set('extensions.zotero.zotero-mcp-plugin.reranking.provider', providerSelect.value, true);
+    updateApiSettingsVisibility();
+    updateRerankingSummary();
+  });
+
+  const bindInput = (input: HTMLInputElement | null, prefKey: string) => {
+    input?.addEventListener('change', () => {
+      Zotero.Prefs.set(prefKey, input.value, true);
+    });
+  };
+  bindInput(apiBaseInput, 'extensions.zotero.zotero-mcp-plugin.reranking.apiBase');
+  bindInput(apiKeyInput, 'extensions.zotero.zotero-mcp-plugin.reranking.apiKey');
+  bindInput(modelInput, 'extensions.zotero.zotero-mcp-plugin.reranking.model');
+  bindInput(topKInput, 'extensions.zotero.zotero-mcp-plugin.reranking.topK');
+
+  testButton?.addEventListener('click', async () => {
+    if (!testResult) return;
+    testButton.disabled = true;
+    testResult.textContent = getString('pref-reranking-testing' as any) || 'Testing...';
+    testResult.style.color = 'var(--color-muted)';
+
+    try {
+      const currentProvider = providerSelect?.value || 'local';
+      const apiBase = apiBaseInput?.value?.trim() || '';
+      const apiKey = apiKeyInput?.value?.trim() || '';
+      const model = modelInput?.value?.trim() || '';
+      const topK = parseInt(topKInput?.value || '10', 10) || 10;
+
+      // Persist latest values from form before testing.
+      Zotero.Prefs.set('extensions.zotero.zotero-mcp-plugin.reranking.provider', currentProvider, true);
+      Zotero.Prefs.set('extensions.zotero.zotero-mcp-plugin.reranking.apiBase', apiBase, true);
+      Zotero.Prefs.set('extensions.zotero.zotero-mcp-plugin.reranking.apiKey', apiKey, true);
+      Zotero.Prefs.set('extensions.zotero.zotero-mcp-plugin.reranking.model', model, true);
+      Zotero.Prefs.set('extensions.zotero.zotero-mcp-plugin.reranking.topK', topK, true);
+
+      if (currentProvider === 'local') {
+        testResult.textContent = getString('pref-reranking-test-success' as any) || '✓ Connection successful';
+        testResult.style.color = 'var(--color-ok)';
+        return;
+      }
+
+      if (!apiBase || !model) {
+        testResult.textContent = `${getString('pref-reranking-test-failed' as any) || '✗ Connection failed'}: Missing API Base or Model`;
+        testResult.style.color = 'var(--color-error)';
+        return;
+      }
+
+      const response = await Zotero.HTTP.request('POST', `${apiBase}/rerank`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model,
+          query: 'test query',
+          documents: ['doc a', 'doc b'],
+          top_n: 1,
+        }),
+        timeout: 30000,
+        responseType: 'json',
+        successCodes: false,
+      } as any);
+
+      if (response.status >= 200 && response.status < 300) {
+        testResult.textContent = getString('pref-reranking-test-success' as any) || '✓ Connection successful';
+        testResult.style.color = 'var(--color-ok)';
+      } else {
+        testResult.textContent = `${getString('pref-reranking-test-failed' as any) || '✗ Connection failed'}: HTTP ${response.status}`;
+        testResult.style.color = 'var(--color-error)';
+      }
+    } catch (error: any) {
+      testResult.textContent = `${getString('pref-reranking-test-failed' as any) || '✗ Connection failed'}: ${error?.message || String(error)}`;
+      testResult.style.color = 'var(--color-error)';
+    } finally {
+      testButton.disabled = false;
+    }
+  });
 }
 
 /**

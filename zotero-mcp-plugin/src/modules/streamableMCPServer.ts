@@ -965,6 +965,16 @@ export class StreamableMCPServer {
     return this.createResponse(request.id ?? null, { tools: finalTools });
   }
 
+  public getRuntimeTools(): any[] {
+    const response = this.handleToolsList({
+      jsonrpc: '2.0',
+      id: null,
+      method: 'tools/list',
+      params: {},
+    });
+    return response?.result?.tools || [];
+  }
+
   private async handleToolCall(request: MCPRequest): Promise<MCPResponse> {
     const { name, arguments: args } = request.params;
     
@@ -1218,11 +1228,13 @@ export class StreamableMCPServer {
     // Apply mode-based defaults before creating search params
     const effectiveMode = args.mode || MCPSettingsService.get('content.mode');
     const modeConfig = this.getSearchModeConfiguration(effectiveMode);
+    const requestedLimit = args.limit || modeConfig.limit;
+    const safeLimit = Math.max(1, Math.min(parseInt(String(requestedLimit), 10) || modeConfig.limit, 100));
     
     // Apply mode defaults if not explicitly provided
     const processedArgs = {
       ...args,
-      limit: args.limit || modeConfig.limit
+      limit: safeLimit
     };
     
     const searchParams = new URLSearchParams();
@@ -1234,12 +1246,34 @@ export class StreamableMCPServer {
       }
     }
     
-    const SEARCH_TIMEOUT_MS = 25000; // 25 秒超时，低于 keepAlive 的 30 秒
-    const searchPromise = handleSearch(searchParams);
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("Search timed out after 25 seconds. Try narrowing your query or reducing the limit.")), SEARCH_TIMEOUT_MS);
+    const SEARCH_TIMEOUT_MS = 9000;
+    const searchPromise = handleSearch(searchParams)
+      .then((response) => ({ ok: true as const, response }))
+      .catch((error) => ({ ok: false as const, error }));
+    const timeoutPromise = new Promise<{ ok: false; timeout: true }>((resolve) => {
+      setTimeout(() => resolve({ ok: false, timeout: true }), SEARCH_TIMEOUT_MS);
     });
-    const response = await Promise.race([searchPromise, timeoutPromise]);
+    const raced = await Promise.race([searchPromise, timeoutPromise]);
+    if ((raced as any)?.timeout) {
+      return {
+        query: processedArgs.q || processedArgs.query || '',
+        totalResults: 0,
+        results: [],
+        metadata: {
+          mode: effectiveMode,
+          appliedModeConfig: modeConfig,
+          limitRequested: requestedLimit,
+          limitApplied: safeLimit,
+          timedOut: true,
+          timeoutMs: SEARCH_TIMEOUT_MS,
+          source: 'search_library',
+        },
+      };
+    }
+    if ((raced as any).ok !== true) {
+      throw (raced as any).error || new Error('Search failed');
+    }
+    const response = (raced as any).response;
     let result = response.body ? JSON.parse(response.body) : response;
     
     // Add mode information to metadata
@@ -1247,7 +1281,9 @@ export class StreamableMCPServer {
       result.metadata = {
         ...result.metadata,
         mode: effectiveMode,
-        appliedModeConfig: modeConfig
+        appliedModeConfig: modeConfig,
+        limitRequested: requestedLimit,
+        limitApplied: safeLimit,
       };
       
       // Remove any unwanted content array if it's empty
@@ -1453,12 +1489,16 @@ export class StreamableMCPServer {
     // Apply mode-based defaults before creating search params
     const effectiveMode = args.mode || MCPSettingsService.get('content.mode');
     const modeConfig = this.getFulltextModeConfiguration(effectiveMode);
+    const requestedContextLength = args.contextLength || modeConfig.contextLength;
+    const requestedMaxResults = args.maxResults || modeConfig.maxResults;
+    const safeContextLength = Math.max(80, Math.min(parseInt(String(requestedContextLength), 10) || modeConfig.contextLength, 220));
+    const safeMaxResults = Math.max(1, Math.min(parseInt(String(requestedMaxResults), 10) || modeConfig.maxResults, 30));
     
     // Apply mode defaults if not explicitly provided
     const processedArgs = {
       ...args,
-      contextLength: args.contextLength || modeConfig.contextLength,
-      maxResults: args.maxResults || modeConfig.maxResults
+      contextLength: safeContextLength,
+      maxResults: safeMaxResults
     };
     
     const searchParams = new URLSearchParams();
@@ -1472,7 +1512,38 @@ export class StreamableMCPServer {
       }
     }
     
-    const response = await handleSearchFulltext(searchParams);
+    const FULLTEXT_TIMEOUT_MS = 9000;
+    const searchPromise = handleSearchFulltext(searchParams)
+      .then((response) => ({ ok: true as const, response }))
+      .catch((error) => ({ ok: false as const, error }));
+    const timeoutPromise = new Promise<{ ok: false; timeout: true }>((resolve) => {
+      setTimeout(() => resolve({ ok: false, timeout: true }), FULLTEXT_TIMEOUT_MS);
+    });
+    const raced = await Promise.race([searchPromise, timeoutPromise]);
+    if ((raced as any)?.timeout) {
+      return {
+        query: processedArgs.q || processedArgs.query || '',
+        totalResults: 0,
+        results: [],
+        searchOptions: processedArgs,
+        searchedAt: new Date().toISOString(),
+        metadata: {
+          mode: effectiveMode,
+          appliedModeConfig: modeConfig,
+          contextLengthRequested: requestedContextLength,
+          contextLengthApplied: safeContextLength,
+          maxResultsRequested: requestedMaxResults,
+          maxResultsApplied: safeMaxResults,
+          timedOut: true,
+          timeoutMs: FULLTEXT_TIMEOUT_MS,
+          source: 'search_fulltext',
+        },
+      };
+    }
+    if ((raced as any).ok !== true) {
+      throw (raced as any).error || new Error('Fulltext search failed');
+    }
+    const response = (raced as any).response;
     let result = response.body ? JSON.parse(response.body) : response;
     
     // Add mode information to metadata
@@ -1480,7 +1551,11 @@ export class StreamableMCPServer {
       result.metadata = {
         ...result.metadata,
         mode: effectiveMode,
-        appliedModeConfig: modeConfig
+        appliedModeConfig: modeConfig,
+        contextLengthRequested: requestedContextLength,
+        contextLengthApplied: safeContextLength,
+        maxResultsRequested: requestedMaxResults,
+        maxResultsApplied: safeMaxResults,
       };
     }
     
@@ -1638,7 +1713,36 @@ export class StreamableMCPServer {
             throw new Error('query is required for search action');
           }
 
-          const searchResults = await vectorStore.searchCachedContent(query, { limit, caseSensitive });
+          const safeLimit = Math.max(1, Math.min(parseInt(String(limit), 10) || 20, 50));
+          const DB_SEARCH_TIMEOUT_MS = 9000;
+          const searchPromise = vectorStore.searchCachedContent(query, { limit: safeLimit, caseSensitive })
+            .then((data: any[]) => ({ ok: true as const, data }))
+            .catch((error: any) => ({ ok: false as const, error }));
+          const timeoutPromise = new Promise<{ ok: false; timeout: true }>((resolve) => {
+            setTimeout(() => resolve({ ok: false, timeout: true }), DB_SEARCH_TIMEOUT_MS);
+          });
+          const raced = await Promise.race([searchPromise, timeoutPromise]);
+          if ((raced as any)?.timeout) {
+            return {
+              action: 'search',
+              query,
+              data: [],
+              metadata: {
+                extractedAt: new Date().toISOString(),
+                resultCount: 0,
+                caseSensitive,
+                limitRequested: limit,
+                limitApplied: safeLimit,
+                timedOut: true,
+                timeoutMs: DB_SEARCH_TIMEOUT_MS,
+                message: `Fulltext database search timed out after ${DB_SEARCH_TIMEOUT_MS}ms`,
+              },
+            };
+          }
+          if ((raced as any).ok !== true) {
+            throw (raced as any).error || new Error('Fulltext database search failed');
+          }
+          const searchResults = (raced as any).data;
 
           return {
             action: 'search',
@@ -1648,6 +1752,8 @@ export class StreamableMCPServer {
               extractedAt: new Date().toISOString(),
               resultCount: searchResults.length,
               caseSensitive,
+              limitRequested: limit,
+              limitApplied: safeLimit,
               message: `Found ${searchResults.length} items matching "${query}"`
             }
           };
@@ -2465,7 +2571,8 @@ export class StreamableMCPServer {
    * Get server status and capabilities
    */
   getStatus() {
-    return {
+    const runtimeToolNames = this.getRuntimeTools().map((t: any) => t.name);
+    const statusData = {
       isInitialized: this.isInitialized,
       serverInfo: this.serverInfo,
       protocolVersion: '2024-11-05',
@@ -2509,6 +2616,10 @@ export class StreamableMCPServer {
         maxConnections: 100
       }
     };
+    if (runtimeToolNames.length > 0) {
+      statusData.availableTools = runtimeToolNames;
+    }
+    return statusData;
   }
 
   /**

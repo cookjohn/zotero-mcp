@@ -722,6 +722,46 @@ export class HttpServer {
  * Get comprehensive capabilities and API documentation
  */
 private getCapabilities() {
+  const runtimeTools = this.mcpServer?.getRuntimeTools?.() || [];
+  const categoryByName = (name: string): string => {
+    if (name === "search_library" || name === "search_annotations" || name === "search_collections" || name === "search_fulltext") {
+      return "search";
+    }
+    if (name === "get_item_details" || name === "get_annotations" || name === "get_content" || name === "get_item_abstract") {
+      return "retrieval";
+    }
+    if (name === "get_collections" || name === "get_collection_details" || name === "get_collection_items" || name === "get_subcollections") {
+      return "collections";
+    }
+    if (name === "semantic_search" || name === "find_similar" || name === "semantic_status") {
+      return "semantic";
+    }
+    if (name === "fulltext_database") {
+      return "fulltext";
+    }
+    if (name.startsWith("write_") || name.includes("collection")) {
+      return "write";
+    }
+    return "other";
+  };
+  const toCapabilityTool = (tool: any) => {
+    const required = new Set(Array.isArray(tool.inputSchema?.required) ? tool.inputSchema.required : []);
+    const props = tool.inputSchema?.properties || {};
+    const parameters: Record<string, any> = {};
+    for (const [key, value] of Object.entries(props)) {
+      parameters[key] = {
+        ...(value as any),
+        required: required.has(key),
+      };
+    }
+    return {
+      name: tool.name,
+      description: tool.description,
+      category: categoryByName(tool.name),
+      parameters,
+    };
+  };
+
   return {
     serverInfo: {
       name: "Zotero MCP Plugin",
@@ -765,201 +805,7 @@ private getCapabilities() {
         markdown: false
       }
     },
-    tools: [
-      {
-        name: "search_library",
-        description: "Search the Zotero library with advanced parameters including boolean operators, relevance scoring, fulltext search, and pagination. Returns: {query, pagination, searchTime, results: [{key, title, creators, date, attachments: [{key, filename, filePath, contentType, linkMode}], fulltextMatch: {query, mode, attachments: [{snippet, score}], notes: [{snippet, score}]}}], searchFeatures, version}",
-        category: "search",
-        parameters: {
-          q: { type: "string", description: "General search query", required: false },
-          title: { type: "string", description: "Title search", required: false },
-          titleOperator: { 
-            type: "string", 
-            enum: ["contains", "exact", "startsWith", "endsWith", "regex"],
-            description: "Title search operator",
-            required: false
-          },
-          yearRange: { type: "string", description: "Year range (e.g., '2020-2023')", required: false },
-          fulltext: { type: "string", description: "Full-text search in attachments and notes", required: false },
-          fulltextMode: { 
-            type: "string", 
-            enum: ["attachment", "note", "both"],
-            description: "Full-text search mode: 'attachment' (PDFs only), 'note' (notes only), 'both' (default)",
-            required: false 
-          },
-          fulltextOperator: { 
-            type: "string", 
-            enum: ["contains", "exact", "regex"],
-            description: "Full-text search operator (default: 'contains')",
-            required: false 
-          },
-          relevanceScoring: { type: "boolean", description: "Enable relevance scoring", required: false },
-          sort: { 
-            type: "string", 
-            enum: ["relevance", "date", "title", "year"],
-            description: "Sort order",
-            required: false
-          },
-          limit: { type: "number", description: "Maximum results to return", required: false },
-          offset: { type: "number", description: "Pagination offset", required: false }
-        },
-        examples: [
-          { query: { q: "machine learning" }, description: "Basic text search" },
-          { query: { title: "deep learning", titleOperator: "contains" }, description: "Title-specific search" },
-          { query: { yearRange: "2020-2023", sort: "relevance" }, description: "Year-filtered search with relevance sorting" },
-          { query: { fulltext: "neural networks", fulltextMode: "attachment" }, description: "Full-text search in PDF attachments only" },
-          { query: { fulltext: "methodology", fulltextMode: "both", fulltextOperator: "exact" }, description: "Exact full-text search in both attachments and notes" }
-        ]
-      },
-      {
-        name: "search_annotations",
-        description: "Search all notes, PDF annotations and highlights with smart content processing",
-        category: "search",
-        parameters: {
-          q: { type: "string", description: "Search query for content, comments, and tags", required: false },
-          type: { 
-            type: "string", 
-            enum: ["note", "highlight", "annotation", "ink", "text", "image"],
-            description: "Filter by annotation type",
-            required: false
-          },
-          detailed: { type: "boolean", description: "Return detailed content (default: false for preview)", required: false },
-          limit: { type: "number", description: "Maximum results (preview: 20, detailed: 50)", required: false },
-          offset: { type: "number", description: "Pagination offset", required: false }
-        },
-        examples: [
-          { query: { q: "important findings" }, description: "Search annotation content" },
-          { query: { type: "highlight", detailed: true }, description: "Get detailed highlights" }
-        ]
-      },
-      {
-        name: "get_item_details",
-        description: "Get detailed information for a specific item including metadata, abstract, attachments info, notes, and tags but not fulltext content. Returns: {key, title, creators, date, itemType, publicationTitle, volume, issue, pages, DOI, url, abstractNote, tags, notes: [note_content], attachments: [{key, title, path, contentType, filename, url, linkMode, hasFulltext, size}]}",
-        category: "retrieval",
-        parameters: {
-          itemKey: { type: "string", description: "Unique item key", required: true }
-        },
-        examples: [
-          { query: { itemKey: "ABCD1234" }, description: "Get item by key" }
-        ]
-      },
-      {
-        name: "get_annotation_by_id",
-        description: "Get complete content of a specific annotation by ID",
-        category: "retrieval",
-        parameters: {
-          annotationId: { type: "string", description: "Annotation ID", required: true }
-        }
-      },
-      {
-        name: "get_annotations_batch",
-        description: "Get complete content of multiple annotations by IDs",
-        category: "retrieval",
-        parameters: {
-          ids: { 
-            type: "array", 
-            items: { type: "string" },
-            description: "Array of annotation IDs",
-            required: true
-          }
-        }
-      },
-      {
-        name: "get_item_pdf_content",
-        description: "Extract text content from PDF attachments",
-        category: "retrieval",
-        parameters: {
-          itemKey: { type: "string", description: "Item key", required: true },
-          page: { type: "number", description: "Specific page number (optional)", required: false }
-        }
-      },
-      {
-        name: "get_collections",
-        description: "Get list of all collections in the library",
-        category: "collections",
-        parameters: {
-          limit: { type: "number", description: "Maximum results to return", required: false },
-          offset: { type: "number", description: "Pagination offset", required: false }
-        }
-      },
-      {
-        name: "search_collections",
-        description: "Search collections by name",
-        category: "collections",
-        parameters: {
-          q: { type: "string", description: "Collection name search query", required: true },
-          limit: { type: "number", description: "Maximum results to return", required: false }
-        }
-      },
-      {
-        name: "get_collection_details",
-        description: "Get detailed information about a specific collection",
-        category: "collections",
-        parameters: {
-          collectionKey: { type: "string", description: "Collection key", required: true }
-        }
-      },
-      {
-        name: "get_collection_items",
-        description: "Get items in a specific collection",
-        category: "collections",
-        parameters: {
-          collectionKey: { type: "string", description: "Collection key", required: true },
-          limit: { type: "number", description: "Maximum results to return", required: false },
-          offset: { type: "number", description: "Pagination offset", required: false }
-        }
-      },
-      {
-        name: "get_item_fulltext",
-        description: "Get comprehensive fulltext content from item including attachments, notes, abstracts, and webpage snapshots. Returns: {itemKey, title, itemType, abstract, fulltext: {attachments: [{attachmentKey, filename, filePath, contentType, type, content, length, extractionMethod}], notes: [{noteKey, title, content, htmlContent, length, dateModified}], webpage: {url, filename, filePath, content, length, type}, total_length}, metadata: {extractedAt, sources}}",
-        category: "fulltext",
-        parameters: {
-          itemKey: { type: "string", description: "Item key", required: true },
-          attachments: { type: "boolean", description: "Include attachment content (default: true)", required: false },
-          notes: { type: "boolean", description: "Include notes content (default: true)", required: false },
-          webpage: { type: "boolean", description: "Include webpage snapshots (default: true)", required: false },
-          abstract: { type: "boolean", description: "Include abstract (default: true)", required: false }
-        },
-        examples: [
-          { query: { itemKey: "ABCD1234" }, description: "Get all fulltext content for an item" },
-          { query: { itemKey: "ABCD1234", attachments: true, notes: false }, description: "Get only attachment content" }
-        ]
-      },
-      {
-        name: "get_attachment_content",
-        description: "Extract text content from a specific attachment (PDF, HTML, text files). Returns: {attachmentKey, filename, filePath, contentType, type, content, length, extractionMethod, extractedAt}",
-        category: "fulltext",
-        parameters: {
-          attachmentKey: { type: "string", description: "Attachment key", required: true },
-          format: { type: "string", enum: ["json", "text"], description: "Response format (default: json)", required: false }
-        }
-      },
-      {
-        name: "search_fulltext",
-        description: "Search within fulltext content of items with context and relevance scoring",
-        category: "fulltext",
-        parameters: {
-          q: { type: "string", description: "Search query", required: true },
-          itemKeys: { type: "array", items: { type: "string" }, description: "Limit search to specific items (optional)", required: false },
-          contextLength: { type: "number", description: "Context length around matches (default: 200)", required: false },
-          maxResults: { type: "number", description: "Maximum results to return (default: 50)", required: false },
-          caseSensitive: { type: "boolean", description: "Case sensitive search (default: false)", required: false }
-        },
-        examples: [
-          { query: { q: "machine learning" }, description: "Search for 'machine learning' in all fulltext" },
-          { query: { q: "neural networks", maxResults: 10, contextLength: 100 }, description: "Limited context search" }
-        ]
-      },
-      {
-        name: "get_item_abstract",
-        description: "Get the abstract/summary of a specific item",
-        category: "retrieval",
-        parameters: {
-          itemKey: { type: "string", description: "Item key", required: true },
-          format: { type: "string", enum: ["json", "text"], description: "Response format (default: json)", required: false }
-        }
-      }
-    ],
+    tools: runtimeTools.map(toCapabilityTool),
     endpoints: {
       mcp: {
         "/mcp": {
