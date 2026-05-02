@@ -160,7 +160,7 @@ const DEFAULT_CONFIG: EmbeddingConfig = {
   model: 'text-embedding-3-small',
   dimensions: 512,  // Smaller dimensions for efficiency
   maxBatchSize: 20,  // Conservative default to avoid 413 errors; will auto-reduce if needed
-  timeout: 30000,
+  timeout: 180000,   // 180 seconds for local/slow API servers
   maxRetries: 3,
   apiProvider: 'auto'
 };
@@ -1059,6 +1059,13 @@ export class EmbeddingService {
     ztoolkit.log(`[EmbeddingService] Request details: texts=${texts.length}, totalTextChars=${totalTextLength}, bodySize=${requestBodySize}, model=${this.config.model}`);
 
     for (let attempt = 0; attempt < this.config.maxRetries; attempt++) {
+      // Exponential backoff before retry: 1s, 3s, 10s
+      if (attempt > 0) {
+        const backoffMs = [1000, 3000, 10000][attempt - 1] || 10000;
+        ztoolkit.log(`[EmbeddingService] Retry backoff: waiting ${backoffMs}ms before attempt ${attempt + 1}`);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
+
       try {
         const headers: Record<string, string> = {
           'Content-Type': 'application/json'
