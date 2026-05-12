@@ -894,14 +894,14 @@ export class StreamableMCPServer {
       },
       {
         name: 'write_item',
-        description: 'Create a new Zotero item or re-parent existing attachments. Common workflow: read PDF → extract metadata → create item → attach PDF via attachmentKeys. Confirm with user before executing.',
+        description: 'Create a new Zotero item, re-parent existing attachments, or import a local file as an attachment. Common workflows: (1) read PDF → extract metadata → create item → attach PDF via attachmentKeys; (2) convert PDF to Markdown → import the .md file as attachment via import action. Confirm with user before executing.',
         inputSchema: {
           type: 'object',
           properties: {
             action: {
               type: 'string',
-              enum: ['create', 'reparent'],
-              description: 'create: create a new item with metadata. reparent: move an attachment under a different parent item.'
+              enum: ['create', 'reparent', 'import'],
+              description: 'create: create a new item with metadata. reparent: move an attachment under a different parent item. import: import a local file (e.g., Markdown, PDF) as an attachment to an existing item.'
             },
             itemType: {
               type: 'string',
@@ -939,6 +939,14 @@ export class StreamableMCPServer {
             parentKey: {
               type: 'string',
               description: 'For reparent action: the target parent item key to move attachments to'
+            },
+            filePath: {
+              type: 'string',
+              description: 'For import action: absolute path to the file to import as an attachment'
+            },
+            parentItemKey: {
+              type: 'string',
+              description: 'For import action: Zotero item key of the parent to attach the file to'
             }
           },
           required: ['action']
@@ -2125,10 +2133,10 @@ export class StreamableMCPServer {
   }
 
   /**
-   * Handle write_item tool calls: create items and reparent attachments
+   * Handle write_item tool calls: create items, reparent attachments, and import files
    */
   private async callWriteItem(args: any): Promise<any> {
-    const { action, itemType, fields, creators, tags, attachmentKeys, parentKey } = args;
+    const { action, itemType, fields, creators, tags, attachmentKeys, parentKey, filePath, parentItemKey, title } = args;
 
     try {
       switch (action) {
@@ -2278,8 +2286,52 @@ export class StreamableMCPServer {
           };
         }
 
+        case 'import': {
+          if (!filePath || typeof filePath !== 'string') {
+            throw new Error('filePath is required for import action (absolute path to the file)');
+          }
+          if (!parentItemKey) {
+            throw new Error('parentItemKey is required for import action');
+          }
+
+          // Verify parent exists
+          const parentItem = Zotero.Items.getByLibraryAndKey(
+            Zotero.Libraries.userLibraryID, parentItemKey
+          );
+          if (!parentItem) {
+            throw new Error(`Parent item not found: ${parentItemKey}`);
+          }
+          if (!parentItem.isRegularItem()) {
+            throw new Error(`Parent ${parentItemKey} is not a regular item (type: ${parentItem.itemType}), cannot attach files`);
+          }
+
+          // Import file as attachment
+          const attachment = await Zotero.Attachments.importFromFile({
+            file: filePath,
+            parentItemID: parentItem.id,
+            title: title || filePath.split(/[\\/]/).pop() || 'Imported Attachment'
+          });
+
+          ztoolkit.log(`[StreamableMCP] Imported file as attachment ${attachment.key} under ${parentItemKey}`);
+
+          return {
+            action: 'import',
+            success: true,
+            data: {
+              attachmentKey: attachment.key,
+              parentItemKey,
+              filePath,
+              title: attachment.getField('title')
+            },
+            metadata: {
+              extractedAt: new Date().toISOString(),
+              message: `File imported as attachment (key: ${attachment.key}) under parent ${parentItemKey}`
+            }
+          };
+        }
+
         default:
-          throw new Error(`Unknown action: ${action}. Use create or reparent.`);
+          throw new Error(`Unknown action: ${action}. Use create, reparent, or import.`);
       }
     } catch (error) {
       ztoolkit.log(`[StreamableMCP] Write item error: ${error}`, 'error');
