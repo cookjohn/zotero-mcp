@@ -517,11 +517,20 @@ function bindEmbeddingSettings(doc: Document) {
   const updateEndpointPreview = () => {
     if (!endpointPreview) return;
     const base = apiBaseInput?.value?.trim() || "";
-    if (base) {
-      const sep = base.endsWith("/") ? "" : "/";
+    if (!base) {
+      endpointPreview.textContent = "";
+      return;
+    }
+    // Use EmbeddingService.detectApiProvider to show the actual endpoint
+    const { EmbeddingService } = require("./semantic/embeddingService");
+    const detectedProvider = EmbeddingService.detectApiProvider(base);
+    const sep = base.endsWith("/") ? "" : "/";
+    if (detectedProvider === 'ollama') {
+      endpointPreview.textContent = `→ ${base}${sep}api/embed`;
+    } else if (detectedProvider === 'ollama-openai') {
       endpointPreview.textContent = `→ ${base}${sep}embeddings`;
     } else {
-      endpointPreview.textContent = "";
+      endpointPreview.textContent = `→ ${base}${sep}embeddings`;
     }
   };
   updateEndpointPreview();
@@ -678,25 +687,106 @@ function bindEmbeddingSettings(doc: Document) {
         return;
       }
 
-      // Test the connection using Zotero.HTTP
-      const url = `${apiBase}/embeddings`;
-      const response = await Zotero.HTTP.request('POST', url, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
-        },
-        body: JSON.stringify({
-          model: model,
-          input: ["test"],
-          // Send the same dimensions indexing will use, otherwise detected
-          // dims diverge from index dims into a permanent mismatch (#62)
-          ...((supportsCustomDimensions(model) && parseInt(dimensionsInput?.value || "", 10) > 0)
-            ? { dimensions: parseInt(dimensionsInput.value, 10) } : {})
-        }),
-        timeout: (getEmbeddingTimeoutSeconds() || 30) * 1000,
-        responseType: 'json',
-        successCodes: false // Don't throw on non-2xx, let us handle it
-      } as any);
+      // Detect if this is Ollama native API using the same logic as EmbeddingService
+      const { EmbeddingService } = require("./semantic/embeddingService");
+      const detectedProvider = EmbeddingService.detectApiProvider(apiBase);
+      const isOllamaNative = detectedProvider === 'ollama';
+
+      let ollamaModelInfo: { name?: string; size?: number; parameter_size?: string } | null = null;
+      let timeoutMilliseconds = (getEmbeddingTimeoutSeconds() || 30) * 1000
+
+      if (isOllamaNative) {
+        try {
+          // Try Ollama native /api/tags endpoint to confirm
+          const ollamaBase = apiBase.replace(/\/$/, '');
+          const tagsUrl = `${ollamaBase}/api/tags`;
+          ztoolkit.log(`[PreferenceScript] Testing Ollama native API: ${tagsUrl}`);
+          const tagsResp = await Zotero.HTTP.request('GET', tagsUrl, {
+            timeout: Math.min(timeoutMilliseconds, 10000),
+            responseType: 'json',
+            successCodes: false
+          } as any);
+
+          if (tagsResp.status === 200 && tagsResp.response?.models) {
+            // Find the model info
+            const models = tagsResp.response.models as Array<any>;
+            const foundModel = models.find((m: any) => m.name === model || m.model === model);
+            if (foundModel) {
+              ollamaModelInfo = {
+                name: foundModel.name || foundModel.model,
+                size: foundModel.size,
+                parameter_size: foundModel.details?.parameter_size
+              };
+            }
+            ztoolkit.log(`[PreferenceScript] Confirmed Ollama native API. Models: ${models.length}, Found: ${!!foundModel}`);
+          }
+        } catch (e) {
+          ztoolkit.log(`[PreferenceScript] Ollama native detection failed: ${e}`, 'warn');
+        }
+      }
+
+      let response: any;
+      let dims = 0;
+
+      if (isOllamaNative) {
+        // Use Ollama native /api/embed endpoint
+        const ollamaBase = apiBase.replace(/\/$/, '');
+        const embedUrl = `${ollamaBase}/api/embed`;
+        ztoolkit.log(`[PreferenceScript] Testing with Ollama native /api/embed: ${embedUrl}`);
+
+        response = await Zotero.HTTP.request('POST', embedUrl, {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: model,
+            input: "test",
+            // TODO: adapt dimension test here
+          }),
+          timeout: timeoutMilliseconds,
+          responseType: 'json',
+          successCodes: false
+        } as any);
+
+        if (response.status >= 200 && response.status < 300) {
+          const data = response.response;
+          // Ollama native response: { embeddings: [[...]] } or { embedding: [...] }
+          if (data.embeddings && Array.isArray(data.embeddings) && data.embeddings.length > 0) {
+            dims = data.embeddings[0].length || 0;
+          } else if (data.embedding && Array.isArray(data.embedding)) {
+            dims = data.embedding.length || 0;
+          }
+        }
+      } else {
+        // Use OpenAI-compatible /v1/embeddings endpoint
+        const url = `${apiBase}/embeddings`;
+        ztoolkit.log(`[PreferenceScript] Testing with OpenAI-compatible endpoint: ${url}`);
+
+        response = await Zotero.HTTP.request('POST', url, {
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
+          },
+          body: JSON.stringify({
+            model: model,
+            input: ["test"],
+            // Send the same dimensions indexing will use, otherwise detected
+            // dims diverge from index dims into a permanent mismatch (#62)
+            ...((supportsCustomDimensions(model) && parseInt(dimensionsInput?.value || "", 10) > 0)
+              ? { dimensions: parseInt(dimensionsInput.value, 10) } : {})
+          }),
+          timeout: timeoutMilliseconds,
+          responseType: 'json',
+          successCodes: false
+        } as any);
+
+        if (response.status >= 200 && response.status < 300) {
+          const data = response.response;
+          if (data && data.data && data.data.length > 0) {
+            dims = data.data[0].embedding?.length || 0;
+          }
+        }
+      }
 
       // Check HTTP status
       if (response.status < 200 || response.status >= 300) {
@@ -744,10 +834,8 @@ function bindEmbeddingSettings(doc: Document) {
         return;
       }
 
-      const data = response.response;
-      if (data && data.data && data.data.length > 0) {
-        const dims = data.data[0].embedding?.length || 0;
-
+      // Success
+      if (dims > 0) {
         // Check if stored vectors have different dimensions
         let storedDims: number | null = null;
         let hasStoredVectors = false;
@@ -762,42 +850,49 @@ function bindEmbeddingSettings(doc: Document) {
           // Ignore errors checking stored dimensions
         }
 
+        // Build success message
+        let successMsg = `${getString("pref-embedding-test-success" as any)} (${dims} dims)`;
+        if (isOllamaNative) {
+          successMsg += " — Ollama Native";
+          if (ollamaModelInfo?.parameter_size) {
+            successMsg += ` | ${ollamaModelInfo.parameter_size}`;
+          }
+        }
+
         // Decide whether to update dimensions based on stored vectors
         if (hasStoredVectors && storedDims && storedDims !== dims) {
           // Dimension mismatch with existing index - warn but don't auto-update
-          testResult.textContent = `${getString("pref-embedding-test-success" as any)} (${dims} dims) - ⚠️ ${getString("pref-embedding-dimension-mismatch" as any) || `Index has ${storedDims} dims, API returns ${dims} dims. Rebuild index to use new dimensions.`}`;
+          testResult.textContent = `${successMsg} - ⚠️ ${getString("pref-embedding-dimension-mismatch" as any) || `Index has ${storedDims} dims, API returns ${dims} dims. Rebuild index to use new dimensions.`}`;
           testResult.style.color = "var(--color-warn)";
 
           // Save detected dimensions but don't update config dimensions
           Zotero.Prefs.set("extensions.zotero.zotero-mcp-plugin.embedding.detectedDimensions", dims, true);
         } else {
           // No mismatch or no existing vectors - safe to update
-          testResult.textContent = getString("pref-embedding-test-success" as any) + ` (${dims} dims)`;
+          testResult.textContent = successMsg;
           testResult.style.color = "var(--color-ok)";
 
           // Update dimensions
-          if (dims > 0) {
-            // Save detected dimensions
-            Zotero.Prefs.set("extensions.zotero.zotero-mcp-plugin.embedding.detectedDimensions", dims, true);
+          // Save detected dimensions
+          Zotero.Prefs.set("extensions.zotero.zotero-mcp-plugin.embedding.detectedDimensions", dims, true);
 
-            // Only update config dimensions for models that support custom dimensions
-            if (supportsCustomDimensions(model) && dimensionsInput) {
-              dimensionsInput.value = String(dims);
-              Zotero.Prefs.set("extensions.zotero.zotero-mcp-plugin.embedding.dimensions", dims, true);
-            }
+          // Only update config dimensions for models that support custom dimensions
+          if (supportsCustomDimensions(model) && dimensionsInput) {
+            dimensionsInput.value = String(dims);
+            Zotero.Prefs.set("extensions.zotero.zotero-mcp-plugin.embedding.dimensions", dims, true);
+          }
 
-            // Update embedding service
-            try {
-              const { getEmbeddingService } = require("./semantic/embeddingService");
-              const embeddingService = getEmbeddingService();
-              embeddingService.updateConfig({ dimensions: dims });
-            } catch (e) {
-              // Ignore
-            }
+          // Update embedding service
+          try {
+            const { getEmbeddingService } = require("./semantic/embeddingService");
+            const embeddingService = getEmbeddingService();
+            embeddingService.updateConfig({ dimensions: dims });
+          } catch (e) {
+            // Ignore
           }
         }
       } else {
-        testResult.textContent = getString("pref-embedding-test-failed" as any) + ": Invalid response";
+        testResult.textContent = getString("pref-embedding-test-failed" as any) + ": Invalid response (no embedding data)";
         testResult.style.color = "var(--color-error)";
       }
     } catch (error: any) {
