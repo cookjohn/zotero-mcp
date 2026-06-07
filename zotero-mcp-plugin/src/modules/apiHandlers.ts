@@ -4,6 +4,7 @@
 
 
 import { formatItem, formatItems } from "./itemFormatter";
+import { injectCitations } from "./citationInjector";
 import {
   formatCollection,
   formatCollectionBrief,
@@ -1363,3 +1364,72 @@ export async function handleRemoveItemsFromCollection(
     };
   }
 }
+
+// ─── INJECT CITATIONS ─────────────────────────────────────────────────────────
+export async function handleInjectCitations(
+  query: URLSearchParams,
+): Promise<HttpResponse> {
+  const docxPath = query.get("docxPath");
+  const style = query.get("style") || "apa";
+  const libraryIDStr = query.get("libraryID");
+
+  if (!docxPath) {
+    return {
+      status: 400,
+      statusText: "Bad Request",
+      body: JSON.stringify({ error: "docxPath is required" }),
+    };
+  }
+
+  if (!docxPath.toLowerCase().endsWith(".docx")) {
+    return {
+      status: 400,
+      statusText: "Bad Request",
+      body: JSON.stringify({ error: "File must be a .docx file" }),
+    };
+  }
+
+  const libraryID = libraryIDStr
+    ? parseInt(libraryIDStr, 10) || undefined
+    : undefined;
+
+  try {
+    const result = await injectCitations(docxPath, style, libraryID);
+    return {
+      status: 200,
+      statusText: "OK",
+      body: JSON.stringify(result),
+    };
+  } catch (e: any) {
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      body: JSON.stringify({ error: e.message }),
+    };
+  }
+}
+
+// ─── LIST LIBRARIES (group library support) ───────────────────────────────────
+export async function handleListLibraries(): Promise<HttpResponse> {
+  try {
+    const libraries = Zotero.Libraries.getAll();
+    const results = libraries.map((lib: any) => ({
+      libraryID: lib.libraryID,
+      name: lib.name,
+      type: lib.libraryType,
+      groupID: lib.groupID ?? null,
+    }));
+    return {
+      status: 200,
+      statusText: "OK",
+      body: JSON.stringify({ libraries: results, total: results.length }),
+    };
+  } catch (e: any) {
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      body: JSON.stringify({ error: `Failed to list libraries: ${e.message}` }),
+    };
+  }
+}
+
