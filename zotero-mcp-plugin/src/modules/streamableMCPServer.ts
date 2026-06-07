@@ -5,7 +5,7 @@ import {
   handleSearchCollections,
   handleGetCollectionDetails,
   handleGetCollectionItems,
-  handleGetSubcollections,
+  handleGetSubcollections, handleListLibraries, handleInjectCitations,
   handleSearchFulltext,
   handleGetItemAbstract,
   handleCreateCollection,
@@ -337,6 +337,11 @@ export class StreamableMCPServer {
             },
             limit: { type: 'number', description: 'Maximum results to return (overrides mode default)' },
             offset: { type: 'number', description: 'Pagination offset' },
+        libraryID: {
+          type: 'string',
+          description: 'Optional numeric library ID. Omit to use personal library. ' +
+            'Use list_libraries to discover group library IDs.',
+        },
           },
         },
       },
@@ -535,6 +540,11 @@ export class StreamableMCPServer {
               type: 'string',
               description: 'Key of a parent collection. When provided, returns direct children of that collection instead of top-level collections.'
             },
+        libraryID: {
+          type: 'string',
+          description: 'Optional numeric library ID. Omit to use personal library. ' +
+            'Use list_libraries to discover group library IDs.',
+        },
           },
         },
       },
@@ -546,6 +556,11 @@ export class StreamableMCPServer {
           properties: {
             q: { type: 'string', description: 'Collection name search query' },
             limit: { type: 'number', description: 'Maximum results to return' },
+        libraryID: {
+          type: 'string',
+          description: 'Optional numeric library ID. Omit to use personal library. ' +
+            'Use list_libraries to discover group library IDs.',
+        },
           },
         },
       },
@@ -556,6 +571,11 @@ export class StreamableMCPServer {
           type: 'object',
           properties: {
             collectionKey: { type: 'string', description: 'Collection key' },
+        libraryID: {
+          type: 'string',
+          description: 'Optional numeric library ID. Omit to use personal library. ' +
+            'Use list_libraries to discover group library IDs.',
+        },
           },
           required: ['collectionKey'],
         },
@@ -569,6 +589,11 @@ export class StreamableMCPServer {
             collectionKey: { type: 'string', description: 'Collection key' },
             limit: { type: 'number', description: 'Maximum results to return' },
             offset: { type: 'number', description: 'Pagination offset' },
+        libraryID: {
+          type: 'string',
+          description: 'Optional numeric library ID. Omit to use personal library. ' +
+            'Use list_libraries to discover group library IDs.',
+        },
           },
           required: ['collectionKey'],
         },
@@ -586,6 +611,11 @@ export class StreamableMCPServer {
               type: 'boolean', 
               description: 'When true, recursively return all descendant subcollections as a nested tree (default: false).' 
             },
+        libraryID: {
+          type: 'string',
+          description: 'Optional numeric library ID. Omit to use personal library. ' +
+            'Use list_libraries to discover group library IDs.',
+        },
           },
           required: ['collectionKey'],
         },
@@ -943,6 +973,37 @@ export class StreamableMCPServer {
           },
           required: ['action']
         }
+      },
+      {
+        name: 'list_libraries',
+        description: 'List all Zotero libraries available to the current user, including the personal library and any group libraries. Returns the numeric libraryID needed to access group libraries with other tools such as search_library, get_collections, get_collection_items, etc.',
+        inputSchema: {
+          type: 'object',
+          properties: {}
+        }
+      },
+      {
+        name: 'inject_citations',
+        description: 'Inject Zotero citations into a Word .docx file. Finds <zcite key="ITEMKEY"/> placeholders in the document, looks up each item in the Zotero library, and replaces each placeholder with a native Zotero Word field code (the same format the Zotero Word Plugin uses). Appends a bibliography field at the end. Saves the result as a new _cited.docx file.\n\nPlaceholder formats:\n  <zcite key="ITEMKEY"/>                    — single item\n  <zcite keys="KEY1,KEY2"/>                 — multiple items in one citation\n  <zcite key="ITEMKEY" locator="5"/>        — with page number\n  <zcite key="ITEMKEY" prefix="see"/>       — with prefix\n  <zcite key="ITEMKEY" suffix="table 1"/>   — with suffix\n  <zcite key="ITEMKEY" num="1"/>            — required for IEEE/Vancouver numbered styles\n\nWorkflow: (1) Write your document with <zcite> placeholders, (2) use search_library to find item keys, (3) call this tool to inject citations, (4) open the _cited.docx in Word with Zotero running to refresh/reformat.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            docxPath: {
+              type: 'string',
+              description: 'Absolute path to the .docx file to process. The output will be saved alongside it with a _cited suffix.',
+            },
+            style: {
+              type: 'string',
+              enum: ['apa', 'chicago', 'harvard', 'ieee', 'vancouver'],
+              description: 'Citation style for the inline formatted text (default: apa). APA, Harvard, Chicago use author-date format. IEEE and Vancouver use numbered [1] format — add a num="N" attribute to each <zcite> tag when using these.',
+            },
+            libraryID: {
+              type: 'string',
+              description: 'Optional numeric library ID. Omit to use personal library. Use list_libraries to find group library IDs.',
+            },
+          },
+          required: ['docxPath'],
+        }
       }
     ];
 
@@ -1017,7 +1078,7 @@ export class StreamableMCPServer {
           if (!args?.collectionKey) {
             throw new Error('collectionKey is required');
           }
-          result = await this.callGetCollectionDetails(args.collectionKey);
+          result = await this.callGetCollectionDetails(args);
           break;
 
         case 'get_collection_items':
@@ -1190,6 +1251,17 @@ export class StreamableMCPServer {
             throw new Error('action is required');
           }
           result = await this.callWriteItem(args);
+          break;
+        }
+
+        case 'list_libraries': {
+          result = await this.callListLibraries();
+          break;
+        }
+
+        case 'inject_citations': {
+          if (!args?.docxPath) throw new Error('docxPath is required');
+          result = await this.callInjectCitations(args);
           break;
         }
 
@@ -1385,8 +1457,15 @@ export class StreamableMCPServer {
     return result;
   }
 
-  private async callGetCollectionDetails(collectionKey: string): Promise<any> {
-    const response = await handleGetCollectionDetails({ 1: collectionKey }, new URLSearchParams());
+  private async callGetCollectionDetails(args: any): Promise<any> {
+    const { collectionKey, ...otherArgs } = args;
+    const queryParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(otherArgs)) {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, String(value));
+      }
+    }
+    const response = await handleGetCollectionDetails({ 1: collectionKey }, queryParams);
     const result = response.body ? JSON.parse(response.body) : response;
     return result;
   }
@@ -1484,6 +1563,23 @@ export class StreamableMCPServer {
       };
     }
     
+    return result;
+  }
+
+  private async callInjectCitations(args: any): Promise<any> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(args || {})) {
+      if (value !== undefined && value !== null) {
+        params.append(key, String(value));
+      }
+    }
+    const response = await handleInjectCitations(params);
+    return response.body ? JSON.parse(response.body) : response;
+  }
+
+  private async callListLibraries(): Promise<any> {
+    const response = await handleListLibraries();
+    const result = response.body ? JSON.parse(response.body) : response;
     return result;
   }
 
