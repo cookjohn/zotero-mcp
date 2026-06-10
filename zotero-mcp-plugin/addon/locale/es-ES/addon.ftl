@@ -310,6 +310,7 @@ menu-semantic-clear-selected-done = Índice limpiado para
 menu-semantic-items = elementos
 menu-semantic-index-started = Indexación semántica iniciada
 menu-semantic-index-completed = Indexación completada
+menu-semantic-index-busy = Ya hay una indexación en curso, espere a que termine
 menu-semantic-index-error = La indexación semántica falló
 menu-semantic-index-no-collection = Por favor, selecciona una colección
 menu-semantic-index-no-items = No hay elementos indexables

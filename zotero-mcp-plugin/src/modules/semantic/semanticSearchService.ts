@@ -48,7 +48,7 @@ export interface IndexProgress {
   total: number;
   processed: number;
   currentItem?: string;
-  status: 'idle' | 'indexing' | 'paused' | 'completed' | 'error' | 'aborted';
+  status: 'idle' | 'indexing' | 'paused' | 'completed' | 'error' | 'aborted' | 'busy';
   error?: string;
   errorType?: EmbeddingErrorType;  // Type of error for UI display
   errorRetryable?: boolean;        // Whether the error can be retried
@@ -368,7 +368,9 @@ export class SemanticSearchService {
 
     if (this._buildActive) {
       ztoolkit.log('[SemanticSearch] buildIndex already running, ignoring duplicate call', 'warn');
-      return this.indexProgress;
+      // Return a copy with a distinct status so callers can tell this apart
+      // from a completed build and avoid showing bogus "completed" messages
+      return { ...this.indexProgress, status: 'busy' };
     }
     this._buildActive = true;
 
@@ -515,9 +517,13 @@ export class SemanticSearchService {
                 }
 
                 // Global errors affect every item identically: pause so the
-                // user can fix config/network before continuing
+                // user can fix config/network before continuing. 'server'
+                // (5xx) is global too — a provider outage mid-build must not
+                // burn through the queue persisting failure markers for
+                // every remaining item
                 const isGlobalError = error.type === 'auth' || error.type === 'config' ||
-                                      error.type === 'network' || error.type === 'rate_limit';
+                                      error.type === 'network' || error.type === 'rate_limit' ||
+                                      error.type === 'server';
                 if (isGlobalError) {
                   hasAPIError = true;
                   apiError = error;
@@ -770,9 +776,14 @@ export class SemanticSearchService {
     }).filter(r => r !== null) as any[];
 
     await this.vectorStore.insertVectorsBatch(records);
-    await this.vectorStore.updateIndexStatus(item.key, chunks.length, contentHash, itemModified, attachmentModified);
+    // Record the count of chunks actually embedded (embedBatch may have
+    // skipped oversized chunks), not the total chunk count
+    await this.vectorStore.updateIndexStatus(item.key, records.length, contentHash, itemModified, attachmentModified);
 
     const elapsed = Date.now() - startTime;
+    if (records.length < chunks.length) {
+      ztoolkit.log(`[SemanticSearch] indexItem() ${item.key}: ${chunks.length - records.length}/${chunks.length} chunks skipped (oversized)`, 'warn');
+    }
     ztoolkit.log(`[SemanticSearch] indexItem() completed: ${item.key} (${records.length} vectors) in ${elapsed}ms`);
   }
 
@@ -886,6 +897,14 @@ export class SemanticSearchService {
   }
 
   /**
+   * Whether a buildIndex run is currently in flight (including parked in a
+   * paused state waiting for resume)
+   */
+  isBuildActive(): boolean {
+    return this._buildActive;
+  }
+
+  /**
    * Set callback for indexing errors
    * Called when an error occurs during indexing (auto-pauses)
    */
@@ -941,11 +960,19 @@ export class SemanticSearchService {
   async retryFailedItems(onProgress?: (progress: IndexProgress) => void): Promise<IndexProgress> {
     await this.initialize();
 
+    // Check BEFORE clearing failure markers: if another build is running,
+    // buildIndex would reject the nested call after the bookkeeping was
+    // already wiped, losing the failure records without retrying anything
+    if (this._buildActive) {
+      ztoolkit.log('[SemanticSearch] retryFailedItems: a build is already running', 'warn');
+      return { ...this.indexProgress, status: 'busy' };
+    }
+
     const persisted = await this.vectorStore.getFailedItemKeys();
     const failedItemKeys = Array.from(new Set([...persisted, ...this._failedItems.keys()]));
     if (failedItemKeys.length === 0) {
       ztoolkit.log('[SemanticSearch] No failed items to retry');
-      return this.indexProgress;
+      return { ...this.indexProgress, total: 0, processed: 0, failedCount: 0, status: 'completed' };
     }
 
     ztoolkit.log(`[SemanticSearch] Retrying ${failedItemKeys.length} failed items`);

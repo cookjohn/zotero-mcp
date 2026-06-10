@@ -207,6 +207,7 @@ pref-semantic-index-error-unknown = Erreur inconnue
 pref-semantic-index-failed-items = elements en echec
 pref-semantic-index-no-items = Aucun element a indexer
 pref-semantic-index-no-failed-items = Aucun element echoue a reessayer
+pref-semantic-index-busy = Une indexation est deja en cours, veuillez attendre la fin
 pref-semantic-index-confirm-rebuild = Cela reconstruira l'index entier. Etes-vous sur ?
 pref-semantic-index-confirm-clear = Cela effacera toutes les donnees de l'index (le cache de contenu sera conserve). Etes-vous sur ?
 pref-semantic-index-cleared = Index efface

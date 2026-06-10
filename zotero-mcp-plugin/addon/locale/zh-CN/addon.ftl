@@ -310,6 +310,7 @@ menu-semantic-clear-selected-done = 已清除索引的条目数
 menu-semantic-items = 条
 menu-semantic-index-started = 语义索引已开始
 menu-semantic-index-completed = 索引完成
+menu-semantic-index-busy = 已有索引任务正在运行，请等待其完成
 menu-semantic-index-error = 语义索引失败
 menu-semantic-index-no-collection = 请选择一个分类
 menu-semantic-index-no-items = 没有可索引的条目

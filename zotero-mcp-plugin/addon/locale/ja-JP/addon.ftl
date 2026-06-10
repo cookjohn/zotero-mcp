@@ -310,6 +310,7 @@ menu-semantic-clear-selected-done = インデックスをクリアしました:
 menu-semantic-items = 件のアイテム
 menu-semantic-index-started = セマンティックインデックスを開始しました
 menu-semantic-index-completed = インデックス作成が完了しました
+menu-semantic-index-busy = インデックス作成がすでに実行中です。完了をお待ちください
 menu-semantic-index-error = セマンティックインデックスに失敗しました
 menu-semantic-index-no-collection = コレクションを選択してください
 menu-semantic-index-no-items = インデックス可能なアイテムがありません

@@ -207,6 +207,7 @@ pref-semantic-index-error-unknown = 未知错误
 pref-semantic-index-failed-items = 条失败
 pref-semantic-index-no-items = 没有需要索引的条目
 pref-semantic-index-no-failed-items = 没有需要重试的失败条目
+pref-semantic-index-busy = 已有索引任务正在运行，请等待其完成
 pref-semantic-index-confirm-rebuild = 这将重建整个索引，确定吗？
 pref-semantic-index-confirm-clear = 这将清空所有索引数据（保留内容缓存），确定吗？
 pref-semantic-index-cleared = 索引已清空

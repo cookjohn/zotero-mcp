@@ -310,6 +310,7 @@ menu-semantic-clear-selected-done = Index cleared for
 menu-semantic-items = items
 menu-semantic-index-started = Semantic indexing started
 menu-semantic-index-completed = Indexing completed
+menu-semantic-index-busy = An index build is already running, please wait for it to finish
 menu-semantic-index-error = Semantic indexing failed
 menu-semantic-index-no-collection = Please select a collection
 menu-semantic-index-no-items = No indexable items

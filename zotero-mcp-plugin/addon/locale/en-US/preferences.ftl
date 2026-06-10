@@ -207,6 +207,7 @@ pref-semantic-index-error-unknown = Unknown error
 pref-semantic-index-failed-items = items failed
 pref-semantic-index-no-items = No items need indexing
 pref-semantic-index-no-failed-items = No failed items to retry
+pref-semantic-index-busy = An index build is already running, please wait for it to finish
 pref-semantic-index-confirm-rebuild = This will rebuild the entire index. Are you sure?
 pref-semantic-index-confirm-clear = This will clear all index data (content cache will be preserved). Are you sure?
 pref-semantic-index-cleared = Index cleared

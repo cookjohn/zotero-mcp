@@ -308,10 +308,16 @@ async function triggerAutoIndexBuild() {
       return;
     }
 
-    // Check current index status
+    // Skip only when a build is actually in flight (running or parked in a
+    // user-visible pause). A stale 'paused' status restored after a crash
+    // must NOT block auto-indexing for the rest of the session.
+    if (semanticService.isBuildActive()) {
+      ztoolkit.log("[MCP Plugin] An index build is already in flight, skipping");
+      return;
+    }
     const stats = await semanticService.getStats();
-    if (stats.indexProgress.status === 'indexing' || stats.indexProgress.status === 'paused') {
-      ztoolkit.log("[MCP Plugin] Indexing in progress or paused (waiting for user), skipping");
+    if (stats.indexProgress.status === 'indexing') {
+      ztoolkit.log("[MCP Plugin] Indexing already in progress, skipping");
       return;
     }
 
@@ -958,6 +964,11 @@ async function handleIndexCollection(win: _ZoteroTypes.MainWindow, rebuild: bool
         ztoolkit.log(`[MCP Plugin] Index progress: ${progress.processed}/${progress.total}`);
       }
     }).then((result) => {
+      if (result.status === 'busy') {
+        ztoolkit.log(`[MCP Plugin] Collection indexing skipped: another build is running`);
+        showNotification(win, getString("menu-semantic-index-busy" as any) || "An index build is already running, please wait for it to finish");
+        return;
+      }
       ztoolkit.log(`[MCP Plugin] Collection indexing completed: ${result.processed}/${result.total} items`);
       // Refresh semantic column to show updated status
       refreshSemanticColumn();
@@ -1167,6 +1178,11 @@ async function handleIndexSelected(win: _ZoteroTypes.MainWindow) {
         ztoolkit.log(`[MCP Plugin] Index progress: ${progress.processed}/${progress.total}`);
       }
     }).then((result) => {
+      if (result.status === 'busy') {
+        ztoolkit.log(`[MCP Plugin] Indexing skipped: another build is running`);
+        showNotification(win, getString("menu-semantic-index-busy" as any) || "An index build is already running, please wait for it to finish");
+        return;
+      }
       ztoolkit.log(`[MCP Plugin] Indexing completed: ${result.processed}/${result.total} items`);
       // Refresh semantic column to show updated status
       refreshSemanticColumn();
@@ -1210,6 +1226,11 @@ async function handleIndexAll(win: _ZoteroTypes.MainWindow) {
         ztoolkit.log(`[MCP Plugin] Index progress: ${progress.processed}/${progress.total}`);
       }
     }).then((result) => {
+      if (result.status === 'busy') {
+        ztoolkit.log(`[MCP Plugin] Indexing skipped: another build is running`);
+        showNotification(win, getString("menu-semantic-index-busy" as any) || "An index build is already running, please wait for it to finish");
+        return;
+      }
       ztoolkit.log(`[MCP Plugin] Indexing completed: ${result.processed}/${result.total} items`);
       // Refresh semantic column to show updated status
       refreshSemanticColumn();

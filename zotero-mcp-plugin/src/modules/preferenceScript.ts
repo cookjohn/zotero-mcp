@@ -475,6 +475,7 @@ function bindEmbeddingSettings(doc: Document) {
   const modelInput = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-embedding-model`) as HTMLInputElement;
   const dimensionsInput = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-embedding-dimensions`) as HTMLInputElement;
   const dimensionsRow = dimensionsInput?.closest('.zmp-fg') || dimensionsInput?.parentElement;
+  const timeoutInput = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-embedding-timeout`) as HTMLInputElement;
   const testButton = doc?.querySelector("#test-embedding-button") as HTMLButtonElement;
   const testResult = doc?.querySelector("#embedding-test-result") as HTMLSpanElement;
 
@@ -609,6 +610,7 @@ function bindEmbeddingSettings(doc: Document) {
   bindSave(apiBaseInput, "extensions.zotero.zotero-mcp-plugin.embedding.apiBase");
   bindSave(apiKeyInput, "extensions.zotero.zotero-mcp-plugin.embedding.apiKey");
   bindSave(dimensionsInput, "extensions.zotero.zotero-mcp-plugin.embedding.dimensions", true);
+  bindSave(timeoutInput, "extensions.zotero.zotero-mcp-plugin.embedding.timeoutSeconds", true);
 
   // Model change handler - update dimensions visibility and clear detected dimensions
   modelInput?.addEventListener("change", async () => {
@@ -679,7 +681,7 @@ function bindEmbeddingSettings(doc: Document) {
           model: model,
           input: ["test"]
         }),
-        timeout: 30000,
+        timeout: (getEmbeddingTimeoutSeconds() || 30) * 1000,
         responseType: 'json',
         successCodes: false // Don't throw on non-2xx, let us handle it
       } as any);
@@ -850,6 +852,21 @@ function bindEmbeddingSettings(doc: Document) {
 /**
  * Update embedding service configuration from preferences
  */
+/**
+ * Read the user-configured embedding API timeout in seconds (clamped to
+ * 5-600), or 0 when unset so callers can keep their own default.
+ */
+function getEmbeddingTimeoutSeconds(): number {
+  try {
+    const raw = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.embedding.timeoutSeconds", true);
+    const seconds = parseInt(String(raw ?? ""), 10);
+    if (isNaN(seconds) || seconds <= 0) return 0;
+    return Math.min(600, Math.max(5, seconds));
+  } catch {
+    return 0;
+  }
+}
+
 function updateEmbeddingServiceConfig() {
   try {
     // Import and update embedding service
@@ -860,12 +877,14 @@ function updateEmbeddingServiceConfig() {
     const apiKey = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.embedding.apiKey", true) || "";
     const model = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.embedding.model", true) || "";
     const dimensions = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.embedding.dimensions", true);
+    const timeoutSeconds = getEmbeddingTimeoutSeconds();
 
     embeddingService.updateConfig({
       apiBase: apiBase as string,
       apiKey: apiKey as string,
       model: model as string,
-      dimensions: dimensions ? parseInt(String(dimensions), 10) : undefined
+      dimensions: dimensions ? parseInt(String(dimensions), 10) : undefined,
+      ...(timeoutSeconds ? { timeout: timeoutSeconds * 1000 } : {})
     });
 
     ztoolkit.log(`[PreferenceScript] Updated embedding service config`);
@@ -1142,7 +1161,9 @@ function bindSemanticStatsSettings(doc: Document) {
       stopProgressUpdates();
       updateControlButtons('idle');
 
-      if (result.total === 0) {
+      if (result.status === 'busy') {
+        showMessage(getString("pref-semantic-index-busy" as any) || "An index build is already running, please wait for it to finish", "warning");
+      } else if (result.total === 0) {
         showMessage(getString("pref-semantic-index-no-failed-items" as any) || "No failed items to retry", "info");
       } else if ((result.failedCount || 0) > 0) {
         showMessage(
@@ -1235,7 +1256,7 @@ function bindSemanticStatsSettings(doc: Document) {
         startProgressUpdates();
 
         // Start a new build (not rebuild) to continue from where we left off
-        await semanticService.buildIndex({
+        const resumeResult = await semanticService.buildIndex({
           rebuild: false,  // Don't rebuild, just continue with unindexed items
           onProgress: (p: any) => {
             updateProgress(p);
@@ -1261,6 +1282,15 @@ function bindSemanticStatsSettings(doc: Document) {
             // Note: error state is handled by the error callback, not here
           }
         });
+        if (resumeResult.status === 'busy') {
+          // The original build promise (from before the pane was reopened) is
+          // still alive and was unparked by resumeIndex() above; our duplicate
+          // buildIndex call was rejected by the guard, so its onProgress will
+          // never fire. Let the polling interval drive the UI instead of
+          // leaving isIndexing stuck true forever.
+          ztoolkit.log('[PreferenceScript] Resume unparked an existing build; relying on progress polling');
+          isIndexing = false;
+        }
       } else {
         // Normal resume during active session
         semanticService.resumeIndex();
@@ -1347,7 +1377,9 @@ function bindSemanticStatsSettings(doc: Document) {
       stopProgressUpdates();
       updateControlButtons('idle');
 
-      if (result.status === 'completed') {
+      if (result.status === 'busy') {
+        showMessage(getString("pref-semantic-index-busy" as any) || "An index build is already running, please wait for it to finish", "warning");
+      } else if (result.status === 'completed') {
         if (result.total === 0) {
           showMessage(getString("pref-semantic-index-no-items" as any) || "No items need indexing", "info");
         } else {
@@ -1612,6 +1644,13 @@ function bindSemanticStatsSettings(doc: Document) {
         if (progressContainer) progressContainer.style.display = "none";
         updateControlButtons('idle');
         if (statusEl) statusEl.style.color = "";
+        // The build is over (idle/completed/aborted): release the local flag
+        // and stop polling so the buttons cannot get stuck disabled when the
+        // build finished without this pane's onProgress firing
+        if (isIndexing && !semanticService.isBuildActive()) {
+          isIndexing = false;
+          stopProgressUpdates();
+        }
       }
 
       // Hide loading, show content

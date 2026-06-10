@@ -196,6 +196,7 @@ pref-semantic-index-error-unknown = 不明なエラー
 pref-semantic-index-failed-items = 件のアイテムが失敗しました
 pref-semantic-index-no-items = インデックス対象のアイテムがありません
 pref-semantic-index-no-failed-items = 再試行する失敗アイテムはありません
+pref-semantic-index-busy = インデックス作成がすでに実行中です。完了をお待ちください
 pref-semantic-index-confirm-rebuild = インデックス全体を再構築します。よろしいですか？
 pref-semantic-index-confirm-clear = すべてのインデックスデータをクリアします（コンテンツキャッシュは保持されます）。よろしいですか？
 pref-semantic-index-cleared = インデックスをクリアしました

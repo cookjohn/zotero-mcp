@@ -928,10 +928,14 @@ export class EmbeddingService {
                   dimensions: embedding.length
                 });
               } catch (truncateError) {
-                // A pause or credential failure during the retry must not be
-                // converted into a silent skip of this item
+                // Only swallow errors that mean "this text cannot be embedded"
+                // (payload/invalid input). Pauses, credential failures and
+                // transient network/server/rate-limit errors must propagate
+                // instead of silently losing the chunk
                 if (truncateError instanceof EmbeddingAPIError &&
-                    (truncateError.type === 'paused' || truncateError.type === 'auth')) {
+                    truncateError.type !== 'payload_too_large' &&
+                    truncateError.type !== 'invalid_request' &&
+                    truncateError.type !== 'unknown') {
                   throw truncateError;
                 }
                 ztoolkit.log(`[EmbeddingService] Truncated item still failed, skipping: ${truncateError}`, 'warn');
@@ -990,10 +994,14 @@ export class EmbeddingService {
   }
 
   /**
-   * Detect error type from error object
+   * Detect error type from error object. The optional responseBody carries
+   * the provider's error payload, which the generic error message lacks.
    */
-  private detectErrorType(error: any): { type: EmbeddingErrorType; retryAfterMs?: number } {
+  private detectErrorType(error: any, responseBody?: string): { type: EmbeddingErrorType; retryAfterMs?: number } {
     const errorMsg = String(error.message || error).toLowerCase();
+    // Combined text for size/overflow checks only — the network patterns
+    // below must not match words inside a provider's HTTP error payload
+    const fullMsg = (errorMsg + ' ' + (responseBody || '')).toLowerCase();
     const statusCode = error.status || error.statusCode || error.xmlhttp?.status;
 
     // Network errors - check error message patterns
@@ -1029,7 +1037,7 @@ export class EmbeddingService {
         // Some providers (dashscope, ollama's OpenAI-compatible endpoint)
         // report context/token overflow as 400 instead of 413; classify it
         // as payload_too_large so embedBatch can split/truncate instead of failing
-        if (this.isContextOverflowMessage(errorMsg)) {
+        if (this.isContextOverflowMessage(fullMsg)) {
           return { type: 'payload_too_large' };
         }
         return { type: 'invalid_request' };
@@ -1046,9 +1054,9 @@ export class EmbeddingService {
     }
 
     // Check for payload too large patterns
-    if (errorMsg.includes('413') || errorMsg.includes('payload too large') ||
-        errorMsg.includes('request entity too large') || errorMsg.includes('content too large') ||
-        this.isContextOverflowMessage(errorMsg)) {
+    if (fullMsg.includes('413') || fullMsg.includes('payload too large') ||
+        fullMsg.includes('request entity too large') || fullMsg.includes('content too large') ||
+        this.isContextOverflowMessage(fullMsg)) {
       return { type: 'payload_too_large' };
     }
 
@@ -1218,21 +1226,28 @@ export class EmbeddingService {
         return embeddings;
 
       } catch (error: any) {
-        // Log raw error details for debugging
+        // Log raw error details for debugging.
+        // NOTE: the request uses responseType 'json', so accessing
+        // xhr.responseText throws InvalidStateError — read the parsed
+        // response object first and only fall back to responseText.
         let responseBody = '';
         try {
-          // Zotero.HTTP errors have xmlhttp property with the full XMLHttpRequest object
-          if (error.xmlhttp?.responseText) {
-            responseBody = error.xmlhttp.responseText.substring(0, 1000);
-          } else if (error.responseText) {
-            responseBody = error.responseText.substring(0, 1000);
-          } else if (error.response) {
-            responseBody = typeof error.response === 'string'
-              ? error.response.substring(0, 1000)
-              : JSON.stringify(error.response).substring(0, 1000);
+          const resp = error.xmlhttp?.response ?? error.response;
+          if (resp !== undefined && resp !== null && resp !== '') {
+            responseBody = (typeof resp === 'string' ? resp : JSON.stringify(resp)).substring(0, 1000);
           }
         } catch (e) {
-          responseBody = '[Unable to parse response body]';
+          // ignore, try responseText below
+        }
+        if (!responseBody) {
+          try {
+            const text = error.xmlhttp?.responseText || error.responseText;
+            if (text) {
+              responseBody = String(text).substring(0, 1000);
+            }
+          } catch (e) {
+            responseBody = '';
+          }
         }
 
         const statusCode = error.status || error.statusCode || error.xmlhttp?.status;
@@ -1249,8 +1264,10 @@ export class EmbeddingService {
         if (error instanceof EmbeddingAPIError) {
           lastError = error;
         } else {
-          // Detect error type and create EmbeddingAPIError
-          const { type, retryAfterMs } = this.detectErrorType(error);
+          // Detect error type and create EmbeddingAPIError. Pass the provider
+          // response body so context-overflow 400s can be classified as
+          // payload_too_large (the generic error.message never contains it)
+          const { type, retryAfterMs } = this.detectErrorType(error, responseBody);
 
           // Try to extract error details from response body
           let errorDetails = '';
