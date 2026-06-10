@@ -565,6 +565,15 @@
               />
             </html:div>
           </html:div>
+          <html:div class="zmp-fg">
+            <html:label class="zmp-fl" data-l10n-id="pref-embedding-timeout-label"></html:label>
+            <html:input type="number" class="zmp-fi zmp-fi-s"
+              id="zotero-prefpane-__addonRef__-embedding-timeout"
+              preference="extensions.zotero.zotero-mcp-plugin.embedding.timeoutSeconds"
+              min="5" max="600" placeholder="30"
+            />
+            <html:div class="zmp-fh" data-l10n-id="pref-embedding-timeout-hint"></html:div>
+          </html:div>
           <html:div class="zmp-bg" style="margin-top:6px">
             <html:button class="zmp-b" id="test-embedding-button" data-l10n-id="pref-embedding-test-button-text"></html:button>
             <html:span id="embedding-test-result" style="font-size:12px; line-height:30px"></html:span>

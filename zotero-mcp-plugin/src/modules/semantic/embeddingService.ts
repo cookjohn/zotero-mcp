@@ -171,6 +171,11 @@ const PREF_API_KEY = 'extensions.zotero.zotero-mcp-plugin.embedding.apiKey';
 const PREF_MODEL = 'extensions.zotero.zotero-mcp-plugin.embedding.model';
 const PREF_DIMENSIONS = 'extensions.zotero.zotero-mcp-plugin.embedding.dimensions';
 const PREF_DETECTED_DIMENSIONS = 'extensions.zotero.zotero-mcp-plugin.embedding.detectedDimensions';
+const PREF_TIMEOUT_SECONDS = 'extensions.zotero.zotero-mcp-plugin.embedding.timeoutSeconds';
+
+// Bounds for the user-configurable API timeout (#59)
+const MIN_TIMEOUT_SECONDS = 5;
+const MAX_TIMEOUT_SECONDS = 600;
 
 // Preference keys for rate limit and usage stats
 const PREF_RPM = 'extensions.zotero.zotero-mcp-plugin.embedding.rpm';
@@ -394,12 +399,20 @@ export class EmbeddingService {
       const model = Zotero.Prefs.get(PREF_MODEL, true);
       const dimensions = Zotero.Prefs.get(PREF_DIMENSIONS, true);
       const detectedDims = Zotero.Prefs.get(PREF_DETECTED_DIMENSIONS, true);
+      const timeoutSeconds = Zotero.Prefs.get(PREF_TIMEOUT_SECONDS, true);
 
       if (apiBase) this.config.apiBase = apiBase;
       if (apiKey) this.config.apiKey = apiKey;
       if (model) this.config.model = model;
       if (dimensions) this.config.dimensions = parseInt(dimensions, 10);
       if (detectedDims) this.detectedDimensions = parseInt(String(detectedDims), 10);
+      if (timeoutSeconds) {
+        const seconds = parseInt(String(timeoutSeconds), 10);
+        if (!isNaN(seconds)) {
+          const clamped = Math.min(MAX_TIMEOUT_SECONDS, Math.max(MIN_TIMEOUT_SECONDS, seconds));
+          this.config.timeout = clamped * 1000;
+        }
+      }
 
       ztoolkit.log(`[EmbeddingService] Loaded config from prefs: apiBase=${this.config.apiBase}, model=${this.config.model}, configDims=${this.config.dimensions}, detectedDims=${this.detectedDimensions}`);
     } catch (e) {
