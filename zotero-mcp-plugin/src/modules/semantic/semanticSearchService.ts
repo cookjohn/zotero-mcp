@@ -96,6 +96,7 @@ export class SemanticSearchService {
   private _paused = false;
   private _aborted = false;
   private _pauseResolve: (() => void) | null = null;
+  private _buildActive = false;
 
   // Error handling
   private _onErrorCallback?: (error: EmbeddingAPIError) => void;
@@ -365,6 +366,12 @@ export class SemanticSearchService {
 
     const { itemKeys, rebuild = false, onProgress } = options;
 
+    if (this._buildActive) {
+      ztoolkit.log('[SemanticSearch] buildIndex already running, ignoring duplicate call', 'warn');
+      return this.indexProgress;
+    }
+    this._buildActive = true;
+
     try {
       // Reset control flags
       this._paused = false;
@@ -507,18 +514,21 @@ export class SemanticSearchService {
                   continue;
                 }
 
-                hasAPIError = true;
-                apiError = error;
-
-                // Record failed item
-                this._failedItems.set(item.key, {
-                  error: error.getUserMessage(),
-                  errorType: error.type,
-                  timestamp: Date.now()
-                });
-                this.indexProgress.failedCount = this._failedItems.size;
-
-                ztoolkit.log(`[SemanticSearch] API error for item ${item.key}: ${error.type} - ${error.message}`, 'error');
+                // Global errors affect every item identically: pause so the
+                // user can fix config/network before continuing
+                const isGlobalError = error.type === 'auth' || error.type === 'config' ||
+                                      error.type === 'network' || error.type === 'rate_limit';
+                if (isGlobalError) {
+                  hasAPIError = true;
+                  apiError = error;
+                  ztoolkit.log(`[SemanticSearch] Global API error for item ${item.key}: ${error.type} - ${error.message}`, 'error');
+                } else {
+                  // Item-local errors (invalid_request/400, payload_too_large/413,
+                  // server/5xx after retries, unknown): skip this item, record it, continue
+                  await this.recordFailedItem(item, error);
+                  this.indexProgress.processed++;
+                  ztoolkit.log(`[SemanticSearch] Skipped item ${item.key} after ${error.type} error: ${error.message}`, 'warn');
+                }
               } else {
                 // Other errors (PDF extraction, etc.) - just log and continue
                 this.indexProgress.processed++;
@@ -607,6 +617,8 @@ export class SemanticSearchService {
       this.indexProgress.error = String(error);
       ztoolkit.log(`[SemanticSearch] Indexing failed: ${error}`, 'error');
       throw error;
+    } finally {
+      this._buildActive = false;
     }
   }
 
@@ -900,10 +912,37 @@ export class SemanticSearchService {
   }
 
   /**
-   * Retry failed items
+   * Record a failed item: in-memory for the UI, and persisted into
+   * index_status with a 'failed:<type>' content_hash sentinel (same pattern
+   * as the 'empty' marker) so subsequent buildIndex runs skip it instead of
+   * re-hitting the same failure on every resume/restart.
+   */
+  private async recordFailedItem(item: any, error: EmbeddingAPIError): Promise<void> {
+    this._failedItems.set(item.key, {
+      error: error.getUserMessage(),
+      errorType: error.type,
+      timestamp: Date.now()
+    });
+    this.indexProgress.failedCount = this._failedItems.size;
+    try {
+      await this.vectorStore.updateIndexStatus(
+        item.key, 0, `failed:${error.type}`,
+        item.dateModified || '', ''
+      );
+    } catch (e) {
+      ztoolkit.log(`[SemanticSearch] Could not persist failure marker for ${item.key}: ${e}`, 'warn');
+    }
+  }
+
+  /**
+   * Retry failed items (both in-memory failures from this session and
+   * failure markers persisted by previous runs)
    */
   async retryFailedItems(onProgress?: (progress: IndexProgress) => void): Promise<IndexProgress> {
-    const failedItemKeys = Array.from(this._failedItems.keys());
+    await this.initialize();
+
+    const persisted = await this.vectorStore.getFailedItemKeys();
+    const failedItemKeys = Array.from(new Set([...persisted, ...this._failedItems.keys()]));
     if (failedItemKeys.length === 0) {
       ztoolkit.log('[SemanticSearch] No failed items to retry');
       return this.indexProgress;
@@ -911,8 +950,10 @@ export class SemanticSearchService {
 
     ztoolkit.log(`[SemanticSearch] Retrying ${failedItemKeys.length} failed items`);
 
-    // Clear failed items before retry
+    // Clear failure markers so the buildIndex filter does not skip these items
+    await this.vectorStore.clearFailedMarkers(failedItemKeys);
     this._failedItems.clear();
+    this.indexProgress.failedCount = 0;
 
     // Build index for failed items only
     return this.buildIndex({

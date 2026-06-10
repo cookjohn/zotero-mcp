@@ -787,6 +787,33 @@ export class VectorStore {
   }
 
   /**
+   * Get item keys previously marked as failed (content_hash = 'failed:<type>')
+   */
+  async getFailedItemKeys(): Promise<string[]> {
+    await this.ensureInitialized();
+
+    // IMPORTANT: Single-line query to avoid Zotero queryAsync bug with multi-line SQL
+    const rows = await this.db.queryAsync(`SELECT item_key FROM index_status WHERE content_hash LIKE 'failed:%'`);
+
+    return rows && rows.length > 0 ? rows.map((r: any) => r.item_key) : [];
+  }
+
+  /**
+   * Remove failure markers so the items become indexable again
+   */
+  async clearFailedMarkers(keys?: string[]): Promise<void> {
+    await this.ensureInitialized();
+
+    if (keys && keys.length > 0) {
+      for (const key of keys) {
+        await this.db.queryAsync(`DELETE FROM index_status WHERE item_key = ? AND content_hash LIKE 'failed:%'`, [key]);
+      }
+    } else {
+      await this.db.queryAsync(`DELETE FROM index_status WHERE content_hash LIKE 'failed:%'`);
+    }
+  }
+
+  /**
    * Get index status for an item
    */
   async getIndexStatus(itemKey: string): Promise<IndexStatus | null> {

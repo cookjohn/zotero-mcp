@@ -310,8 +310,8 @@ async function triggerAutoIndexBuild() {
 
     // Check current index status
     const stats = await semanticService.getStats();
-    if (stats.indexProgress.status === 'indexing') {
-      ztoolkit.log("[MCP Plugin] Indexing already in progress, skipping");
+    if (stats.indexProgress.status === 'indexing' || stats.indexProgress.status === 'paused') {
+      ztoolkit.log("[MCP Plugin] Indexing in progress or paused (waiting for user), skipping");
       return;
     }
 

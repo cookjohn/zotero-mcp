@@ -1050,6 +1050,7 @@ function bindSemanticStatsSettings(doc: Document) {
   // Index control elements
   const buildButton = doc?.querySelector("#build-semantic-index-button") as HTMLButtonElement;
   const rebuildButton = doc?.querySelector("#rebuild-semantic-index-button") as HTMLButtonElement;
+  const retryFailedButton = doc?.querySelector("#retry-failed-index-button") as HTMLButtonElement;
   const clearButton = doc?.querySelector("#clear-semantic-index-button") as HTMLButtonElement;
   const pauseButton = doc?.querySelector("#pause-semantic-index-button") as HTMLButtonElement;
   const resumeButton = doc?.querySelector("#resume-semantic-index-button") as HTMLButtonElement;
@@ -1114,6 +1115,51 @@ function bindSemanticStatsSettings(doc: Document) {
     const confirmMsg = getString("pref-semantic-index-confirm-rebuild" as any) || "This will rebuild the entire index. Are you sure?";
     if (addon.data.prefs!.window.confirm(confirmMsg)) {
       startIndexing(true);
+    }
+  });
+
+  // Retry failed items button
+  retryFailedButton?.addEventListener("click", async () => {
+    if (isIndexing) return;
+    isIndexing = true;
+
+    try {
+      const { getSemanticSearchService } = require("./semantic");
+      const semanticService = getSemanticSearchService();
+
+      await semanticService.initialize();
+
+      if (progressContainer) progressContainer.style.display = "block";
+      updateControlButtons('indexing');
+      showMessage(getString("pref-semantic-index-started" as any) || "Indexing started...", "info");
+      startProgressUpdates();
+
+      const result = await semanticService.retryFailedItems((progress: any) => {
+        updateProgress(progress);
+      });
+
+      isIndexing = false;
+      stopProgressUpdates();
+      updateControlButtons('idle');
+
+      if (result.total === 0) {
+        showMessage(getString("pref-semantic-index-no-failed-items" as any) || "No failed items to retry", "info");
+      } else if ((result.failedCount || 0) > 0) {
+        showMessage(
+          `${getString("pref-semantic-index-completed" as any) || "Indexing completed"} (${result.processed}/${result.total}, ${result.failedCount} ${getString("pref-semantic-index-failed-items" as any) || "items failed"})`,
+          "warning"
+        );
+      } else {
+        showMessage(getString("pref-semantic-index-completed" as any) + ` (${result.processed}/${result.total})`, "success");
+      }
+
+      loadSemanticStats();
+    } catch (error) {
+      isIndexing = false;
+      stopProgressUpdates();
+      updateControlButtons('idle');
+      showMessage(getString("pref-semantic-index-error" as any) + `: ${error}`, "error");
+      ztoolkit.log(`[PreferenceScript] Retry failed items failed: ${error}`, "error");
     }
   });
 
@@ -1376,6 +1422,7 @@ function bindSemanticStatsSettings(doc: Document) {
   function updateControlButtons(status: 'idle' | 'indexing' | 'paused') {
     if (buildButton) buildButton.style.display = status === 'idle' ? '' : 'none';
     if (rebuildButton) rebuildButton.style.display = status === 'idle' ? '' : 'none';
+    if (retryFailedButton) retryFailedButton.style.display = status === 'idle' ? '' : 'none';
     if (clearButton) clearButton.style.display = status === 'idle' ? '' : 'none';
     if (pauseButton) pauseButton.style.display = status === 'indexing' ? '' : 'none';
     if (resumeButton) resumeButton.style.display = status === 'paused' ? '' : 'none';
@@ -1685,7 +1732,9 @@ function bindSemanticStatsSettings(doc: Document) {
           statusEl.style.color = "var(--msg-error-text)";
         }
 
-        isIndexing = false;
+        // NOTE: do NOT set isIndexing = false here; the build promise is
+        // still alive (parked in waitWhilePaused). Resume must take the
+        // resumeIndex() path instead of spawning a second buildIndex run.
       });
 
       ztoolkit.log("[PreferenceScript] Registered error callback for semantic service");
