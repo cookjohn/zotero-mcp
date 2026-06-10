@@ -352,28 +352,41 @@ export class HttpServer {
             const bytesToRead = Math.min(4096, maxRequestSize - totalBytesRead);
             const available = input.available();
 
-            if (available === 0) {
-              waitAttempts++;
-              if (waitAttempts > maxWaitAttempts) {
-                ztoolkit.log(`[HttpServer] Timeout waiting for headers after ${waitAttempts} attempts, TotalBytes: ${totalBytesRead}`, "warn");
-                break;
-              }
-              await new Promise((resolve) => setTimeout(resolve, 10));
-              continue;
-            }
-
+            // Attempt the read even when available === 0: the converter
+            // stream buffers up to 8KB drained from the socket per fill, and
+            // input.available() only reflects un-consumed raw socket bytes —
+            // gating reads on it strands buffered data and stalls the request
             let chunk = "";
             try {
               const str: { value?: string } = {};
-              const bytesRead = converterStream.readString(Math.min(bytesToRead, available), str);
+              converterStream.readString(available > 0 ? Math.min(bytesToRead, available) : bytesToRead, str);
               chunk = str.value || "";
-              if (bytesRead === 0) break;
             } catch (converterError) {
-              ztoolkit.log(`[HttpServer] Converter failed, using fallback: ${converterError}`, "error");
-              chunk = sin.read(Math.min(bytesToRead, available));
-              if (!chunk) break;
+              // NS_BASE_STREAM_WOULD_BLOCK when both the converter buffer and
+              // the socket are empty; fall back to a raw read only when the
+              // socket reports data (decode failure on a live stream)
+              try {
+                chunk = available > 0 ? sin.read(Math.min(bytesToRead, available)) : "";
+              } catch {
+                chunk = "";
+              }
             }
 
+            if (!chunk) {
+              if (available === 0) {
+                waitAttempts++;
+                if (waitAttempts > maxWaitAttempts) {
+                  ztoolkit.log(`[HttpServer] Timeout waiting for headers after ${waitAttempts} attempts, TotalBytes: ${totalBytesRead}`, "warn");
+                  break;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 10));
+                continue;
+              }
+              // Socket reported data but the read returned nothing - EOF
+              break;
+            }
+
+            waitAttempts = 0;
             requestText += chunk;
             totalBytesRead += chunk.length;
 
@@ -403,29 +416,39 @@ export class HttpServer {
             waitAttempts = 0; // Reset wait counter for body reading
             while (bodyBytesRead < contentLength) {
               const available = input.available();
+              const budget = Math.min(8192, contentLength - bodyBytesRead);
 
-              if (available === 0) {
-                waitAttempts++;
-                if (waitAttempts > maxWaitAttempts) {
-                  ztoolkit.log(`[HttpServer] Timeout waiting for body after ${waitAttempts} attempts`, "warn");
-                  break;
-                }
-                await new Promise((resolve) => setTimeout(resolve, 10));
-                continue;
-              }
-
-              const bytesToRead = Math.min(8192, contentLength - bodyBytesRead, available);
+              // Attempt the read even when available === 0: body bytes may be
+              // sitting in the converter's internal buffer, drained from the
+              // socket during the header read (see header loop note)
               let chunk = "";
               try {
                 const str: { value?: string } = {};
-                const bytesRead = converterStream.readString(bytesToRead, str);
+                converterStream.readString(available > 0 ? Math.min(budget, available) : budget, str);
                 chunk = str.value || "";
-                if (bytesRead === 0) break;
               } catch (converterError) {
-                chunk = sin.read(bytesToRead);
-                if (!chunk) break;
+                try {
+                  chunk = available > 0 ? sin.read(Math.min(budget, available)) : "";
+                } catch {
+                  chunk = "";
+                }
               }
 
+              if (!chunk) {
+                if (available === 0) {
+                  waitAttempts++;
+                  if (waitAttempts > maxWaitAttempts) {
+                    ztoolkit.log(`[HttpServer] Timeout waiting for body after ${waitAttempts} attempts`, "warn");
+                    break;
+                  }
+                  await new Promise((resolve) => setTimeout(resolve, 10));
+                  continue;
+                }
+                // Socket reported data but the read returned nothing - EOF
+                break;
+              }
+
+              waitAttempts = 0;
               requestText += chunk;
               const chunkBytes = getByteLength(chunk);
               bodyBytesRead += chunkBytes;
