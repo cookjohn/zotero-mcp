@@ -481,7 +481,7 @@ export class HttpServer {
           let sessionId: string | undefined;
           const mcpSessionHeader = requestText.match(/Mcp-Session-Id:\s*([^\r\n]+)/i);
           
-          if (path === "/mcp" || path.startsWith("/mcp/")) {
+          if (path === "/mcp" || (path.startsWith("/mcp/") && !path.includes(".well-known"))) {
             if (mcpSessionHeader && mcpSessionHeader[1]) {
               sessionId = mcpSessionHeader[1].trim();
               this.updateSessionActivity(sessionId);
@@ -595,15 +595,17 @@ export class HttpServer {
             output.write(response, response.length);
             return;
           } else {
+            const notFoundBody = JSON.stringify({ error: "Not Found" });
+            const notFoundBytes = getByteLength(notFoundBody);
             const notFoundResult = {
               status: 404,
               statusText: "Not Found",
-              headers: { "Content-Type": "text/plain; charset=utf-8" }
+              headers: { "Content-Type": "application/json; charset=utf-8" }
             };
             const notFoundHeaders = this.buildHttpHeaders(notFoundResult, false) +
-              "Content-Length: 9\r\n" +
+              `Content-Length: ${notFoundBytes}\r\n` +
               "\r\n";
-            const response = notFoundHeaders + "Not Found";
+            const response = notFoundHeaders + notFoundBody;
             output.write(response, response.length);
             return;
           }
