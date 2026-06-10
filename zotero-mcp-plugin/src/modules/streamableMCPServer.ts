@@ -1974,7 +1974,7 @@ export class StreamableMCPServer {
           note.libraryID = libraryID;
 
           if (parentKey) {
-            const parentItem = Zotero.Items.getByLibraryAndKey(
+            const parentItem = await Zotero.Items.getByLibraryAndKeyAsync(
               libraryID, parentKey
             );
             if (!parentItem) {
@@ -2025,7 +2025,7 @@ export class StreamableMCPServer {
             throw new Error('noteKey is required for update action');
           }
 
-          const existingNote = Zotero.Items.getByLibraryAndKey(
+          const existingNote = await Zotero.Items.getByLibraryAndKeyAsync(
             libraryID, noteKey
           );
           if (!existingNote) {
@@ -2069,7 +2069,7 @@ export class StreamableMCPServer {
             throw new Error('noteKey is required for append action');
           }
 
-          const existingNote = Zotero.Items.getByLibraryAndKey(
+          const existingNote = await Zotero.Items.getByLibraryAndKeyAsync(
             libraryID, noteKey
           );
           if (!existingNote) {
@@ -2130,7 +2130,7 @@ export class StreamableMCPServer {
     const { action, itemKey, tags, libraryID = Zotero.Libraries.userLibraryID } = args;
 
     try {
-      const item = Zotero.Items.getByLibraryAndKey(
+      const item = await Zotero.Items.getByLibraryAndKeyAsync(
         libraryID, itemKey
       );
       if (!item) {
@@ -2206,7 +2206,7 @@ export class StreamableMCPServer {
     const { itemKey, fields, creators, libraryID = Zotero.Libraries.userLibraryID } = args;
 
     try {
-      const item = Zotero.Items.getByLibraryAndKey(
+      const item = await Zotero.Items.getByLibraryAndKeyAsync(
         libraryID, itemKey
       );
       if (!item) {
@@ -2343,7 +2343,7 @@ export class StreamableMCPServer {
           const reparentedAttachments: string[] = [];
           if (attachmentKeys && Array.isArray(attachmentKeys)) {
             for (const attKey of attachmentKeys) {
-              const attachment = Zotero.Items.getByLibraryAndKey(
+              const attachment = await Zotero.Items.getByLibraryAndKeyAsync(
                 libraryID, attKey
               );
               if (!attachment) {
@@ -2389,7 +2389,7 @@ export class StreamableMCPServer {
           }
 
           // Verify parent exists
-          const parentItem = Zotero.Items.getByLibraryAndKey(
+          const parentItem = await Zotero.Items.getByLibraryAndKeyAsync(
             libraryID, parentKey
           );
           if (!parentItem) {
@@ -2402,7 +2402,7 @@ export class StreamableMCPServer {
           const results: Array<{ key: string; success: boolean; error?: string }> = [];
           for (const attKey of attachmentKeys) {
             try {
-              const attachment = Zotero.Items.getByLibraryAndKey(
+              const attachment = await Zotero.Items.getByLibraryAndKeyAsync(
                 libraryID, attKey
               );
               if (!attachment) {

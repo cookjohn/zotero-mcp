@@ -64,7 +64,7 @@ export class UnifiedContentExtractor {
     libraryID: number = Zotero.Libraries.userLibraryID,
   ): Promise<ContentResult> {
     try {
-      const item = Zotero.Items.getByLibraryAndKey(libraryID, itemKey);
+      const item = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, itemKey);
       if (!item) {
         throw new Error(`Item with key ${itemKey} not found`);
       }
@@ -168,7 +168,7 @@ export class UnifiedContentExtractor {
     libraryID: number = Zotero.Libraries.userLibraryID,
   ): Promise<any> {
     try {
-      const attachment = Zotero.Items.getByLibraryAndKey(libraryID, attachmentKey);
+      const attachment = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, attachmentKey);
       if (!attachment?.isAttachment()) {
         throw new Error(`Attachment with key ${attachmentKey} not found`);
       }

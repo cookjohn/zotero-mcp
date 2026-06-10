@@ -180,7 +180,7 @@ export async function handleGetItem(
 
   try {
     const libraryID = resolveLibraryID(query);
-    const item = Zotero.Items.getByLibraryAndKey(
+    const item = await Zotero.Items.getByLibraryAndKeyAsync(
       libraryID,
       itemKey,
     );
@@ -329,7 +329,7 @@ export async function handleGetCollections(
 
     let collections: Zotero.Collection[] = [];
     if (parentCollection) {
-      const parent = Zotero.Collections.getByLibraryAndKey(
+      const parent = await Zotero.Collections.getByLibraryAndKeyAsync(
         libraryID,
         parentCollection,
       );
@@ -476,7 +476,7 @@ export async function handleGetCollectionDetails(
     }
     const libraryID = resolveLibraryID(query);
 
-    const collection = Zotero.Collections.getByLibraryAndKey(
+    const collection = await Zotero.Collections.getByLibraryAndKeyAsync(
       libraryID,
       collectionKey,
     );
@@ -543,7 +543,7 @@ export async function handleGetCollectionItems(
 
     ztoolkit.log(`[ApiHandlers] Using libraryID: ${libraryID}`);
 
-    const collection = Zotero.Collections.getByLibraryAndKey(
+    const collection = await Zotero.Collections.getByLibraryAndKeyAsync(
       libraryID,
       collectionKey,
     );
@@ -634,7 +634,7 @@ export async function handleGetSubcollections(
 
     ztoolkit.log(`[ApiHandlers] Using libraryID: ${libraryID}`);
 
-    const collection = Zotero.Collections.getByLibraryAndKey(
+    const collection = await Zotero.Collections.getByLibraryAndKeyAsync(
       libraryID,
       collectionKey,
     );
@@ -988,7 +988,7 @@ export async function handleGetItemAbstract(
 
   try {
     const libraryID = resolveLibraryID(query);
-    const item = Zotero.Items.getByLibraryAndKey(
+    const item = await Zotero.Items.getByLibraryAndKeyAsync(
       libraryID,
       itemKey,
     );
@@ -1077,7 +1077,7 @@ export async function handleCreateCollection(
     collection.name = body.name.trim();
 
     if (body.parentCollection) {
-      const parent = Zotero.Collections.getByLibraryAndKey(
+      const parent = await Zotero.Collections.getByLibraryAndKeyAsync(
         libraryID,
         body.parentCollection,
       );
@@ -1134,7 +1134,7 @@ export async function handleUpdateCollection(
     }
 
     const libraryID = body.libraryID ?? Zotero.Libraries.userLibraryID;
-    const collection = Zotero.Collections.getByLibraryAndKey(
+    const collection = await Zotero.Collections.getByLibraryAndKeyAsync(
       libraryID,
       collectionKey,
     );
@@ -1175,7 +1175,7 @@ export async function handleUpdateCollection(
             body: JSON.stringify({ error: "Cannot move a collection into itself" }),
           };
         }
-        const parent = Zotero.Collections.getByLibraryAndKey(
+        const parent = await Zotero.Collections.getByLibraryAndKeyAsync(
           libraryID,
           body.parentCollection,
         );
@@ -1243,7 +1243,7 @@ export async function handleDeleteCollection(
     }
 
     const libraryID = body.libraryID ?? Zotero.Libraries.userLibraryID;
-    const collection = Zotero.Collections.getByLibraryAndKey(
+    const collection = await Zotero.Collections.getByLibraryAndKeyAsync(
       libraryID,
       collectionKey,
     );
@@ -1321,7 +1321,7 @@ export async function handleAddItemsToCollection(
     }
 
     const libraryID = body.libraryID ?? Zotero.Libraries.userLibraryID;
-    const collection = Zotero.Collections.getByLibraryAndKey(
+    const collection = await Zotero.Collections.getByLibraryAndKeyAsync(
       libraryID,
       collectionKey,
     );
@@ -1342,7 +1342,7 @@ export async function handleAddItemsToCollection(
     const alreadyInCollection: string[] = [];
 
     for (const itemKey of body.itemKeys) {
-      const item = Zotero.Items.getByLibraryAndKey(libraryID, itemKey);
+      const item = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, itemKey);
       if (!item) {
         notFound.push(itemKey);
         continue;
@@ -1355,9 +1355,9 @@ export async function handleAddItemsToCollection(
     }
 
     if (added.length > 0) {
-      const itemIDs = added.map(
-        (key: string) => (Zotero.Items.getByLibraryAndKey(libraryID, key) as Zotero.Item).id,
-      );
+      const itemIDs = (await Promise.all(added.map(
+        (key: string) => Zotero.Items.getByLibraryAndKeyAsync(libraryID, key),
+      ))).map((item) => (item as Zotero.Item).id);
       await Zotero.DB.executeTransaction(async () => {
         await collection.addItems(itemIDs);
       });
@@ -1419,7 +1419,7 @@ export async function handleRemoveItemsFromCollection(
     }
 
     const libraryID = body.libraryID ?? Zotero.Libraries.userLibraryID;
-    const collection = Zotero.Collections.getByLibraryAndKey(
+    const collection = await Zotero.Collections.getByLibraryAndKeyAsync(
       libraryID,
       collectionKey,
     );
@@ -1440,7 +1440,7 @@ export async function handleRemoveItemsFromCollection(
     const notInCollection: string[] = [];
 
     for (const itemKey of body.itemKeys) {
-      const item = Zotero.Items.getByLibraryAndKey(libraryID, itemKey);
+      const item = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, itemKey);
       if (!item) {
         notFound.push(itemKey);
         continue;
@@ -1453,9 +1453,9 @@ export async function handleRemoveItemsFromCollection(
     }
 
     if (removed.length > 0) {
-      const itemIDs = removed.map(
-        (key: string) => (Zotero.Items.getByLibraryAndKey(libraryID, key) as Zotero.Item).id,
-      );
+      const itemIDs = (await Promise.all(removed.map(
+        (key: string) => Zotero.Items.getByLibraryAndKeyAsync(libraryID, key),
+      ))).map((item) => (item as Zotero.Item).id);
       await Zotero.DB.executeTransaction(async () => {
         await collection.removeItems(itemIDs);
       });

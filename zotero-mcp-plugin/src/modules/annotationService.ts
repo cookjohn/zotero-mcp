@@ -141,7 +141,7 @@ export class AnnotationService {
 
       if (itemKey) {
         // 获取特定文献的笔记
-        const parentItem = Zotero.Items.getByLibraryAndKey(
+        const parentItem = await Zotero.Items.getByLibraryAndKeyAsync(
           libraryID,
           itemKey,
         );
@@ -202,7 +202,7 @@ export class AnnotationService {
         `[AnnotationService] Getting PDF annotations for ${itemKey}`,
       );
 
-      const item = Zotero.Items.getByLibraryAndKey(
+      const item = await Zotero.Items.getByLibraryAndKeyAsync(
         libraryID,
         itemKey,
       );

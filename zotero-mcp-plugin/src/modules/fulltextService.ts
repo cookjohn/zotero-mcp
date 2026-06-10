@@ -17,7 +17,7 @@ export class FulltextService {
     libraryID: number = Zotero.Libraries.userLibraryID,
   ): Promise<any> {
     try {
-      const item = Zotero.Items.getByLibraryAndKey(libraryID, itemKey);
+      const item = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, itemKey);
       if (!item) {
         throw new Error(`Item with key ${itemKey} not found`);
       }
@@ -290,9 +290,9 @@ export class FulltextService {
       // Get items to search
       let itemsToSearch;
       if (itemKeys && Array.isArray(itemKeys)) {
-        itemsToSearch = itemKeys.map(key => 
-          Zotero.Items.getByLibraryAndKey(libraryID, key)
-        ).filter(item => item);
+        itemsToSearch = (await Promise.all(itemKeys.map(key =>
+          Zotero.Items.getByLibraryAndKeyAsync(libraryID, key)
+        ))).filter(item => item);
       } else {
         // Search all items (limit for performance)
         const allItems = await Zotero.Items.getAll(libraryID);
