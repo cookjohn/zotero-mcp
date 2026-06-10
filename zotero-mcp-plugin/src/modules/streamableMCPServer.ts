@@ -1496,6 +1496,11 @@ export class StreamableMCPServer {
       }
     }
     const response = await handleGetItemAbstract({ 1: itemKey }, abstractParams);
+    const contentType = response.headers?.['Content-Type'] || '';
+    if (contentType.startsWith('text/plain')) {
+      // format=text returns a plain-text body that must not be JSON.parsed
+      return response.body;
+    }
     const result = response.body ? JSON.parse(response.body) : response;
     return result;
   }
