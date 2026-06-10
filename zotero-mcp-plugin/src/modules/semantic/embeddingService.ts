@@ -899,13 +899,40 @@ export class EmbeddingService {
             // Retry with smaller batch (don't advance itemIndex)
             continue;
           } else {
-            // Already at batch size 1, the single item is too large
-            ztoolkit.log(`[EmbeddingService] Single item too large to process: ${batch[0]?.id}`, 'error');
-            throw new EmbeddingAPIError(
-              `单个文本过大无法处理 / Single text too large to process: ${batch[0]?.text.substring(0, 50)}...`,
-              'payload_too_large',
-              { retryable: false, statusCode: 413 }
-            );
+            // Already at batch size 1 — try truncating the text instead of failing
+            const oversizedItem = batch[0];
+            const MAX_SAFE_LENGTH = 800;
+            if (oversizedItem && oversizedItem.text.length > MAX_SAFE_LENGTH) {
+              ztoolkit.log(`[EmbeddingService] Truncating oversized item ${oversizedItem.id} from ${oversizedItem.text.length} to ${MAX_SAFE_LENGTH} chars`, 'warn');
+              const truncatedTexts = [oversizedItem.text.substring(0, MAX_SAFE_LENGTH)];
+              try {
+                const embeddings = await this.callEmbeddingAPI(truncatedTexts);
+                const embedding = embeddings[0];
+                const lang = oversizedItem.language || this.detectLanguage(truncatedTexts[0]);
+                results.set(oversizedItem.id, {
+                  embedding: new Float32Array(embedding),
+                  language: lang,
+                  dimensions: embedding.length
+                });
+              } catch (truncateError) {
+                // A pause or credential failure during the retry must not be
+                // converted into a silent skip of this item
+                if (truncateError instanceof EmbeddingAPIError &&
+                    (truncateError.type === 'paused' || truncateError.type === 'auth')) {
+                  throw truncateError;
+                }
+                ztoolkit.log(`[EmbeddingService] Truncated item still failed, skipping: ${truncateError}`, 'warn');
+              }
+              itemIndex += 1;
+              continue;
+            } else {
+              ztoolkit.log(`[EmbeddingService] Single item too large to process: ${oversizedItem?.id}`, 'error');
+              throw new EmbeddingAPIError(
+                `单个文本过大无法处理 / Single text too large to process: ${oversizedItem?.text.substring(0, 50)}...`,
+                'payload_too_large',
+                { retryable: false, statusCode: 413 }
+              );
+            }
           }
         }
         // Re-throw other errors
@@ -933,6 +960,20 @@ export class EmbeddingService {
       total += Math.ceil(cjkChars * 1.5 + otherChars * 0.25);
     }
     return total;
+  }
+
+  /**
+   * Provider-specific context/token overflow messages that mean the input
+   * is too large even when the HTTP status is not 413
+   */
+  private isContextOverflowMessage(errorMsg: string): boolean {
+    return errorMsg.includes('input too long') ||
+      errorMsg.includes('input length') ||
+      errorMsg.includes('context length') ||
+      errorMsg.includes('context_length') ||
+      errorMsg.includes('maximum context') ||
+      errorMsg.includes('too many tokens') ||
+      errorMsg.includes('token limit');
   }
 
   /**
@@ -972,6 +1013,12 @@ export class EmbeddingService {
         return { type: 'auth' };
       }
       if (statusCode === 400) {
+        // Some providers (dashscope, ollama's OpenAI-compatible endpoint)
+        // report context/token overflow as 400 instead of 413; classify it
+        // as payload_too_large so embedBatch can split/truncate instead of failing
+        if (this.isContextOverflowMessage(errorMsg)) {
+          return { type: 'payload_too_large' };
+        }
         return { type: 'invalid_request' };
       }
       if (statusCode >= 500) {
@@ -987,7 +1034,8 @@ export class EmbeddingService {
 
     // Check for payload too large patterns
     if (errorMsg.includes('413') || errorMsg.includes('payload too large') ||
-        errorMsg.includes('request entity too large') || errorMsg.includes('content too large')) {
+        errorMsg.includes('request entity too large') || errorMsg.includes('content too large') ||
+        this.isContextOverflowMessage(errorMsg)) {
       return { type: 'payload_too_large' };
     }
 
