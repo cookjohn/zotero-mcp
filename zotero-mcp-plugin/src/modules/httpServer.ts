@@ -1082,7 +1082,7 @@ private getCapabilities() {
           response: "text/plain"
         },
         "/mcp/status": {
-          method: "GET", 
+          method: "GET",
           description: "MCP server status and capabilities",
           response: "application/json"
         },
