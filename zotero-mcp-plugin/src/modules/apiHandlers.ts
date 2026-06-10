@@ -245,7 +245,7 @@ export async function handleSearch(
 
     const libraryID = resolveLibraryID(query);
     if (query.has("libraryID")) {
-      searchParams.libraryID = String(libraryID);
+      searchParams.libraryID = libraryID;
     }
 
     // Backward compatibility: if 'tag' is present but 'tags' is not, use 'tag'
