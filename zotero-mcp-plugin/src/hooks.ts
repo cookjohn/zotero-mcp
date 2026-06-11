@@ -495,6 +495,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
+  unregisterSemanticIndexMenus(win);
   ztoolkit.unregisterAll();
 }
 
@@ -576,6 +577,18 @@ function onShutdown(): void {
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
     ztoolkit.log(`[MCP Plugin] [SHUTDOWN 7/7] Error: ${err.message}`, "error");
+  }
+
+  // Remove context-menu DOM elements from every open window — leftover dead
+  // listeners break the item right-click menu after disable (#69)
+  try {
+    ztoolkit.log("[MCP Plugin] [SHUTDOWN] Removing context menu elements...");
+    for (const win of Zotero.getMainWindows()) {
+      unregisterSemanticIndexMenus(win as unknown as Window);
+    }
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    ztoolkit.log(`[MCP Plugin] [SHUTDOWN] Error removing menus: ${err.message}`, "error");
   }
 
   ztoolkit.log("[MCP Plugin] [SHUTDOWN] Unregistering server preferences...");
@@ -739,10 +752,36 @@ function openPreferencesWindow() {
   }
 }
 
+const MCP_MENU_ELEMENT_IDS = [
+  "zotero-mcp-semantic-separator",
+  "zotero-mcp-semantic-menu",
+  "zotero-mcp-collection-semantic-separator",
+  "zotero-mcp-collection-semantic-menu",
+];
+
+/**
+ * Remove all context-menu DOM elements this plugin added to a window.
+ * Must run on disable/uninstall: leftover elements keep listeners into the
+ * destroyed plugin sandbox and break Zotero's item context menu (#69).
+ */
+function unregisterSemanticIndexMenus(win: Window) {
+  try {
+    const doc = (win as any).document;
+    if (!doc) return;
+    for (const id of MCP_MENU_ELEMENT_IDS) {
+      doc.getElementById(id)?.remove();
+    }
+  } catch (e) {
+    // window may already be gone
+  }
+}
+
 /**
  * Register semantic index context menu
  */
 function registerSemanticIndexMenu(win: _ZoteroTypes.MainWindow) {
+  // Remove any leftovers first (re-enable / duplicate onMainWindowLoad calls)
+  unregisterSemanticIndexMenus(win as unknown as Window);
   try {
     const doc = win.document;
 
