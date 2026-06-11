@@ -251,4 +251,5 @@ export type FluentMessageId =
   | 'startup-finish'
   | 'tabpanel-lib-tab-label'
   | 'tabpanel-reader-tab-label'
-  | 'trae-ai-instructions';
+  | 'trae-ai-instructions'
+  | 'workbuddy-instructions';

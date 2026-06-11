@@ -200,12 +200,26 @@ url = "http://127.0.0.1:${port}/mcp"
       configTemplate: (port: number, serverName = "zotero-mcp") => ({
         mcpServers: {
           [serverName]: {
-            url: `http://127.0.0.1:${port}/mcp`,
-            transport: "http"
+            url: `http://127.0.0.1:${port}/mcp`
           }
         }
       }),
       getInstructions: () => getString("chatbox-instructions").split("\n").filter(s => s.trim())
+    },
+    {
+      name: "workbuddy",
+      displayName: "WorkBuddy",
+      description: "Desktop AI assistant",
+      configTemplate: (port: number, serverName = "zotero-mcp") => ({
+        mcpServers: {
+          [serverName]: {
+            command: "npx",
+            args: ["mcp-remote", `http://127.0.0.1:${port}/mcp`],
+            env: {}
+          }
+        }
+      }),
+      getInstructions: () => getString("workbuddy-instructions").split("\n").filter(s => s.trim())
     },
     {
       name: "trae-ai",

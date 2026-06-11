@@ -205,6 +205,22 @@ gemini-cli-instructions =
 
     ══════════════════════════════════════════════════════════
 
+workbuddy-instructions =
+    ══════════════════════════════════════════════════════════
+      WorkBuddy MCP Konfigurationsanleitung
+    ══════════════════════════════════════════════════════════
+
+    ▶ Konfigurationsschritte
+    ──────────────────────────────────────────────────────────
+       1. WorkBuddy öffnen und die MCP-Server-Einstellungen (mcp.json) aufrufen
+       2. Die generierte Konfiguration zum Abschnitt mcpServers hinzufügen
+       3. Speichern und WorkBuddy neu starten
+
+    ▶ Voraussetzungen
+    ──────────────────────────────────────────────────────────
+       • Node.js muss installiert sein (npx mcp-remote)
+       • Zotero muss laufen und der MCP-Server aktiviert sein
+
 chatbox-instructions =
     ══════════════════════════════════════════════════════════
       Chatbox MCP Configuration Guide
