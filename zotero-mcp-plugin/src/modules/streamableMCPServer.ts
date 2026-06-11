@@ -448,7 +448,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_annotations',
-        description: 'Get annotations and notes for specific items with color/tag filtering. Returns user\'s personal highlights and comments from PDFs. Preserve exact wording when quoting.',
+        description: 'Get annotations and notes for specific items with color/tag filtering. REQUIRED: provide one of itemKey, annotationId, or annotationIds (use search_library first to find the itemKey; use search_annotations to search by colors/tags across the library). Returns user\'s personal highlights and comments from PDFs. Preserve exact wording when quoting.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1199,10 +1199,11 @@ export class StreamableMCPServer {
           if (!args?.collectionKey) {
             throw new Error('collectionKey is required');
           }
-          if (!args?.itemKeys || !Array.isArray(args.itemKeys) || args.itemKeys.length === 0) {
-            throw new Error('itemKeys array is required');
+          const addKeys = this.coerceStringArray(args?.itemKeys);
+          if (!addKeys || addKeys.length === 0) {
+            throw new Error(`itemKeys array is required, e.g. ["ABCD1234"]. Received: ${JSON.stringify(args?.itemKeys)}`);
           }
-          result = await this.callAddItemsToCollection(args);
+          result = await this.callAddItemsToCollection({ ...args, itemKeys: addKeys });
           break;
         }
 
@@ -1214,10 +1215,11 @@ export class StreamableMCPServer {
           if (!args?.collectionKey) {
             throw new Error('collectionKey is required');
           }
-          if (!args?.itemKeys || !Array.isArray(args.itemKeys) || args.itemKeys.length === 0) {
-            throw new Error('itemKeys array is required');
+          const removeKeys = this.coerceStringArray(args?.itemKeys);
+          if (!removeKeys || removeKeys.length === 0) {
+            throw new Error(`itemKeys array is required, e.g. ["ABCD1234"]. Received: ${JSON.stringify(args?.itemKeys)}`);
           }
-          result = await this.callRemoveItemsFromCollection(args);
+          result = await this.callRemoveItemsFromCollection({ ...args, itemKeys: removeKeys });
           break;
         }
 
@@ -1318,12 +1320,15 @@ export class StreamableMCPServer {
           throw new Error(`Unknown tool: ${name}`);
       }
 
-      // Wrap result in MCP content format with proper text type
-      return this.createResponse(request.id ?? null, { 
+      // Wrap result in MCP content format with proper text type.
+      // Keep large results compact: the HTTP layer writes the body in a
+      // single synchronous call, so avoid inflating multi-MB payloads.
+      const compactJson = JSON.stringify(result);
+      return this.createResponse(request.id ?? null, {
         content: [
           {
             type: "text",
-            text: JSON.stringify(result, null, 2)
+            text: compactJson.length > 100000 ? compactJson : JSON.stringify(result, null, 2)
           }
         ]
       });
@@ -1592,6 +1597,31 @@ export class StreamableMCPServer {
     const { collectionKey, ...body } = args;
     const response = await handleDeleteCollection({ 1: collectionKey }, body);
     return response.body ? JSON.parse(response.body) : response;
+  }
+
+  /**
+   * Accept arrays that some MCP clients serialize as strings, e.g.
+   * '["KEY1","KEY2"]' or 'KEY1,KEY2' (#71).
+   */
+  private coerceStringArray(value: unknown): string[] | undefined {
+    if (Array.isArray(value)) {
+      return value.map(String);
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return parsed.map(String);
+        } catch {
+          // fall through to comma-split
+        }
+      }
+      if (trimmed.length > 0) {
+        return trimmed.split(',').map((s) => s.trim()).filter(Boolean);
+      }
+    }
+    return undefined;
   }
 
   private async callAddItemsToCollection(args: any): Promise<any> {

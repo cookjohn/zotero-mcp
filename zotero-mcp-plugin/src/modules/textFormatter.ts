@@ -39,6 +39,14 @@ export class TextFormatter {
     try {
       let text = html;
 
+      // Strip non-content blocks first: webpage snapshots embed megabytes of
+      // JS/CSS/JSON whose text content would otherwise survive stripTags()
+      // and dominate both parsing cost and output size.
+      text = text.replace(/<script\b[\s\S]*?<\/script\s*>/gi, ' ');
+      text = text.replace(/<style\b[\s\S]*?<\/style\s*>/gi, ' ');
+      text = text.replace(/<noscript\b[\s\S]*?<\/noscript\s*>/gi, ' ');
+      text = text.replace(/<!--[\s\S]*?-->/g, ' ');
+
       if (opts.convertToMarkdown) {
         text = this.htmlToMarkdown(text, opts);
       } else {

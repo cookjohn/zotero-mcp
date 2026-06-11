@@ -139,9 +139,10 @@ export class UnifiedContentExtractor {
         }
       }
 
-      // Extract webpage snapshots
+      // Extract webpage snapshots (skip snapshots already returned as attachments)
       if (options.webpage) {
-        const webpage = await this.extractWebpageContent(item);
+        const processedKeys = new Set<string>((result.content.attachments || []).map((a: any) => a.attachmentKey));
+        const webpage = await this.extractWebpageContent(item, processedKeys);
         if (webpage) {
           result.content.webpage = webpage;
           result.metadata.sources.push('webpage');
@@ -337,7 +338,7 @@ export class UnifiedContentExtractor {
   /**
    * Extract webpage content from snapshots
    */
-  private async extractWebpageContent(item: any): Promise<any> {
+  private async extractWebpageContent(item: any, skipKeys?: Set<string>): Promise<any> {
     try {
       const url = item.getField('url');
       if (!url) {
@@ -348,15 +349,21 @@ export class UnifiedContentExtractor {
       const attachmentIDs = item.getAttachments();
       for (const attachmentID of attachmentIDs) {
         const attachment = Zotero.Items.get(attachmentID);
+        if (skipKeys && skipKeys.has(attachment.key)) continue;
         if (attachment.attachmentContentType && attachment.attachmentContentType.includes('html')) {
           const content = await this.extractHTMLText(attachment.getFilePath());
           if (content && content.length > 0) {
+            const MAX_WEBPAGE_CHARS = 500000; // hard cap: this path had no truncation in any mode
+            let trimmed = content.trim();
+            const truncated = trimmed.length > MAX_WEBPAGE_CHARS;
+            if (truncated) trimmed = trimmed.substring(0, MAX_WEBPAGE_CHARS);
             return {
               url,
               filename: attachment.attachmentFilename,
               filePath: attachment.getFilePath(),
-              content: content.trim(),
-              length: content.length,
+              content: trimmed,
+              length: trimmed.length,
+              truncated,
               type: 'webpage_snapshot',
               extractedAt: new Date().toISOString()
             };
@@ -533,7 +540,12 @@ export class UnifiedContentExtractor {
     try {
       if (!filePath) return '';
       
-      const htmlContent = await Zotero.File.getContentsAsync(filePath);
+      const MAX_HTML_CHARS = 2000000; // cap snapshot markup fed to the parser
+      let htmlContent = await Zotero.File.getContentsAsync(filePath);
+      if (typeof htmlContent === 'string' && htmlContent.length > MAX_HTML_CHARS) {
+        ztoolkit.log(`[UnifiedContentExtractor] HTML file is ${htmlContent.length} chars, truncating to ${MAX_HTML_CHARS} before parsing`, 'warn');
+        htmlContent = htmlContent.substring(0, MAX_HTML_CHARS);
+      }
       const settings = MCPSettingsService.getEffectiveSettings();
       return TextFormatter.htmlToText(htmlContent, {
         preserveParagraphs: settings.preserveFormatting,
