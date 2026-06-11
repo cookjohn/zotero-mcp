@@ -528,8 +528,16 @@ function bindEmbeddingSettings(doc: Document) {
   apiBaseInput?.addEventListener("input", updateEndpointPreview);
   apiBaseInput?.addEventListener("change", updateEndpointPreview);
 
-  // Check if model supports custom dimensions
-  const supportsCustomDimensions = (model: string) => model.includes('text-embedding-3');
+  // Check if model supports custom dimensions. Must stay aligned with the
+  // service-side whitelist in embeddingService.ts (supportsDimensions);
+  // Ollama-served MRL models (e.g. qwen3-embedding) accept dimensions via
+  // the native /api/embed body, so allow manual entry for them too (#62)
+  const supportsCustomDimensions = (model: string) => {
+    const m = model.toLowerCase();
+    return m.includes('text-embedding-3') || m.includes('text-embedding-v3') ||
+      m.includes('text-embedding-v4') || m.includes('qwen3-embedding') ||
+      m.includes('embeddinggemma') || m.includes('nomic-embed');
+  };
 
   // Update dimensions input visibility based on model
   const updateDimensionsVisibility = () => {
@@ -679,7 +687,11 @@ function bindEmbeddingSettings(doc: Document) {
         },
         body: JSON.stringify({
           model: model,
-          input: ["test"]
+          input: ["test"],
+          // Send the same dimensions indexing will use, otherwise detected
+          // dims diverge from index dims into a permanent mismatch (#62)
+          ...((supportsCustomDimensions(model) && parseInt(dimensionsInput?.value || "", 10) > 0)
+            ? { dimensions: parseInt(dimensionsInput.value, 10) } : {})
         }),
         timeout: (getEmbeddingTimeoutSeconds() || 30) * 1000,
         responseType: 'json',

@@ -473,6 +473,8 @@ export class EmbeddingService {
     if (model.includes('text-embedding-3')) return true;
     // DashScope text-embedding-v3/v4 models
     if (model.includes('text-embedding-v3') || model.includes('text-embedding-v4')) return true;
+    // MRL models commonly served via Ollama / OpenAI-compatible endpoints (#62)
+    if (model.includes('qwen3-embedding') || model.includes('embeddinggemma') || model.includes('nomic-embed')) return true;
     return false;
   }
 
@@ -1100,10 +1102,17 @@ export class EmbeddingService {
     let requestBody: any;
 
     if (provider === 'ollama') {
-      // Ollama native API format (/api/embed) - supports batch input
+      // Ollama native API format (/api/embed) - supports batch input.
+      // Only send dimensions when the user explicitly set the pref AND the
+      // model is a known MRL model: config.dimensions falls back to a
+      // default (512) that must not silently change a model's native
+      // dimensionality (requires Ollama >= 0.12 for the dimensions field)
+      const userDims = Zotero.Prefs.get(PREF_DIMENSIONS, true);
       requestBody = {
         model: this.config.model,
-        input: texts.length === 1 ? texts[0] : texts  // Single string or array
+        input: texts.length === 1 ? texts[0] : texts,  // Single string or array
+        ...(userDims && this.supportsCustomDimensions()
+          ? { dimensions: parseInt(String(userDims), 10) } : {})
       };
     } else {
       // OpenAI-compatible format (OpenAI, ollama-openai, etc.)
