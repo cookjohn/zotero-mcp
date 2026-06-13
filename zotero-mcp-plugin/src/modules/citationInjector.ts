@@ -30,9 +30,10 @@
  */
 
 import { unzipSync, zipSync, strFromU8, strToU8 } from "fflate";
-import { PathUtils } from "resource://gre/modules/PathUtils.sys.mjs";
 
 declare let ztoolkit: ZToolkit;
+declare const PathUtils: any;
+declare const IOUtils: any;
 
 // ─── CSL type definitions ─────────────────────────────────────────────────────
 

@@ -2892,7 +2892,7 @@ export class StreamableMCPServer {
       }
     }
     const response = await handleInjectCitations(queryParams);
-    return JSON.parse(response.body);
+    return JSON.parse(response.body as string);
   }
 
   /**

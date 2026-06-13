@@ -70,6 +70,8 @@ export type FluentMessageId =
   | 'pref-api-usage-total-requests'
   | 'pref-api-usage-total-texts'
   | 'pref-api-usage-total-tokens'
+  | 'pref-citation-injection-sub'
+  | 'pref-citation-injection-text'
   | 'pref-client-codex-cli'
   | 'pref-client-config-description'
   | 'pref-client-config-title'
