@@ -223,6 +223,8 @@ first-install-later = Configure Later
 
 pref-write-enable-text = Enable Write Operations
 pref-write-enable-sub = Allow AI clients to create and modify notes (disabled by default for safety)
+pref-citation-injection-text = Enable Citation Injection (inject_citations)
+pref-citation-injection-sub = Allow inject_citations to read and write local .docx files. The MCP server is unauthenticated — only enable on trusted networks.
 
 pref-contact-title = Contact Information
 pref-contact-email = Email: fransjone@mail.com

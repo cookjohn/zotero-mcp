@@ -7,6 +7,7 @@
     <preference id="extensions.zotero.zotero-mcp-plugin.mcp.server.enabled" name="extensions.zotero.zotero-mcp-plugin.mcp.server.enabled" type="bool" />
     <preference id="extensions.zotero.zotero-mcp-plugin.mcp.server.port" name="extensions.zotero.zotero-mcp-plugin.mcp.server.port" type="int" />
     <preference id="extensions.zotero.zotero-mcp-plugin.mcp.server.allowRemote" name="extensions.zotero.zotero-mcp-plugin.mcp.server.allowRemote" type="bool" />
+    <preference id="extensions.zotero.zotero-mcp-plugin.enableCitationInjection" name="extensions.zotero.zotero-mcp-plugin.enableCitationInjection" type="bool" />
     <preference id="extensions.zotero.zotero-mcp-plugin.ai.maxTokens" name="extensions.zotero.zotero-mcp-plugin.ai.maxTokens" type="int" />
     <preference id="extensions.zotero.zotero-mcp-plugin.content.mode" name="extensions.zotero.zotero-mcp-plugin.content.mode" type="string" />
     <preference id="extensions.zotero.zotero-mcp-plugin.custom.maxContentLength" name="extensions.zotero.zotero-mcp-plugin.custom.maxContentLength" type="int" />
@@ -303,6 +304,20 @@
           <html:input type="checkbox"
             id="zotero-prefpane-__addonRef__-write-enabled"
             preference="extensions.zotero.zotero-mcp-plugin.write.enabled"
+          />
+          <html:span class="zmp-tog-track"></html:span>
+        </html:label>
+      </html:div>
+
+      <html:div class="zmp-sw" style="margin-top:14px;margin-bottom:0">
+        <html:div>
+          <html:div class="zmp-sw-text" data-l10n-id="pref-citation-injection-text"></html:div>
+          <html:div class="zmp-sw-sub" data-l10n-id="pref-citation-injection-sub"></html:div>
+        </html:div>
+        <html:label class="zmp-tog">
+          <html:input type="checkbox"
+            id="zotero-prefpane-__addonRef__-citation-injection"
+            preference="extensions.zotero.zotero-mcp-plugin.enableCitationInjection"
           />
           <html:span class="zmp-tog-track"></html:span>
         </html:label>
