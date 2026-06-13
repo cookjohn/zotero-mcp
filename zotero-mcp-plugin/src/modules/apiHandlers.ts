@@ -4,6 +4,7 @@
 
 
 import { formatItem, formatItems } from "./itemFormatter";
+import { injectCitations } from "./citationInjector";
 import {
   formatCollection,
   formatCollectionBrief,
@@ -1485,6 +1486,45 @@ export async function handleRemoveItemsFromCollection(
       statusText: "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify({ error: error.message }),
+    };
+  }
+}
+
+// ─── INJECT CITATIONS ─────────────────────────────────────────────────────────
+
+export async function handleInjectCitations(
+  query: URLSearchParams,
+): Promise<HttpResponse> {
+  const docxPath = query.get("docxPath");
+  const style = query.get("style") || "apa";
+  const libraryIDStr = query.get("libraryID");
+  const overwrite = query.get("overwrite") === "true";
+
+  if (!docxPath) {
+    return {
+      status: 400,
+      statusText: "Bad Request",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "docxPath is required" }),
+    };
+  }
+
+  const libraryID = libraryIDStr ? parseInt(libraryIDStr, 10) || undefined : undefined;
+
+  try {
+    const result = await injectCitations(docxPath, style, libraryID, overwrite);
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify(result),
+    };
+  } catch (e: any) {
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: e.message }),
     };
   }
 }

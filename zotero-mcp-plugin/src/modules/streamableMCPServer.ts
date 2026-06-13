@@ -1065,6 +1065,33 @@ export class StreamableMCPServer {
           },
           required: ['action']
         }
+      },
+      {
+        name: 'inject_citations',
+        description: 'Replace <zcite key="ITEMKEY"/> placeholders in a Word .docx file with native Zotero citation field codes (ADDIN ZOTERO_ITEM CSL_CITATION). Produces a _cited.docx that can be refreshed and reformatted by the Zotero Word Plugin. Requires the "Enable Citation Injection" preference to be on in Zotero → Tools → Add-ons → Zotero MCP Plugin → Preferences.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            docxPath: {
+              type: 'string',
+              description: 'Absolute path to the .docx file containing <zcite> placeholders. Must not end in _cited.docx.'
+            },
+            style: {
+              type: 'string',
+              enum: ['apa', 'chicago', 'harvard', 'ieee', 'vancouver'],
+              description: 'Citation style for inline text formatting. Default: apa. After opening the _cited.docx in Word you can switch styles via the Zotero toolbar.'
+            },
+            libraryID: {
+              type: 'number',
+              description: 'Zotero library ID to look up item keys. Defaults to the personal library. Use list_libraries to find group library IDs.'
+            },
+            overwrite: {
+              type: 'boolean',
+              description: 'If true, replace an existing _cited.docx output file. Default: false (throws if output already exists).'
+            }
+          },
+          required: ['docxPath']
+        }
       }
     ];
 
@@ -1080,9 +1107,16 @@ export class StreamableMCPServer {
     const writeToolNames = new Set([
       'write_note', 'write_tag', 'write_metadata', 'write_item',
     ]);
-    const finalTools = writeEnabled === true
+    const filteredTools2 = writeEnabled === true
       ? filteredTools
       : filteredTools.filter((t: any) => !writeToolNames.has(t.name));
+
+    const citationInjectionEnabled = Zotero.Prefs.get(
+      'extensions.zotero.zotero-mcp-plugin.enableCitationInjection', true
+    );
+    const finalTools = citationInjectionEnabled === true
+      ? filteredTools2
+      : filteredTools2.filter((t: any) => t.name !== 'inject_citations');
 
     return this.createResponse(request.id ?? null, { tools: finalTools });
   }
@@ -1325,6 +1359,20 @@ export class StreamableMCPServer {
             throw new Error('action is required');
           }
           result = await this.callWriteItem(args);
+          break;
+        }
+
+        case 'inject_citations': {
+          const citationInjectionEnabled = Zotero.Prefs.get(
+            'extensions.zotero.zotero-mcp-plugin.enableCitationInjection', true
+          );
+          if (citationInjectionEnabled !== true) {
+            throw new Error(
+              'Citation injection is disabled. Enable it in Zotero → Tools → Add-ons → ' +
+              'Zotero MCP Plugin → Preferences → "Enable Citation Injection".'
+            );
+          }
+          result = await this.callInjectCitations(args);
           break;
         }
 
@@ -2833,6 +2881,18 @@ export class StreamableMCPServer {
     };
 
     return modeConfigs[mode as keyof typeof modeConfigs] || modeConfigs['standard'];
+  }
+
+  private async callInjectCitations(args: any): Promise<any> {
+    const { handleInjectCitations } = await import("./apiHandlers");
+    const queryParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(args || {})) {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, String(value));
+      }
+    }
+    const response = await handleInjectCitations(queryParams);
+    return JSON.parse(response.body);
   }
 
   /**

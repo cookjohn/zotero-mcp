@@ -29,11 +29,12 @@
     "release:beta": "npm version prepatch --preid beta --force -m \"Release v%s\" && git push --follow-tags",
     "prepare-release": "node scripts/prepare-release.js",
     "release:init": "node scripts/init-release.js",
-    "test": "zotero-plugin test",
+    "test": "tsc -p tsconfig.test.json && mocha dist-test/test/**/*.test.js",
     "test:update": "node scripts/test-update.js",
     "update-deps": "npm update --save"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
     "zotero-plugin-toolkit": "^5.1.2"
   },
   "devDependencies": {
