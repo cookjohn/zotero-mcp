@@ -381,17 +381,6 @@ export async function injectCitations(
   // ── 0. Validate inputs ────────────────────────────────────────────────────
   validateDocxPath(docxPath);
 
-  // Check opt-in preference
-  const enabled = Zotero.Prefs.get(
-    "extensions.zotero.zotero-mcp-plugin.enableCitationInjection",
-  );
-  if (!enabled) {
-    throw new Error(
-      "Citation injection is disabled. Enable it in Zotero → Preferences → ZoteroMCP → " +
-      '"Allow inject_citations to read and write local .docx files" and try again.',
-    );
-  }
-
   const effectiveLibraryID = libraryID || Zotero.Libraries.userLibraryID;
   const normalizedStyle = (style || "apa").toLowerCase();
 
