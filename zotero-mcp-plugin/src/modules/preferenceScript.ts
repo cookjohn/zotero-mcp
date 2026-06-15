@@ -736,7 +736,8 @@ function bindEmbeddingSettings(doc: Document) {
 
         response = await Zotero.HTTP.request('POST', embedUrl, {
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
           },
           body: JSON.stringify({
             model: model,
