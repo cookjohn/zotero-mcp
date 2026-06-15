@@ -218,8 +218,9 @@ export class EmbeddingService {
 
   /**
    * Auto-detect API provider type from URL
+   * Static so it can be used without instantiating the service.
    */
-  private detectApiProvider(url: string): ApiProviderType {
+  public static detectApiProvider(url: string): ApiProviderType {
     const lowerUrl = url.toLowerCase();
 
     ztoolkit.log(`[EmbeddingService] detectApiProvider: url=${lowerUrl}`);
@@ -272,7 +273,7 @@ export class EmbeddingService {
     if (this.detectedProvider) {
       return this.detectedProvider;
     }
-    return this.detectApiProvider(this.config.apiBase);
+    return EmbeddingService.detectApiProvider(this.config.apiBase);
   }
 
   /**
