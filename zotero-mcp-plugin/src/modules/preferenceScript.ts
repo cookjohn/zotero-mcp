@@ -742,7 +742,10 @@ function bindEmbeddingSettings(doc: Document) {
           body: JSON.stringify({
             model: model,
             input: "test",
-            // TODO: adapt dimension test here
+            // Send the same dimensions indexing will use, otherwise detected
+            // dims diverge from index dims into a permanent mismatch (#62)
+            ...((supportsCustomDimensions(model) && parseInt(dimensionsInput?.value || "", 10) > 0)
+              ? { dimensions: parseInt(dimensionsInput.value, 10) } : {})
           }),
           timeout: timeoutMilliseconds,
           responseType: 'json',
