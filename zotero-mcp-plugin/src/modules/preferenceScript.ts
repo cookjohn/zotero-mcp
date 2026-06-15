@@ -726,7 +726,7 @@ function bindEmbeddingSettings(doc: Document) {
       }
 
       let response: any;
-      let dims = 0;
+      let dims = -1;
 
       if (isOllamaNative) {
         // Use Ollama native /api/embed endpoint
@@ -838,8 +838,8 @@ function bindEmbeddingSettings(doc: Document) {
         return;
       }
 
-      // Success
-      if (dims > 0) {
+      // Response body is valid
+      if (dims >= 0) {
         // Check if stored vectors have different dimensions
         let storedDims: number | null = null;
         let hasStoredVectors = false;
@@ -877,22 +877,24 @@ function bindEmbeddingSettings(doc: Document) {
           testResult.style.color = "var(--color-ok)";
 
           // Update dimensions
-          // Save detected dimensions
-          Zotero.Prefs.set("extensions.zotero.zotero-mcp-plugin.embedding.detectedDimensions", dims, true);
+          if (dims > 0) {
+            // Save detected dimensions
+            Zotero.Prefs.set("extensions.zotero.zotero-mcp-plugin.embedding.detectedDimensions", dims, true);
 
-          // Only update config dimensions for models that support custom dimensions
-          if (supportsCustomDimensions(model) && dimensionsInput) {
-            dimensionsInput.value = String(dims);
-            Zotero.Prefs.set("extensions.zotero.zotero-mcp-plugin.embedding.dimensions", dims, true);
-          }
+            // Only update config dimensions for models that support custom dimensions
+            if (supportsCustomDimensions(model) && dimensionsInput) {
+              dimensionsInput.value = String(dims);
+              Zotero.Prefs.set("extensions.zotero.zotero-mcp-plugin.embedding.dimensions", dims, true);
+            }
 
-          // Update embedding service
-          try {
-            const { getEmbeddingService } = require("./semantic/embeddingService");
-            const embeddingService = getEmbeddingService();
-            embeddingService.updateConfig({ dimensions: dims });
-          } catch (e) {
-            // Ignore
+            // Update embedding service
+            try {
+              const { getEmbeddingService } = require("./semantic/embeddingService");
+              const embeddingService = getEmbeddingService();
+              embeddingService.updateConfig({ dimensions: dims });
+            } catch (e) {
+              // Ignore
+            }
           }
         }
       } else {
