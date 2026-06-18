@@ -29,7 +29,10 @@
     "release:beta": "npm version prepatch --preid beta --force -m \"Release v%s\" && git push --follow-tags",
     "prepare-release": "node scripts/prepare-release.js",
     "release:init": "node scripts/init-release.js",
-    "test": "zotero-plugin test",
+    "test": "npm run test:mcp-tools && zotero-plugin test --no-watch",
+    "test:mcp-tools": "node scripts/check-mcp-tool-manifest.mjs",
+    "test:mcp-smoke": "node scripts/smoke-mcp-endpoint.mjs",
+    "test:mcp-smoke:upgraded": "node scripts/smoke-mcp-endpoint.mjs --expect-upgraded",
     "test:update": "node scripts/test-update.js",
     "update-deps": "npm update --save"
   },

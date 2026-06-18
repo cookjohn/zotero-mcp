@@ -25,25 +25,54 @@ export class ClientConfigGenerator {
       configTemplate: (port: number, serverName = "zotero-mcp") => ({
         mcp_servers: {
           [serverName]: {
-            type: "http",
             url: `http://127.0.0.1:${port}/mcp`,
-            headers: {
-              "Content-Type": "application/json"
-            }
+            tool_timeout_sec: 120
           }
         }
       }),
       renderConfig: (port: number, serverName = "zotero-mcp") => {
         const safeServerName = ClientConfigGenerator.escapeTomlBasicString(serverName);
         return `[mcp_servers."${safeServerName}"]
-type = "http"
 url = "http://127.0.0.1:${port}/mcp"
-
-[mcp_servers."${safeServerName}".headers]
-"Content-Type" = "application/json"`;
+tool_timeout_sec = 120`;
       },
       configLanguage: "toml",
-      getInstructions: () => getString("codex-cli-instructions").split("\n").filter(s => s.trim())
+      getInstructions: (port: number = 23120) => [
+        "Add the TOML block above to ~/.codex/config.toml or a trusted project .codex/config.toml.",
+        `Verify the endpoint while Zotero is running: http://127.0.0.1:${port}/mcp/status`,
+        "In a new Codex session, call zotero_status before using write tools.",
+        "Keep write operations disabled in Zotero MCP preferences for read-only research sessions."
+      ]
+    },
+    {
+      name: "kimi-code",
+      displayName: "Kimi Code",
+      description: "Kimi Code MCP client",
+      configTemplate: (port: number, serverName = "zotero-mcp") => ({
+        mcpServers: {
+          [serverName]: {
+            type: "http",
+            url: `http://127.0.0.1:${port}/mcp`
+          }
+        }
+      }),
+      renderConfig: (port: number, serverName = "zotero-mcp") => {
+        return JSON.stringify({
+          mcpServers: {
+            [serverName]: {
+              type: "http",
+              url: `http://127.0.0.1:${port}/mcp`
+            }
+          }
+        }, null, 2);
+      },
+      configLanguage: "json",
+      getInstructions: (port: number = 23120) => [
+        "Add the JSON block above to ~/.kimi-code/mcp.json or the project .kimi-code/mcp.json.",
+        `Verify the endpoint while Zotero is running: http://127.0.0.1:${port}/mcp/status`,
+        "Use zotero_status first so Kimi Code can detect read/write/destructive tools.",
+        "For shared projects, keep this server local-only at 127.0.0.1."
+      ]
     },
     {
       name: "claude-code",

@@ -159,6 +159,7 @@ function bindPrefEvents() {
 
   // Bind HTML toggle switches (these need manual pref sync since they're not XUL checkboxes)
   bindHtmlCheckbox(doc, `#zotero-prefpane-${config.addonRef}-mcp-server-allow-remote`, "extensions.zotero.zotero-mcp-plugin.mcp.server.allowRemote");
+  bindHtmlCheckbox(doc, `#zotero-prefpane-${config.addonRef}-write-enabled`, "extensions.zotero.zotero-mcp-plugin.write.enabled");
   bindHtmlCheckbox(doc, `#zotero-prefpane-${config.addonRef}-include-metadata`, "extensions.zotero.zotero-mcp-plugin.ui.includeMetadata");
   bindHtmlCheckbox(doc, `#zotero-prefpane-${config.addonRef}-semantic-auto-update`, "extensions.zotero.zotero-mcp-plugin.semantic.autoUpdate");
   bindHtmlCheckbox(doc, `#zotero-prefpane-${config.addonRef}-custom-include-webpage`, "extensions.zotero.zotero-mcp-plugin.custom.includeWebpage");

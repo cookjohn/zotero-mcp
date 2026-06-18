@@ -34,6 +34,7 @@ This enables AI assistants to help you with literature reviews, citation managem
 This project now features a **unified architecture** with an integrated MCP server:
 
 - **`zotero-mcp-plugin/`**: A Zotero plugin with **integrated MCP server** that communicates directly with AI clients via Streamable HTTP protocol
+- **`docs/`**: Upgrade project notes for Codex/Kimi integration, tool policy, and the citation/download roadmap
 - **`IMG/`**: Screenshots and documentation images
 - **`README.md`** / **`README-zh.md`**: Documentation files
 
@@ -196,7 +197,11 @@ Here are some screenshots demonstrating the functionality of Zotero MCP:
 
 ## 🔧 API Reference (MCP Tools)
 
-The integrated MCP server provides **20 tools** in 5 categories:
+The upgraded integrated MCP server exposes **36 tools**. See
+[`docs/AGENT_INTEGRATION.md`](docs/AGENT_INTEGRATION.md) and
+[`docs/TOOL_POLICY.md`](docs/TOOL_POLICY.md) for the current agent-facing
+tool list and safety policy. The legacy overview below covers the original
+core groups:
 
 ### 1. Search & Query (7 tools)
 

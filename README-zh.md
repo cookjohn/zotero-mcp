@@ -312,7 +312,9 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 
 ## 🔧 API 参考（MCP 工具列表）
 
-插件集成的 MCP 服务器提供以下 **20 个工具**，分为 5 大类：
+插件集成的 MCP 服务器当前提供 **36 个工具**；面向 Agent 的最新工具策略见
+[`docs/AGENT_INTEGRATION.md`](docs/AGENT_INTEGRATION.md) 和
+[`docs/TOOL_POLICY.md`](docs/TOOL_POLICY.md)。下方保留原始核心分组概览：
 
 ### 一、搜索与查询（7 个）
 
