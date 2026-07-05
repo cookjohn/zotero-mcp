@@ -196,13 +196,17 @@ Here are some screenshots demonstrating the functionality of Zotero MCP:
 
 ## 🔧 API Reference (MCP Tools)
 
-The integrated MCP server provides **20 tools** in 5 categories:
+The integrated MCP server provides tools in 5 categories:
 
-### 1. Search & Query (7 tools)
+### 1. Search & Query
 
 #### `search_library`
 Advanced library search with multi-dimensional filtering, boolean operators, relevance scoring, and intelligent mode control.
 - `q`, `title`, `titleOperator`, `yearRange`, `fulltext`, `fulltextMode`, `itemType`, `includeAttachments`, `mode` (minimal/preview/standard/complete), `relevanceScoring`, `sort`, `limit`, `offset`
+
+#### `lookup_identifier`
+Look up Zotero-style metadata from a DOI, DOI URL, arXiv ID, or arXiv URL without modifying the library.
+- `input` (required), `downloadPDF`, `attachmentDir`, `libraryID`
 
 #### `search_annotations`
 Search annotations by query, colors, or tags with intelligent ranking.
@@ -258,7 +262,7 @@ Get semantic search service status and index statistics. No parameters required.
 Access cached full-text content database (read-only).
 - `action` (required: list/search/get/stats), `query`, `itemKeys`, `limit`
 
-### 5. Write Operations (4 tools, can be disabled in preferences)
+### 5. Write Operations (can be disabled in preferences)
 
 #### `write_note`
 Create or modify Zotero notes. Supports Markdown auto-conversion to HTML.
@@ -275,6 +279,10 @@ Update metadata fields on items (title, abstract, date, DOI, creators, etc.).
 #### `write_item`
 Create new items or reparent existing attachments.
 - `action` (required: create/reparent), `itemType`, `fields`, `creators`, `tags`, `attachmentKeys`, `parentKey`
+
+#### `add_item_by_identifier`
+Create a Zotero item from a DOI, DOI URL, arXiv ID, or arXiv URL, and optionally download and import available PDF attachments.
+- `input` (required), `libraryID`, `downloadPDF`, `attachmentDir`
 
 ---
 

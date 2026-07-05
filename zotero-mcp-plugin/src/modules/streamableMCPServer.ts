@@ -20,6 +20,7 @@ import { UnifiedContentExtractor } from './unifiedContentExtractor';
 import { SmartAnnotationExtractor } from './smartAnnotationExtractor';
 import { MCPSettingsService } from './mcpSettingsService';
 import { getSemanticSearchService, SemanticSearchService } from './semantic';
+import { addItemByIdentifier, lookupIdentifier } from './identifierLookupService';
 
 export interface MCPRequest {
   jsonrpc: '2.0';
@@ -802,6 +803,32 @@ export class StreamableMCPServer {
           required: ['itemKey'],
         },
       },
+      {
+        name: 'lookup_identifier',
+        description: 'Look up Zotero-style metadata from a DOI, DOI URL, arXiv ID, or arXiv URL. Returns normalized item metadata, PDF candidates, and write_item-compatible payloads without modifying the library.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            input: {
+              type: 'string',
+              description: 'Identifier or URL, e.g. 10.1109/JBHI.2025.3633456, https://doi.org/..., or https://arxiv.org/abs/2605.05806'
+            },
+            downloadPDF: {
+              type: 'boolean',
+              description: 'Download discovered PDF attachments to a temporary local directory when possible. Default: false.'
+            },
+            attachmentDir: {
+              type: 'string',
+              description: 'Directory for downloaded PDFs. Defaults to a temporary Zotero MCP directory.'
+            },
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID to include in returned write_item payloads.'
+            }
+          },
+          required: ['input']
+        }
+      },
       // Semantic Search Tools
       {
         name: 'semantic_search',
@@ -1065,6 +1092,32 @@ export class StreamableMCPServer {
           },
           required: ['action']
         }
+      },
+      {
+        name: 'add_item_by_identifier',
+        description: 'Create a Zotero item from a DOI, DOI URL, arXiv ID, or arXiv URL, similar to Zotero\'s Add Item by Identifier. Optionally downloads and imports available PDF attachments. Confirm with user before executing.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
+            input: {
+              type: 'string',
+              description: 'Identifier or URL, e.g. 10.1109/JBHI.2025.3633456, https://doi.org/..., or https://arxiv.org/abs/2605.05806'
+            },
+            downloadPDF: {
+              type: 'boolean',
+              description: 'Attempt to download and import discovered PDF attachments. Default: true.'
+            },
+            attachmentDir: {
+              type: 'string',
+              description: 'Directory for temporary downloaded PDFs. Defaults to a temporary Zotero MCP directory.'
+            }
+          },
+          required: ['input']
+        }
       }
     ];
 
@@ -1078,7 +1131,7 @@ export class StreamableMCPServer {
     // Filter out write tools if write operations are disabled (default: disabled)
     const writeEnabled = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
     const writeToolNames = new Set([
-      'write_note', 'write_tag', 'write_metadata', 'write_item',
+      'write_note', 'write_tag', 'write_metadata', 'write_item', 'add_item_by_identifier',
     ]);
     const finalTools = writeEnabled === true
       ? filteredTools
@@ -1249,6 +1302,17 @@ export class StreamableMCPServer {
           result = await this.callGetItemAbstract(args);
           break;
 
+        case 'lookup_identifier':
+          if (!args?.input) {
+            throw new Error('input is required');
+          }
+          result = await lookupIdentifier(args.input, {
+            downloadPDF: args.downloadPDF === true,
+            attachmentDir: args.attachmentDir,
+            libraryID: args.libraryID,
+          });
+          break;
+
         // Semantic Search Tools
         case 'semantic_search':
         case 'find_similar':
@@ -1328,6 +1392,22 @@ export class StreamableMCPServer {
           break;
         }
 
+        case 'add_item_by_identifier': {
+          const writeEnabled5 = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
+          if (writeEnabled5 !== true) {
+            throw new Error('Write operations are currently disabled. Please go to Zotero → Tools → Add-ons → Zotero MCP Plugin → Preferences, and enable "Write Operations" to use this feature.');
+          }
+          if (!args?.input) {
+            throw new Error('input is required');
+          }
+          result = await addItemByIdentifier(args.input, {
+            downloadPDF: args.downloadPDF,
+            attachmentDir: args.attachmentDir,
+            libraryID: args.libraryID,
+          });
+          break;
+        }
+
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
@@ -1403,7 +1483,7 @@ export class StreamableMCPServer {
       setTimeout(() => reject(new Error("Search timed out after 25 seconds. Try narrowing your query or reducing the limit.")), SEARCH_TIMEOUT_MS);
     });
     const response = await Promise.race([searchPromise, timeoutPromise]);
-    let result = response.body ? JSON.parse(response.body) : response;
+    const result = response.body ? JSON.parse(response.body) : response;
     
     // Add mode information to metadata
     if (result && typeof result === 'object') {
@@ -1453,7 +1533,7 @@ export class StreamableMCPServer {
     
     // Call the dedicated item details handler
     const response = await handleGetItem({ 1: itemKey }, queryParams);
-    let result = response.body ? JSON.parse(response.body) : response;
+    const result = response.body ? JSON.parse(response.body) : response;
     
     // Add mode information to metadata
     if (result && typeof result === 'object') {
@@ -1525,7 +1605,7 @@ export class StreamableMCPServer {
     }
     
     const response = await handleGetCollections(collectionParams);
-    let result = response.body ? JSON.parse(response.body) : response;
+    const result = response.body ? JSON.parse(response.body) : response;
     
     // Add mode information to metadata
     if (result && typeof result === 'object') {
@@ -1672,7 +1752,7 @@ export class StreamableMCPServer {
     }
     
     const response = await handleSearchFulltext(searchParams);
-    let result = response.body ? JSON.parse(response.body) : response;
+    const result = response.body ? JSON.parse(response.body) : response;
     
     // Add mode information to metadata
     if (result && typeof result === 'object') {
@@ -2745,6 +2825,7 @@ export class StreamableMCPServer {
         'get_collection_items',
         'search_fulltext',
         'get_item_abstract',
+        'lookup_identifier',
         // Semantic Search Tools (read-only)
         'semantic_search',
         'find_similar',
@@ -2755,7 +2836,8 @@ export class StreamableMCPServer {
         'write_note',
         'write_tag',
         'write_metadata',
-        'write_item'
+        'write_item',
+        'add_item_by_identifier'
       ],
       transport: {
         type: "streamable-http",
