@@ -1,5 +1,7 @@
 # Zotero MCP - Model Context Protocol Integration for Zotero
 
+[![MCP Toplist](https://mcptoplist.com/badge/pulsemcp%2Fcookjohn-zotero.svg)](https://mcptoplist.com/server/pulsemcp%2Fcookjohn-zotero)
+
 Zotero MCP is an open-source project designed to seamlessly integrate powerful AI capabilities with the leading reference management tool, Zotero, through the Model Context Protocol (MCP). This project consists of two core components: a Zotero plugin and an MCP server, which work together to provide AI assistants (like Claude) with the ability to interact with your local Zotero library.
 _This README is also available in: [:cn: 简体中文](./README-zh.md) | :gb: English._
 [![GitHub](https://img.shields.io/badge/GitHub-zotero--mcp-blue?logo=github)](https://github.com/cookjohn/zotero-mcp)
