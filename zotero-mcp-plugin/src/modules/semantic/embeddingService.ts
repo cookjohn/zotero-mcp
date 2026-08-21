@@ -171,6 +171,11 @@ const PREF_API_KEY = 'extensions.zotero.zotero-mcp-plugin.embedding.apiKey';
 const PREF_MODEL = 'extensions.zotero.zotero-mcp-plugin.embedding.model';
 const PREF_DIMENSIONS = 'extensions.zotero.zotero-mcp-plugin.embedding.dimensions';
 const PREF_DETECTED_DIMENSIONS = 'extensions.zotero.zotero-mcp-plugin.embedding.detectedDimensions';
+const PREF_TIMEOUT_SECONDS = 'extensions.zotero.zotero-mcp-plugin.embedding.timeoutSeconds';
+
+// Bounds for the user-configurable API timeout (#59)
+const MIN_TIMEOUT_SECONDS = 5;
+const MAX_TIMEOUT_SECONDS = 600;
 
 // Preference keys for rate limit and usage stats
 const PREF_RPM = 'extensions.zotero.zotero-mcp-plugin.embedding.rpm';
@@ -394,12 +399,20 @@ export class EmbeddingService {
       const model = Zotero.Prefs.get(PREF_MODEL, true);
       const dimensions = Zotero.Prefs.get(PREF_DIMENSIONS, true);
       const detectedDims = Zotero.Prefs.get(PREF_DETECTED_DIMENSIONS, true);
+      const timeoutSeconds = Zotero.Prefs.get(PREF_TIMEOUT_SECONDS, true);
 
       if (apiBase) this.config.apiBase = apiBase;
       if (apiKey) this.config.apiKey = apiKey;
       if (model) this.config.model = model;
       if (dimensions) this.config.dimensions = parseInt(dimensions, 10);
       if (detectedDims) this.detectedDimensions = parseInt(String(detectedDims), 10);
+      if (timeoutSeconds) {
+        const seconds = parseInt(String(timeoutSeconds), 10);
+        if (!isNaN(seconds)) {
+          const clamped = Math.min(MAX_TIMEOUT_SECONDS, Math.max(MIN_TIMEOUT_SECONDS, seconds));
+          this.config.timeout = clamped * 1000;
+        }
+      }
 
       ztoolkit.log(`[EmbeddingService] Loaded config from prefs: apiBase=${this.config.apiBase}, model=${this.config.model}, configDims=${this.config.dimensions}, detectedDims=${this.detectedDimensions}`);
     } catch (e) {
@@ -460,6 +473,8 @@ export class EmbeddingService {
     if (model.includes('text-embedding-3')) return true;
     // DashScope text-embedding-v3/v4 models
     if (model.includes('text-embedding-v3') || model.includes('text-embedding-v4')) return true;
+    // MRL models commonly served via Ollama / OpenAI-compatible endpoints (#62)
+    if (model.includes('qwen3-embedding') || model.includes('embeddinggemma') || model.includes('nomic-embed')) return true;
     return false;
   }
 
@@ -899,13 +914,44 @@ export class EmbeddingService {
             // Retry with smaller batch (don't advance itemIndex)
             continue;
           } else {
-            // Already at batch size 1, the single item is too large
-            ztoolkit.log(`[EmbeddingService] Single item too large to process: ${batch[0]?.id}`, 'error');
-            throw new EmbeddingAPIError(
-              `单个文本过大无法处理 / Single text too large to process: ${batch[0]?.text.substring(0, 50)}...`,
-              'payload_too_large',
-              { retryable: false, statusCode: 413 }
-            );
+            // Already at batch size 1 — try truncating the text instead of failing
+            const oversizedItem = batch[0];
+            const MAX_SAFE_LENGTH = 800;
+            if (oversizedItem && oversizedItem.text.length > MAX_SAFE_LENGTH) {
+              ztoolkit.log(`[EmbeddingService] Truncating oversized item ${oversizedItem.id} from ${oversizedItem.text.length} to ${MAX_SAFE_LENGTH} chars`, 'warn');
+              const truncatedTexts = [oversizedItem.text.substring(0, MAX_SAFE_LENGTH)];
+              try {
+                const embeddings = await this.callEmbeddingAPI(truncatedTexts);
+                const embedding = embeddings[0];
+                const lang = oversizedItem.language || this.detectLanguage(truncatedTexts[0]);
+                results.set(oversizedItem.id, {
+                  embedding: new Float32Array(embedding),
+                  language: lang,
+                  dimensions: embedding.length
+                });
+              } catch (truncateError) {
+                // Only swallow errors that mean "this text cannot be embedded"
+                // (payload/invalid input). Pauses, credential failures and
+                // transient network/server/rate-limit errors must propagate
+                // instead of silently losing the chunk
+                if (truncateError instanceof EmbeddingAPIError &&
+                    truncateError.type !== 'payload_too_large' &&
+                    truncateError.type !== 'invalid_request' &&
+                    truncateError.type !== 'unknown') {
+                  throw truncateError;
+                }
+                ztoolkit.log(`[EmbeddingService] Truncated item still failed, skipping: ${truncateError}`, 'warn');
+              }
+              itemIndex += 1;
+              continue;
+            } else {
+              ztoolkit.log(`[EmbeddingService] Single item too large to process: ${oversizedItem?.id}`, 'error');
+              throw new EmbeddingAPIError(
+                `单个文本过大无法处理 / Single text too large to process: ${oversizedItem?.text.substring(0, 50)}...`,
+                'payload_too_large',
+                { retryable: false, statusCode: 413 }
+              );
+            }
           }
         }
         // Re-throw other errors
@@ -936,10 +982,28 @@ export class EmbeddingService {
   }
 
   /**
-   * Detect error type from error object
+   * Provider-specific context/token overflow messages that mean the input
+   * is too large even when the HTTP status is not 413
    */
-  private detectErrorType(error: any): { type: EmbeddingErrorType; retryAfterMs?: number } {
+  private isContextOverflowMessage(errorMsg: string): boolean {
+    return errorMsg.includes('input too long') ||
+      errorMsg.includes('input length') ||
+      errorMsg.includes('context length') ||
+      errorMsg.includes('context_length') ||
+      errorMsg.includes('maximum context') ||
+      errorMsg.includes('too many tokens') ||
+      errorMsg.includes('token limit');
+  }
+
+  /**
+   * Detect error type from error object. The optional responseBody carries
+   * the provider's error payload, which the generic error message lacks.
+   */
+  private detectErrorType(error: any, responseBody?: string): { type: EmbeddingErrorType; retryAfterMs?: number } {
     const errorMsg = String(error.message || error).toLowerCase();
+    // Combined text for size/overflow checks only — the network patterns
+    // below must not match words inside a provider's HTTP error payload
+    const fullMsg = (errorMsg + ' ' + (responseBody || '')).toLowerCase();
     const statusCode = error.status || error.statusCode || error.xmlhttp?.status;
 
     // Network errors - check error message patterns
@@ -972,6 +1036,12 @@ export class EmbeddingService {
         return { type: 'auth' };
       }
       if (statusCode === 400) {
+        // Some providers (dashscope, ollama's OpenAI-compatible endpoint)
+        // report context/token overflow as 400 instead of 413; classify it
+        // as payload_too_large so embedBatch can split/truncate instead of failing
+        if (this.isContextOverflowMessage(fullMsg)) {
+          return { type: 'payload_too_large' };
+        }
         return { type: 'invalid_request' };
       }
       if (statusCode >= 500) {
@@ -986,8 +1056,9 @@ export class EmbeddingService {
     }
 
     // Check for payload too large patterns
-    if (errorMsg.includes('413') || errorMsg.includes('payload too large') ||
-        errorMsg.includes('request entity too large') || errorMsg.includes('content too large')) {
+    if (fullMsg.includes('413') || fullMsg.includes('payload too large') ||
+        fullMsg.includes('request entity too large') || fullMsg.includes('content too large') ||
+        this.isContextOverflowMessage(fullMsg)) {
       return { type: 'payload_too_large' };
     }
 
@@ -1031,10 +1102,17 @@ export class EmbeddingService {
     let requestBody: any;
 
     if (provider === 'ollama') {
-      // Ollama native API format (/api/embed) - supports batch input
+      // Ollama native API format (/api/embed) - supports batch input.
+      // Only send dimensions when the user explicitly set the pref AND the
+      // model is a known MRL model: config.dimensions falls back to a
+      // default (512) that must not silently change a model's native
+      // dimensionality (requires Ollama >= 0.12 for the dimensions field)
+      const userDims = Zotero.Prefs.get(PREF_DIMENSIONS, true);
       requestBody = {
         model: this.config.model,
-        input: texts.length === 1 ? texts[0] : texts  // Single string or array
+        input: texts.length === 1 ? texts[0] : texts,  // Single string or array
+        ...(userDims && this.supportsCustomDimensions()
+          ? { dimensions: parseInt(String(userDims), 10) } : {})
       };
     } else {
       // OpenAI-compatible format (OpenAI, ollama-openai, etc.)
@@ -1157,21 +1235,28 @@ export class EmbeddingService {
         return embeddings;
 
       } catch (error: any) {
-        // Log raw error details for debugging
+        // Log raw error details for debugging.
+        // NOTE: the request uses responseType 'json', so accessing
+        // xhr.responseText throws InvalidStateError — read the parsed
+        // response object first and only fall back to responseText.
         let responseBody = '';
         try {
-          // Zotero.HTTP errors have xmlhttp property with the full XMLHttpRequest object
-          if (error.xmlhttp?.responseText) {
-            responseBody = error.xmlhttp.responseText.substring(0, 1000);
-          } else if (error.responseText) {
-            responseBody = error.responseText.substring(0, 1000);
-          } else if (error.response) {
-            responseBody = typeof error.response === 'string'
-              ? error.response.substring(0, 1000)
-              : JSON.stringify(error.response).substring(0, 1000);
+          const resp = error.xmlhttp?.response ?? error.response;
+          if (resp !== undefined && resp !== null && resp !== '') {
+            responseBody = (typeof resp === 'string' ? resp : JSON.stringify(resp)).substring(0, 1000);
           }
         } catch (e) {
-          responseBody = '[Unable to parse response body]';
+          // ignore, try responseText below
+        }
+        if (!responseBody) {
+          try {
+            const text = error.xmlhttp?.responseText || error.responseText;
+            if (text) {
+              responseBody = String(text).substring(0, 1000);
+            }
+          } catch (e) {
+            responseBody = '';
+          }
         }
 
         const statusCode = error.status || error.statusCode || error.xmlhttp?.status;
@@ -1188,8 +1273,10 @@ export class EmbeddingService {
         if (error instanceof EmbeddingAPIError) {
           lastError = error;
         } else {
-          // Detect error type and create EmbeddingAPIError
-          const { type, retryAfterMs } = this.detectErrorType(error);
+          // Detect error type and create EmbeddingAPIError. Pass the provider
+          // response body so context-overflow 400s can be classified as
+          // payload_too_large (the generic error.message never contains it)
+          const { type, retryAfterMs } = this.detectErrorType(error, responseBody);
 
           // Try to extract error details from response body
           let errorDetails = '';

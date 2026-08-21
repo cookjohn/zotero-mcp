@@ -205,6 +205,22 @@ gemini-cli-instructions =
 
     ══════════════════════════════════════════════════════════
 
+workbuddy-instructions =
+    ══════════════════════════════════════════════════════════
+      WorkBuddy MCP 配置指南
+    ══════════════════════════════════════════════════════════
+
+    ▶ 配置步骤
+    ──────────────────────────────────────────────────────────
+       1. 打开 WorkBuddy，找到 MCP 服务器设置（mcp.json）
+       2. 将生成的配置添加到 mcpServers 部分
+       3. 保存并重启 WorkBuddy
+
+    ▶ 前提条件
+    ──────────────────────────────────────────────────────────
+       • 需要安装 Node.js（配置使用 npx mcp-remote 桥接）
+       • Zotero 需保持运行且已启用 MCP 服务器
+
 chatbox-instructions =
     ══════════════════════════════════════════════════════════
       Chatbox MCP 配置指南
@@ -310,6 +326,7 @@ menu-semantic-clear-selected-done = 已清除索引的条目数
 menu-semantic-items = 条
 menu-semantic-index-started = 语义索引已开始
 menu-semantic-index-completed = 索引完成
+menu-semantic-index-busy = 已有索引任务正在运行，请等待其完成
 menu-semantic-index-error = 语义索引失败
 menu-semantic-index-no-collection = 请选择一个分类
 menu-semantic-index-no-items = 没有可索引的条目

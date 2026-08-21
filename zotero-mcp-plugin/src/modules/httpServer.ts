@@ -29,6 +29,53 @@ function getByteLength(str: string): number {
 }
 
 /**
+ * Slice string by UTF-8 byte length without splitting multibyte characters.
+ */
+function sliceByUtf8Bytes(str: string, maxBytes: number): string {
+  if (maxBytes <= 0 || !str) {
+    return "";
+  }
+
+  let bytes = 0;
+  let end = 0;
+
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    let charBytes = 0;
+
+    if (code < 0x80) {
+      charBytes = 1;
+    } else if (code < 0x800) {
+      charBytes = 2;
+    } else if (code >= 0xd800 && code <= 0xdbff && i + 1 < str.length) {
+      const next = str.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        charBytes = 4;
+      } else {
+        charBytes = 3;
+      }
+    } else {
+      charBytes = 3;
+    }
+
+    if (bytes + charBytes > maxBytes) {
+      break;
+    }
+
+    bytes += charBytes;
+    end = i + 1;
+
+    // Skip low surrogate after consuming a valid pair.
+    if (charBytes === 4) {
+      i++;
+      end = i + 1;
+    }
+  }
+
+  return str.substring(0, end);
+}
+
+/**
  * Write string to output stream with correct UTF-8 encoding
  */
 function writeStringToStream(output: any, str: string): void {
@@ -305,28 +352,41 @@ export class HttpServer {
             const bytesToRead = Math.min(4096, maxRequestSize - totalBytesRead);
             const available = input.available();
 
-            if (available === 0) {
-              waitAttempts++;
-              if (waitAttempts > maxWaitAttempts) {
-                ztoolkit.log(`[HttpServer] Timeout waiting for headers after ${waitAttempts} attempts, TotalBytes: ${totalBytesRead}`, "warn");
-                break;
-              }
-              await new Promise((resolve) => setTimeout(resolve, 10));
-              continue;
-            }
-
+            // Attempt the read even when available === 0: the converter
+            // stream buffers up to 8KB drained from the socket per fill, and
+            // input.available() only reflects un-consumed raw socket bytes —
+            // gating reads on it strands buffered data and stalls the request
             let chunk = "";
             try {
               const str: { value?: string } = {};
-              const bytesRead = converterStream.readString(Math.min(bytesToRead, available), str);
+              converterStream.readString(available > 0 ? Math.min(bytesToRead, available) : bytesToRead, str);
               chunk = str.value || "";
-              if (bytesRead === 0) break;
             } catch (converterError) {
-              ztoolkit.log(`[HttpServer] Converter failed, using fallback: ${converterError}`, "error");
-              chunk = sin.read(Math.min(bytesToRead, available));
-              if (!chunk) break;
+              // NS_BASE_STREAM_WOULD_BLOCK when both the converter buffer and
+              // the socket are empty; fall back to a raw read only when the
+              // socket reports data (decode failure on a live stream)
+              try {
+                chunk = available > 0 ? sin.read(Math.min(bytesToRead, available)) : "";
+              } catch {
+                chunk = "";
+              }
             }
 
+            if (!chunk) {
+              if (available === 0) {
+                waitAttempts++;
+                if (waitAttempts > maxWaitAttempts) {
+                  ztoolkit.log(`[HttpServer] Timeout waiting for headers after ${waitAttempts} attempts, TotalBytes: ${totalBytesRead}`, "warn");
+                  break;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 10));
+                continue;
+              }
+              // Socket reported data but the read returned nothing - EOF
+              break;
+            }
+
+            waitAttempts = 0;
             requestText += chunk;
             totalBytesRead += chunk.length;
 
@@ -346,39 +406,53 @@ export class HttpServer {
           // Step 2: Read body based on Content-Length (for POST requests)
           if (headersComplete && contentLength > 0) {
             const bodyStart = bodyStartIndex + 4; // Skip \r\n\r\n
-            const currentBodyLength = requestText.length - bodyStart;
-            const remainingBodyBytes = contentLength - currentBodyLength;
+            // Content-Length is byte-denominated: compare UTF-8 byte counts,
+            // not UTF-16 char counts, or multibyte (CJK) bodies never satisfy
+            // the comparison and stall here until the wait timeout
+            let bodyBytesRead = getByteLength(requestText.substring(bodyStart));
 
-            ztoolkit.log(`[HttpServer] Reading body: Content-Length=${contentLength}, current=${currentBodyLength}, remaining=${remainingBodyBytes}`);
+            ztoolkit.log(`[HttpServer] Reading body: Content-Length=${contentLength}, current=${bodyBytesRead}, remaining=${contentLength - bodyBytesRead}`);
 
             waitAttempts = 0; // Reset wait counter for body reading
-            while (remainingBodyBytes > 0 && (requestText.length - bodyStart) < contentLength) {
+            while (bodyBytesRead < contentLength) {
               const available = input.available();
+              const budget = Math.min(8192, contentLength - bodyBytesRead);
 
-              if (available === 0) {
-                waitAttempts++;
-                if (waitAttempts > maxWaitAttempts) {
-                  ztoolkit.log(`[HttpServer] Timeout waiting for body after ${waitAttempts} attempts`, "warn");
-                  break;
-                }
-                await new Promise((resolve) => setTimeout(resolve, 10));
-                continue;
-              }
-
-              const bytesToRead = Math.min(8192, contentLength - (requestText.length - bodyStart), available);
+              // Attempt the read even when available === 0: body bytes may be
+              // sitting in the converter's internal buffer, drained from the
+              // socket during the header read (see header loop note)
               let chunk = "";
               try {
                 const str: { value?: string } = {};
-                const bytesRead = converterStream.readString(bytesToRead, str);
+                converterStream.readString(available > 0 ? Math.min(budget, available) : budget, str);
                 chunk = str.value || "";
-                if (bytesRead === 0) break;
               } catch (converterError) {
-                chunk = sin.read(bytesToRead);
-                if (!chunk) break;
+                try {
+                  chunk = available > 0 ? sin.read(Math.min(budget, available)) : "";
+                } catch {
+                  chunk = "";
+                }
               }
 
+              if (!chunk) {
+                if (available === 0) {
+                  waitAttempts++;
+                  if (waitAttempts > maxWaitAttempts) {
+                    ztoolkit.log(`[HttpServer] Timeout waiting for body after ${waitAttempts} attempts`, "warn");
+                    break;
+                  }
+                  await new Promise((resolve) => setTimeout(resolve, 10));
+                  continue;
+                }
+                // Socket reported data but the read returned nothing - EOF
+                break;
+              }
+
+              waitAttempts = 0;
               requestText += chunk;
-              totalBytesRead += chunk.length;
+              const chunkBytes = getByteLength(chunk);
+              bodyBytesRead += chunkBytes;
+              totalBytesRead += chunkBytes;
             }
           }
         } catch (readError) {
@@ -464,10 +538,11 @@ export class HttpServer {
               // Only consume the current request body. Extra bytes may belong to
               // a pipelined next request on the same socket.
               if (contentLength > 0) {
-                requestBody = rawBody.substring(0, contentLength);
-                if (rawBody.length > contentLength) {
+                requestBody = sliceByUtf8Bytes(rawBody, contentLength);
+                const rawBodyBytes = getByteLength(rawBody);
+                if (rawBodyBytes > contentLength) {
                   ztoolkit.log(
-                    `[HttpServer] Detected trailing bytes after request body (${rawBody.length - contentLength} bytes), ignoring extra data for this request`,
+                    `[HttpServer] Detected trailing bytes after request body (${rawBodyBytes - contentLength} bytes), ignoring extra data for this request`,
                     "warn",
                   );
                 }
@@ -481,7 +556,7 @@ export class HttpServer {
           let sessionId: string | undefined;
           const mcpSessionHeader = requestText.match(/Mcp-Session-Id:\s*([^\r\n]+)/i);
           
-          if (path === "/mcp" || path.startsWith("/mcp/")) {
+          if (path === "/mcp" || (path.startsWith("/mcp/") && !path.includes(".well-known"))) {
             if (mcpSessionHeader && mcpSessionHeader[1]) {
               sessionId = mcpSessionHeader[1].trim();
               this.updateSessionActivity(sessionId);
@@ -595,15 +670,17 @@ export class HttpServer {
             output.write(response, response.length);
             return;
           } else {
+            const notFoundBody = JSON.stringify({ error: "Not Found" });
+            const notFoundBytes = getByteLength(notFoundBody);
             const notFoundResult = {
               status: 404,
               statusText: "Not Found",
-              headers: { "Content-Type": "text/plain; charset=utf-8" }
+              headers: { "Content-Type": "application/json; charset=utf-8" }
             };
             const notFoundHeaders = this.buildHttpHeaders(notFoundResult, false) +
-              "Content-Length: 9\r\n" +
+              `Content-Length: ${notFoundBytes}\r\n` +
               "\r\n";
-            const response = notFoundHeaders + "Not Found";
+            const response = notFoundHeaders + notFoundBody;
             output.write(response, response.length);
             return;
           }
@@ -767,10 +844,30 @@ private getCapabilities() {
     },
     tools: [
       {
+        name: "get_libraries",
+        description: "List all Zotero libraries available in the current client. Returns: [{libraryID, name, libraryType}]",
+        category: "retrieval",
+        parameters: {
+          limit: { type: "number", description: "Maximum results to return", required: false },
+          offset: { type: "number", description: "Pagination offset", required: false }
+        }
+      },
+      {
+        name: "search_libraries",
+        description: "Search libraries by name. Returns: [{libraryID, name, libraryType}]",
+        category: "retrieval",
+        parameters: {
+          q: { type: "string", description: "Library name search query", required: true },
+          limit: { type: "number", description: "Maximum results to return", required: false },
+          offset: { type: "number", description: "Pagination offset", required: false }
+        }
+      },
+      {
         name: "search_library",
         description: "Search the Zotero library with advanced parameters including boolean operators, relevance scoring, fulltext search, and pagination. Returns: {query, pagination, searchTime, results: [{key, title, creators, date, attachments: [{key, filename, filePath, contentType, linkMode}], fulltextMatch: {query, mode, attachments: [{snippet, score}], notes: [{snippet, score}]}}], searchFeatures, version}",
         category: "search",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           q: { type: "string", description: "General search query", required: false },
           title: { type: "string", description: "Title search", required: false },
           titleOperator: { 
@@ -816,6 +913,7 @@ private getCapabilities() {
         description: "Search all notes, PDF annotations and highlights with smart content processing",
         category: "search",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           q: { type: "string", description: "Search query for content, comments, and tags", required: false },
           type: { 
             type: "string", 
@@ -837,6 +935,7 @@ private getCapabilities() {
         description: "Get detailed information for a specific item including metadata, abstract, attachments info, notes, and tags but not fulltext content. Returns: {key, title, creators, date, itemType, publicationTitle, volume, issue, pages, DOI, url, abstractNote, tags, notes: [note_content], attachments: [{key, title, path, contentType, filename, url, linkMode, hasFulltext, size}]}",
         category: "retrieval",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           itemKey: { type: "string", description: "Unique item key", required: true }
         },
         examples: [
@@ -878,6 +977,7 @@ private getCapabilities() {
         description: "Get list of all collections in the library",
         category: "collections",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           limit: { type: "number", description: "Maximum results to return", required: false },
           offset: { type: "number", description: "Pagination offset", required: false }
         }
@@ -887,8 +987,10 @@ private getCapabilities() {
         description: "Search collections by name",
         category: "collections",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           q: { type: "string", description: "Collection name search query", required: true },
-          limit: { type: "number", description: "Maximum results to return", required: false }
+          limit: { type: "number", description: "Maximum results to return", required: false },
+          offset: { type: "number", description: "Pagination offset", required: false }
         }
       },
       {
@@ -896,7 +998,8 @@ private getCapabilities() {
         description: "Get detailed information about a specific collection",
         category: "collections",
         parameters: {
-          collectionKey: { type: "string", description: "Collection key", required: true }
+          collectionKey: { type: "string", description: "Collection key", required: true },
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false }
         }
       },
       {
@@ -905,6 +1008,7 @@ private getCapabilities() {
         category: "collections",
         parameters: {
           collectionKey: { type: "string", description: "Collection key", required: true },
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           limit: { type: "number", description: "Maximum results to return", required: false },
           offset: { type: "number", description: "Pagination offset", required: false }
         }
@@ -939,6 +1043,7 @@ private getCapabilities() {
         description: "Search within fulltext content of items with context and relevance scoring",
         category: "fulltext",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           q: { type: "string", description: "Search query", required: true },
           itemKeys: { type: "array", items: { type: "string" }, description: "Limit search to specific items (optional)", required: false },
           contextLength: { type: "number", description: "Context length around matches (default: 200)", required: false },
@@ -955,6 +1060,7 @@ private getCapabilities() {
         description: "Get the abstract/summary of a specific item",
         category: "retrieval",
         parameters: {
+          libraryID: { type: "number", description: "Optional target Zotero library ID. Defaults to the user library when omitted.", required: false },
           itemKey: { type: "string", description: "Item key", required: true },
           format: { type: "string", enum: ["json", "text"], description: "Response format (default: json)", required: false }
         }

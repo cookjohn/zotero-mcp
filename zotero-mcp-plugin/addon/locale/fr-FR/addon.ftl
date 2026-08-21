@@ -205,6 +205,22 @@ gemini-cli-instructions =
 
     ══════════════════════════════════════════════════════════
 
+workbuddy-instructions =
+    ══════════════════════════════════════════════════════════
+      Guide de configuration MCP pour WorkBuddy
+    ══════════════════════════════════════════════════════════
+
+    ▶ Etapes de configuration
+    ──────────────────────────────────────────────────────────
+       1. Ouvrir WorkBuddy et acceder aux parametres MCP (mcp.json)
+       2. Ajouter la configuration generee a la section mcpServers
+       3. Enregistrer et redemarrer WorkBuddy
+
+    ▶ Prerequis
+    ──────────────────────────────────────────────────────────
+       • Node.js doit etre installe (npx mcp-remote)
+       • Zotero doit etre en cours d execution avec le serveur MCP active
+
 chatbox-instructions =
     ══════════════════════════════════════════════════════════
       Chatbox MCP Configuration Guide
@@ -310,6 +326,7 @@ menu-semantic-clear-selected-done = Index efface pour
 menu-semantic-items = elements
 menu-semantic-index-started = Indexation semantique demarree
 menu-semantic-index-completed = Indexation terminee
+menu-semantic-index-busy = Une indexation est deja en cours, veuillez attendre la fin
 menu-semantic-index-error = Echec de l'indexation semantique
 menu-semantic-index-no-collection = Veuillez selectionner une collection
 menu-semantic-index-no-items = Aucun element indexable

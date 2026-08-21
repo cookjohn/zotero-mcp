@@ -475,6 +475,7 @@ function bindEmbeddingSettings(doc: Document) {
   const modelInput = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-embedding-model`) as HTMLInputElement;
   const dimensionsInput = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-embedding-dimensions`) as HTMLInputElement;
   const dimensionsRow = dimensionsInput?.closest('.zmp-fg') || dimensionsInput?.parentElement;
+  const timeoutInput = doc?.querySelector(`#zotero-prefpane-${config.addonRef}-embedding-timeout`) as HTMLInputElement;
   const testButton = doc?.querySelector("#test-embedding-button") as HTMLButtonElement;
   const testResult = doc?.querySelector("#embedding-test-result") as HTMLSpanElement;
 
@@ -527,8 +528,16 @@ function bindEmbeddingSettings(doc: Document) {
   apiBaseInput?.addEventListener("input", updateEndpointPreview);
   apiBaseInput?.addEventListener("change", updateEndpointPreview);
 
-  // Check if model supports custom dimensions
-  const supportsCustomDimensions = (model: string) => model.includes('text-embedding-3');
+  // Check if model supports custom dimensions. Must stay aligned with the
+  // service-side whitelist in embeddingService.ts (supportsDimensions);
+  // Ollama-served MRL models (e.g. qwen3-embedding) accept dimensions via
+  // the native /api/embed body, so allow manual entry for them too (#62)
+  const supportsCustomDimensions = (model: string) => {
+    const m = model.toLowerCase();
+    return m.includes('text-embedding-3') || m.includes('text-embedding-v3') ||
+      m.includes('text-embedding-v4') || m.includes('qwen3-embedding') ||
+      m.includes('embeddinggemma') || m.includes('nomic-embed');
+  };
 
   // Update dimensions input visibility based on model
   const updateDimensionsVisibility = () => {
@@ -609,6 +618,7 @@ function bindEmbeddingSettings(doc: Document) {
   bindSave(apiBaseInput, "extensions.zotero.zotero-mcp-plugin.embedding.apiBase");
   bindSave(apiKeyInput, "extensions.zotero.zotero-mcp-plugin.embedding.apiKey");
   bindSave(dimensionsInput, "extensions.zotero.zotero-mcp-plugin.embedding.dimensions", true);
+  bindSave(timeoutInput, "extensions.zotero.zotero-mcp-plugin.embedding.timeoutSeconds", true);
 
   // Model change handler - update dimensions visibility and clear detected dimensions
   modelInput?.addEventListener("change", async () => {
@@ -677,9 +687,13 @@ function bindEmbeddingSettings(doc: Document) {
         },
         body: JSON.stringify({
           model: model,
-          input: ["test"]
+          input: ["test"],
+          // Send the same dimensions indexing will use, otherwise detected
+          // dims diverge from index dims into a permanent mismatch (#62)
+          ...((supportsCustomDimensions(model) && parseInt(dimensionsInput?.value || "", 10) > 0)
+            ? { dimensions: parseInt(dimensionsInput.value, 10) } : {})
         }),
-        timeout: 30000,
+        timeout: (getEmbeddingTimeoutSeconds() || 30) * 1000,
         responseType: 'json',
         successCodes: false // Don't throw on non-2xx, let us handle it
       } as any);
@@ -850,6 +864,21 @@ function bindEmbeddingSettings(doc: Document) {
 /**
  * Update embedding service configuration from preferences
  */
+/**
+ * Read the user-configured embedding API timeout in seconds (clamped to
+ * 5-600), or 0 when unset so callers can keep their own default.
+ */
+function getEmbeddingTimeoutSeconds(): number {
+  try {
+    const raw = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.embedding.timeoutSeconds", true);
+    const seconds = parseInt(String(raw ?? ""), 10);
+    if (isNaN(seconds) || seconds <= 0) return 0;
+    return Math.min(600, Math.max(5, seconds));
+  } catch {
+    return 0;
+  }
+}
+
 function updateEmbeddingServiceConfig() {
   try {
     // Import and update embedding service
@@ -860,12 +889,14 @@ function updateEmbeddingServiceConfig() {
     const apiKey = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.embedding.apiKey", true) || "";
     const model = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.embedding.model", true) || "";
     const dimensions = Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.embedding.dimensions", true);
+    const timeoutSeconds = getEmbeddingTimeoutSeconds();
 
     embeddingService.updateConfig({
       apiBase: apiBase as string,
       apiKey: apiKey as string,
       model: model as string,
-      dimensions: dimensions ? parseInt(String(dimensions), 10) : undefined
+      dimensions: dimensions ? parseInt(String(dimensions), 10) : undefined,
+      ...(timeoutSeconds ? { timeout: timeoutSeconds * 1000 } : {})
     });
 
     ztoolkit.log(`[PreferenceScript] Updated embedding service config`);
@@ -1050,6 +1081,7 @@ function bindSemanticStatsSettings(doc: Document) {
   // Index control elements
   const buildButton = doc?.querySelector("#build-semantic-index-button") as HTMLButtonElement;
   const rebuildButton = doc?.querySelector("#rebuild-semantic-index-button") as HTMLButtonElement;
+  const retryFailedButton = doc?.querySelector("#retry-failed-index-button") as HTMLButtonElement;
   const clearButton = doc?.querySelector("#clear-semantic-index-button") as HTMLButtonElement;
   const pauseButton = doc?.querySelector("#pause-semantic-index-button") as HTMLButtonElement;
   const resumeButton = doc?.querySelector("#resume-semantic-index-button") as HTMLButtonElement;
@@ -1114,6 +1146,53 @@ function bindSemanticStatsSettings(doc: Document) {
     const confirmMsg = getString("pref-semantic-index-confirm-rebuild" as any) || "This will rebuild the entire index. Are you sure?";
     if (addon.data.prefs!.window.confirm(confirmMsg)) {
       startIndexing(true);
+    }
+  });
+
+  // Retry failed items button
+  retryFailedButton?.addEventListener("click", async () => {
+    if (isIndexing) return;
+    isIndexing = true;
+
+    try {
+      const { getSemanticSearchService } = require("./semantic");
+      const semanticService = getSemanticSearchService();
+
+      await semanticService.initialize();
+
+      if (progressContainer) progressContainer.style.display = "block";
+      updateControlButtons('indexing');
+      showMessage(getString("pref-semantic-index-started" as any) || "Indexing started...", "info");
+      startProgressUpdates();
+
+      const result = await semanticService.retryFailedItems((progress: any) => {
+        updateProgress(progress);
+      });
+
+      isIndexing = false;
+      stopProgressUpdates();
+      updateControlButtons('idle');
+
+      if (result.status === 'busy') {
+        showMessage(getString("pref-semantic-index-busy" as any) || "An index build is already running, please wait for it to finish", "warning");
+      } else if (result.total === 0) {
+        showMessage(getString("pref-semantic-index-no-failed-items" as any) || "No failed items to retry", "info");
+      } else if ((result.failedCount || 0) > 0) {
+        showMessage(
+          `${getString("pref-semantic-index-completed" as any) || "Indexing completed"} (${result.processed}/${result.total}, ${result.failedCount} ${getString("pref-semantic-index-failed-items" as any) || "items failed"})`,
+          "warning"
+        );
+      } else {
+        showMessage(getString("pref-semantic-index-completed" as any) + ` (${result.processed}/${result.total})`, "success");
+      }
+
+      loadSemanticStats();
+    } catch (error) {
+      isIndexing = false;
+      stopProgressUpdates();
+      updateControlButtons('idle');
+      showMessage(getString("pref-semantic-index-error" as any) + `: ${error}`, "error");
+      ztoolkit.log(`[PreferenceScript] Retry failed items failed: ${error}`, "error");
     }
   });
 
@@ -1189,7 +1268,7 @@ function bindSemanticStatsSettings(doc: Document) {
         startProgressUpdates();
 
         // Start a new build (not rebuild) to continue from where we left off
-        await semanticService.buildIndex({
+        const resumeResult = await semanticService.buildIndex({
           rebuild: false,  // Don't rebuild, just continue with unindexed items
           onProgress: (p: any) => {
             updateProgress(p);
@@ -1215,6 +1294,15 @@ function bindSemanticStatsSettings(doc: Document) {
             // Note: error state is handled by the error callback, not here
           }
         });
+        if (resumeResult.status === 'busy') {
+          // The original build promise (from before the pane was reopened) is
+          // still alive and was unparked by resumeIndex() above; our duplicate
+          // buildIndex call was rejected by the guard, so its onProgress will
+          // never fire. Let the polling interval drive the UI instead of
+          // leaving isIndexing stuck true forever.
+          ztoolkit.log('[PreferenceScript] Resume unparked an existing build; relying on progress polling');
+          isIndexing = false;
+        }
       } else {
         // Normal resume during active session
         semanticService.resumeIndex();
@@ -1301,7 +1389,9 @@ function bindSemanticStatsSettings(doc: Document) {
       stopProgressUpdates();
       updateControlButtons('idle');
 
-      if (result.status === 'completed') {
+      if (result.status === 'busy') {
+        showMessage(getString("pref-semantic-index-busy" as any) || "An index build is already running, please wait for it to finish", "warning");
+      } else if (result.status === 'completed') {
         if (result.total === 0) {
           showMessage(getString("pref-semantic-index-no-items" as any) || "No items need indexing", "info");
         } else {
@@ -1376,6 +1466,7 @@ function bindSemanticStatsSettings(doc: Document) {
   function updateControlButtons(status: 'idle' | 'indexing' | 'paused') {
     if (buildButton) buildButton.style.display = status === 'idle' ? '' : 'none';
     if (rebuildButton) rebuildButton.style.display = status === 'idle' ? '' : 'none';
+    if (retryFailedButton) retryFailedButton.style.display = status === 'idle' ? '' : 'none';
     if (clearButton) clearButton.style.display = status === 'idle' ? '' : 'none';
     if (pauseButton) pauseButton.style.display = status === 'indexing' ? '' : 'none';
     if (resumeButton) resumeButton.style.display = status === 'paused' ? '' : 'none';
@@ -1565,6 +1656,13 @@ function bindSemanticStatsSettings(doc: Document) {
         if (progressContainer) progressContainer.style.display = "none";
         updateControlButtons('idle');
         if (statusEl) statusEl.style.color = "";
+        // The build is over (idle/completed/aborted): release the local flag
+        // and stop polling so the buttons cannot get stuck disabled when the
+        // build finished without this pane's onProgress firing
+        if (isIndexing && !semanticService.isBuildActive()) {
+          isIndexing = false;
+          stopProgressUpdates();
+        }
       }
 
       // Hide loading, show content
@@ -1685,7 +1783,9 @@ function bindSemanticStatsSettings(doc: Document) {
           statusEl.style.color = "var(--msg-error-text)";
         }
 
-        isIndexing = false;
+        // NOTE: do NOT set isIndexing = false here; the build promise is
+        // still alive (parked in waitWhilePaused). Resume must take the
+        // resumeIndex() path instead of spawning a second buildIndex run.
       });
 
       ztoolkit.log("[PreferenceScript] Registered error callback for semantic service");

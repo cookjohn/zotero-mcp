@@ -16,6 +16,7 @@ declare let Zotero: any;
 declare let ztoolkit: ZToolkit;
 
 export interface SmartAnnotationOptions {
+  libraryID?: number;
   maxTokens?: number;
   outputMode?: string; // 'smart', 'preview', 'full', 'minimal'
   types?: string[];
@@ -132,6 +133,7 @@ export class SmartAnnotationExtractor {
    * Unified annotation retrieval (replaces 4 old tools)
    */
   async getAnnotations(params: {
+    libraryID?: number;
     itemKey?: string;
     annotationId?: string;
     annotationIds?: string[];
@@ -152,6 +154,7 @@ export class SmartAnnotationExtractor {
       const effectiveSettings = MCPSettingsService.getEffectiveSettings();
       
       const options: SmartAnnotationOptions = {
+        libraryID: params.libraryID,
         maxTokens: params.maxTokens || effectiveSettings.maxTokens,
         outputMode: params.outputMode || MCPSettingsService.get('content.mode'),
         types: params.types || ['note', 'highlight', 'annotation'],
@@ -167,9 +170,9 @@ export class SmartAnnotationExtractor {
 
       // Route to different retrieval methods
       if (params.annotationId) {
-        annotations = await this.getById(params.annotationId);
+        annotations = await this.getById(params.annotationId, options.libraryID);
       } else if (params.annotationIds) {
-        annotations = await this.getByIds(params.annotationIds);
+        annotations = await this.getByIds(params.annotationIds, options.libraryID);
       } else if (params.itemKey) {
         annotations = await this.getByItem(params.itemKey, options);
       } else {
@@ -259,6 +262,7 @@ export class SmartAnnotationExtractor {
    * Intelligent search with relevance scoring
    */
   async searchAnnotations(query: string, options: {
+    libraryID?: number;
     itemKeys?: string[];
     types?: string[];
     colors?: string[];      // Filter by colors
@@ -278,6 +282,7 @@ export class SmartAnnotationExtractor {
       const hasQuery = query && query.trim().length > 0;
 
       const searchOptions: SmartAnnotationOptions = {
+        libraryID: options.libraryID,
         maxTokens: options.maxTokens || effectiveSettings.maxTokens,
         outputMode: options.outputMode || MCPSettingsService.get('content.mode'),
         types: options.types || ['note', 'highlight', 'annotation'],
@@ -293,6 +298,7 @@ export class SmartAnnotationExtractor {
       if (hasQuery) {
         // Search using AnnotationService with query
         const searchParams = {
+          libraryID: searchOptions.libraryID,
           q: query,
           itemKey: options.itemKeys?.[0], // For now, use first itemKey if provided
           type: searchOptions.types,
@@ -314,6 +320,7 @@ export class SmartAnnotationExtractor {
 
         while (hasMore) {
           const allParams = {
+            libraryID: searchOptions.libraryID,
             type: searchOptions.types,
             detailed: false,
             limit: String(batchSize),
@@ -442,16 +449,16 @@ export class SmartAnnotationExtractor {
   /**
    * Get annotation by single ID
    */
-  private async getById(annotationId: string): Promise<any[]> {
-    const annotation = await this.annotationService.getAnnotationById(annotationId);
+  private async getById(annotationId: string, libraryID?: number): Promise<any[]> {
+    const annotation = await this.annotationService.getAnnotationById(annotationId, libraryID);
     return annotation ? [annotation] : [];
   }
 
   /**
    * Get annotations by multiple IDs
    */
-  private async getByIds(annotationIds: string[]): Promise<any[]> {
-    return await this.annotationService.getAnnotationsByIds(annotationIds);
+  private async getByIds(annotationIds: string[], libraryID?: number): Promise<any[]> {
+    return await this.annotationService.getAnnotationsByIds(annotationIds, libraryID);
   }
 
   /**
@@ -463,7 +470,7 @@ export class SmartAnnotationExtractor {
     // Get notes if requested
     if (options.types!.includes('note')) {
       try {
-        const notes = await this.annotationService.getAllNotes(itemKey);
+        const notes = await this.annotationService.getAllNotes(itemKey, options.libraryID);
         annotations.push(...notes);
       } catch (error) {
         ztoolkit.log(`[SmartAnnotationExtractor] Error getting notes for ${itemKey}: ${error}`, 'warn');
@@ -474,7 +481,7 @@ export class SmartAnnotationExtractor {
     const pdfTypes = ['highlight', 'annotation', 'ink', 'text', 'image'];
     if (options.types!.some(type => pdfTypes.includes(type))) {
       try {
-        const pdfAnnotations = await this.annotationService.getPDFAnnotations(itemKey);
+        const pdfAnnotations = await this.annotationService.getPDFAnnotations(itemKey, options.libraryID);
         // Filter by requested PDF annotation types
         const filteredPdfAnnotations = pdfAnnotations.filter(ann => options.types!.includes(ann.type));
         annotations.push(...filteredPdfAnnotations);

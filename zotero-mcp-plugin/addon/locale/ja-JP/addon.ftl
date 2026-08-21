@@ -205,6 +205,22 @@ gemini-cli-instructions =
 
     ══════════════════════════════════════════════════════════
 
+workbuddy-instructions =
+    ══════════════════════════════════════════════════════════
+      WorkBuddy MCP 設定ガイド
+    ══════════════════════════════════════════════════════════
+
+    ▶ 設定手順
+    ──────────────────────────────────────────────────────────
+       1. WorkBuddy を開き、MCP サーバー設定（mcp.json）を開く
+       2. 生成された設定を mcpServers セクションに追加
+       3. 保存して WorkBuddy を再起動
+
+    ▶ 前提条件
+    ──────────────────────────────────────────────────────────
+       • Node.js が必要です（npx mcp-remote を使用）
+       • Zotero が起動中で MCP サーバーが有効であること
+
 chatbox-instructions =
     ══════════════════════════════════════════════════════════
       Chatbox MCP Configuration Guide
@@ -310,6 +326,7 @@ menu-semantic-clear-selected-done = インデックスをクリアしました:
 menu-semantic-items = 件のアイテム
 menu-semantic-index-started = セマンティックインデックスを開始しました
 menu-semantic-index-completed = インデックス作成が完了しました
+menu-semantic-index-busy = インデックス作成がすでに実行中です。完了をお待ちください
 menu-semantic-index-error = セマンティックインデックスに失敗しました
 menu-semantic-index-no-collection = コレクションを選択してください
 menu-semantic-index-no-items = インデックス可能なアイテムがありません

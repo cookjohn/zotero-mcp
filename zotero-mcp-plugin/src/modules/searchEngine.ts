@@ -2,7 +2,7 @@ import { formatItem, formatItemBrief } from "./itemFormatter";
 
 declare let ztoolkit: ZToolkit;
 
-class MCPError extends Error {
+export class MCPError extends Error {
   status: number;
   constructor(status: number, message: string) {
     super(message);
@@ -32,7 +32,7 @@ interface SearchParams {
   offset?: string;
   sort?: string;
   direction?: string;
-  libraryID?: string; // 添加库ID参数
+  libraryID?: number; // 添加库ID参数
   includeAttachments?: string; // 是否包含附件
   includeNotes?: string; // 是否包含笔记
 
@@ -617,9 +617,7 @@ export async function handleSearchRequest(
   const startTime = Date.now();
 
   // --- 1. 参数处理和验证 ---
-  const libraryID = params.libraryID
-    ? parseInt(params.libraryID, 10)
-    : Zotero.Libraries.userLibraryID;
+  const libraryID = params.libraryID ?? Zotero.Libraries.userLibraryID;
   const limit = Math.min(parseInt(params.limit || "100", 10), 500);
   const offset = parseInt(params.offset || "0", 10);
   const sort = params.sort || "dateAdded";

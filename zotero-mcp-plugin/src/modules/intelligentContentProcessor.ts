@@ -78,7 +78,16 @@ export class IntelligentContentProcessor {
 
       // Step 1: Split text into sentences
       const sentences = this.splitIntoSentences(text);
-      
+
+      // TextRank below is O(n^2)+ in sentence count and runs on the main
+      // thread; bail out to simple truncation for very long inputs so a big
+      // document cannot freeze the Zotero UI for minutes.
+      const MAX_SENTENCES = 400;
+      if (sentences.length > MAX_SENTENCES) {
+        ztoolkit.log(`[IntelligentProcessor] ${sentences.length} sentences exceeds ${MAX_SENTENCES}, falling back to simple truncation`, 'warn');
+        return this.fallbackProcessing(text, mode);
+      }
+
       // Step 2: Calculate importance scores for each sentence
       const scoredSentences = await this.calculateImportanceScores(sentences, text);
       

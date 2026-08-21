@@ -118,7 +118,9 @@ async function refreshCacheAsync(): Promise<void> {
     const { getVectorStore } = require("./semantic/vectorStore");
     const vectorStore = getVectorStore();
     await vectorStore.initialize();
-    indexedItemsCache = await vectorStore.getIndexedItems();
+    // Exclude failure markers: an item recorded as 'failed:<type>' must not
+    // show the indexed checkmark
+    indexedItemsCache = await vectorStore.getSuccessfullyIndexedItems();
     cacheTimestamp = Date.now();
     ztoolkit.log(`[SemanticColumn] Cache refreshed: ${indexedItemsCache?.size || 0} indexed items`);
   } catch (error) {

@@ -11,7 +11,7 @@ import {
   formatCollectionDetails,
   formatCollectionTree,
 } from "./collectionFormatter";
-import { handleSearchRequest } from "./searchEngine";
+import { handleSearchRequest, MCPError } from "./searchEngine";
 import { FulltextService } from "./fulltextService";
 
 declare let ztoolkit: ZToolkit;
@@ -22,6 +22,25 @@ interface HttpResponse {
   statusText: string;
   headers?: Record<string, string>;
   body?: string;
+}
+
+function resolveLibraryID(query: URLSearchParams): number {
+  const rawLibraryID = query.get("libraryID");
+  if (rawLibraryID === null) {
+    return Zotero.Libraries.userLibraryID;
+  }
+
+  // Treat empty or whitespace-only values the same as an omitted libraryID.
+  if (!rawLibraryID.trim()) {
+    return Zotero.Libraries.userLibraryID;
+  }
+
+  const libraryID = Number(rawLibraryID);
+  if (!Number.isInteger(libraryID) || !Number.isFinite(libraryID)) {
+    throw new MCPError(400, "Invalid libraryID: must be an integer");
+  }
+
+  return libraryID;
 }
 
 /**
@@ -38,6 +57,105 @@ export async function handlePing(): Promise<HttpResponse> {
       timestamp: new Date().toISOString(),
     }),
   };
+}
+
+/**
+ * Handles listing all available Zotero libraries.
+ * @param query - URL query parameters.
+ * @returns A promise that resolves to an HttpResponse.
+ */
+export async function handleGetLibraries(
+  query: URLSearchParams,
+): Promise<HttpResponse> {
+  try {
+    const limit = parseInt(query.get("limit") || "100", 10);
+    const offset = parseInt(query.get("offset") || "0", 10);
+
+    const allLibraries = Zotero.Libraries.getAll();
+    const total = allLibraries.length;
+    const paginated = allLibraries.slice(offset, offset + limit);
+    const libraries = paginated.map((library) => ({
+      libraryID: library.libraryID,
+      name: library.name,
+      libraryType: library.libraryType,
+    }));
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "X-Total-Count": total.toString(),
+      },
+      body: JSON.stringify(libraries),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    Zotero.logError(error);
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: "An unexpected error occurred" }),
+    };
+  }
+}
+
+/**
+ * Handles searching Zotero libraries by name.
+ * @param query - URL query parameters.
+ * @returns A promise that resolves to an HttpResponse.
+ */
+export async function handleSearchLibraries(
+  query: URLSearchParams,
+): Promise<HttpResponse> {
+  try {
+    const q = query.get("q");
+    if (!q) {
+      return {
+        status: 400,
+        statusText: "Bad Request",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "Missing query parameter 'q'" }),
+      };
+    }
+
+    const limit = parseInt(query.get("limit") || "100", 10);
+    const offset = parseInt(query.get("offset") || "0", 10);
+    const lowerCaseQuery = q.toLowerCase();
+
+    const matchedLibraries = Zotero.Libraries.getAll().filter((library) =>
+      library.name.toLowerCase().includes(lowerCaseQuery),
+    );
+
+    const total = matchedLibraries.length;
+    const paginated = matchedLibraries.slice(offset, offset + limit);
+    const libraries = paginated.map((library) => ({
+      libraryID: library.libraryID,
+      name: library.name,
+      libraryType: library.libraryType,
+    }));
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "X-Total-Count": total.toString(),
+      },
+      body: JSON.stringify(libraries),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
+    Zotero.logError(error);
+    return {
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
+    };
+  }
 }
 
 /**
@@ -61,8 +179,9 @@ export async function handleGetItem(
   }
 
   try {
-    const item = Zotero.Items.getByLibraryAndKey(
-      Zotero.Libraries.userLibraryID,
+    const libraryID = resolveLibraryID(query);
+    const item = await Zotero.Items.getByLibraryAndKeyAsync(
+      libraryID,
       itemKey,
     );
 
@@ -87,12 +206,13 @@ export async function handleGetItem(
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     Zotero.logError(error);
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }
@@ -121,6 +241,11 @@ export async function handleSearch(
       } else {
         searchParams[key] = value;
       }
+    }
+
+    const libraryID = resolveLibraryID(query);
+    if (query.has("libraryID")) {
+      searchParams.libraryID = libraryID;
     }
 
     // Backward compatibility: if 'tag' is present but 'tags' is not, use 'tag'
@@ -194,9 +319,7 @@ export async function handleGetCollections(
   query: URLSearchParams,
 ): Promise<HttpResponse> {
   try {
-    const libraryID =
-      parseInt(query.get("libraryID") || "", 10) ||
-      Zotero.Libraries.userLibraryID;
+    const libraryID = resolveLibraryID(query);
     const limit = parseInt(query.get("limit") || "100", 10);
     const offset = parseInt(query.get("offset") || "0", 10);
     const sort = query.get("sort") || "name";
@@ -206,7 +329,7 @@ export async function handleGetCollections(
 
     let collections: Zotero.Collection[] = [];
     if (parentCollection) {
-      const parent = Zotero.Collections.getByLibraryAndKey(
+      const parent = await Zotero.Collections.getByLibraryAndKeyAsync(
         libraryID,
         parentCollection,
       );
@@ -264,12 +387,13 @@ export async function handleGetCollections(
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     Zotero.logError(error);
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }
@@ -292,9 +416,7 @@ export async function handleSearchCollections(
         body: JSON.stringify({ error: "Missing query parameter 'q'" }),
       };
     }
-    const libraryID =
-      parseInt(query.get("libraryID") || "", 10) ||
-      Zotero.Libraries.userLibraryID;
+    const libraryID = resolveLibraryID(query);
     const limit = parseInt(query.get("limit") || "100", 10);
     const offset = parseInt(query.get("offset") || "0", 10);
 
@@ -321,12 +443,13 @@ export async function handleSearchCollections(
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     Zotero.logError(error);
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }
@@ -351,11 +474,9 @@ export async function handleGetCollectionDetails(
         body: JSON.stringify({ error: "Missing collectionKey parameter" }),
       };
     }
-    const libraryID =
-      parseInt(query.get("libraryID") || "", 10) ||
-      Zotero.Libraries.userLibraryID;
+    const libraryID = resolveLibraryID(query);
 
-    const collection = Zotero.Collections.getByLibraryAndKey(
+    const collection = await Zotero.Collections.getByLibraryAndKeyAsync(
       libraryID,
       collectionKey,
     );
@@ -385,12 +506,13 @@ export async function handleGetCollectionDetails(
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     Zotero.logError(error);
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }
@@ -417,13 +539,11 @@ export async function handleGetCollectionItems(
         body: JSON.stringify({ error: "Missing collectionKey parameter" }),
       };
     }
-    const libraryID =
-      parseInt(query.get("libraryID") || "", 10) ||
-      Zotero.Libraries.userLibraryID;
+    const libraryID = resolveLibraryID(query);
 
     ztoolkit.log(`[ApiHandlers] Using libraryID: ${libraryID}`);
 
-    const collection = Zotero.Collections.getByLibraryAndKey(
+    const collection = await Zotero.Collections.getByLibraryAndKeyAsync(
       libraryID,
       collectionKey,
     );
@@ -474,14 +594,15 @@ export async function handleGetCollectionItems(
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     ztoolkit.log(`[ApiHandlers] Error in handleGetCollectionItems: ${error.message}`, "error");
     ztoolkit.log(`[ApiHandlers] Error stack: ${error.stack}`, "error");
     Zotero.logError(error);
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }
@@ -509,13 +630,11 @@ export async function handleGetSubcollections(
       };
     }
     
-    const libraryID =
-      parseInt(query.get("libraryID") || "", 10) ||
-      Zotero.Libraries.userLibraryID;
+    const libraryID = resolveLibraryID(query);
 
     ztoolkit.log(`[ApiHandlers] Using libraryID: ${libraryID}`);
 
-    const collection = Zotero.Collections.getByLibraryAndKey(
+    const collection = await Zotero.Collections.getByLibraryAndKeyAsync(
       libraryID,
       collectionKey,
     );
@@ -583,14 +702,15 @@ export async function handleGetSubcollections(
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     ztoolkit.log(`[ApiHandlers] Error in handleGetSubcollections: ${error.message}`, "error");
     ztoolkit.log(`[ApiHandlers] Error stack: ${error.stack}`, "error");
     Zotero.logError(error);
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }
@@ -806,10 +926,12 @@ export async function handleSearchFulltext(
   ztoolkit.log(`[MCP ApiHandlers] Searching fulltext for: "${q}"`);
 
   try {
+    const libraryID = resolveLibraryID(query);
     const fulltextService = new FulltextService();
     
     // Parse search options
     const options = {
+      libraryID,
       itemKeys: query.get("itemKeys")?.split(",") || null,
       contextLength: parseInt(query.get("contextLength") || "200", 10),
       maxResults: Math.min(parseInt(query.get("maxResults") || "50", 10), 200),
@@ -826,6 +948,7 @@ export async function handleSearchFulltext(
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     ztoolkit.log(
       `[MCP ApiHandlers] Error in handleSearchFulltext: ${error.message}`,
       "error",
@@ -833,10 +956,10 @@ export async function handleSearchFulltext(
     Zotero.logError(error);
 
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }
@@ -864,8 +987,9 @@ export async function handleGetItemAbstract(
   ztoolkit.log(`[MCP ApiHandlers] Getting abstract for item ${itemKey}`);
 
   try {
-    const item = Zotero.Items.getByLibraryAndKey(
-      Zotero.Libraries.userLibraryID,
+    const libraryID = resolveLibraryID(query);
+    const item = await Zotero.Items.getByLibraryAndKeyAsync(
+      libraryID,
       itemKey,
     );
 
@@ -915,6 +1039,7 @@ export async function handleGetItemAbstract(
     }
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const status = (error as any).status || 500;
     ztoolkit.log(
       `[MCP ApiHandlers] Error in handleGetItemAbstract: ${error.message}`,
       "error",
@@ -922,10 +1047,10 @@ export async function handleGetItemAbstract(
     Zotero.logError(error);
 
     return {
-      status: 500,
-      statusText: "Internal Server Error",
+      status,
+      statusText: status === 400 ? "Bad Request" : "Internal Server Error",
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ error: "An unexpected error occurred" }),
+      body: JSON.stringify({ error: status === 400 ? error.message : "An unexpected error occurred" }),
     };
   }
 }
@@ -934,7 +1059,7 @@ export async function handleGetItemAbstract(
  * Handles creating a new collection.
  */
 export async function handleCreateCollection(
-  body: { name: string; parentCollection?: string },
+  body: { name: string; parentCollection?: string; libraryID?: number },
 ): Promise<HttpResponse> {
   try {
     if (!body.name || body.name.trim().length === 0) {
@@ -946,13 +1071,13 @@ export async function handleCreateCollection(
       };
     }
 
-    const libraryID = Zotero.Libraries.userLibraryID;
+    const libraryID = body.libraryID ?? Zotero.Libraries.userLibraryID;
     const collection = new Zotero.Collection();
     (collection as any).libraryID = libraryID;
     collection.name = body.name.trim();
 
     if (body.parentCollection) {
-      const parent = Zotero.Collections.getByLibraryAndKey(
+      const parent = await Zotero.Collections.getByLibraryAndKeyAsync(
         libraryID,
         body.parentCollection,
       );
@@ -962,7 +1087,7 @@ export async function handleCreateCollection(
           statusText: "Not Found",
           headers: { "Content-Type": "application/json; charset=utf-8" },
           body: JSON.stringify({
-            error: `Parent collection ${body.parentCollection} not found`,
+            error: `Parent collection ${body.parentCollection} not found in library ${libraryID}`,
           }),
         };
       }
@@ -995,7 +1120,7 @@ export async function handleCreateCollection(
  */
 export async function handleUpdateCollection(
   params: Record<string, string>,
-  body: { name?: string; parentCollection?: string },
+  body: { name?: string; parentCollection?: string; libraryID?: number },
 ): Promise<HttpResponse> {
   try {
     const collectionKey = params[1];
@@ -1008,8 +1133,8 @@ export async function handleUpdateCollection(
       };
     }
 
-    const libraryID = Zotero.Libraries.userLibraryID;
-    const collection = Zotero.Collections.getByLibraryAndKey(
+    const libraryID = body.libraryID ?? Zotero.Libraries.userLibraryID;
+    const collection = await Zotero.Collections.getByLibraryAndKeyAsync(
       libraryID,
       collectionKey,
     );
@@ -1020,7 +1145,7 @@ export async function handleUpdateCollection(
         statusText: "Not Found",
         headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({
-          error: `Collection with key ${collectionKey} not found`,
+          error: `Collection with key ${collectionKey} not found in library ${libraryID}`,
         }),
       };
     }
@@ -1050,7 +1175,7 @@ export async function handleUpdateCollection(
             body: JSON.stringify({ error: "Cannot move a collection into itself" }),
           };
         }
-        const parent = Zotero.Collections.getByLibraryAndKey(
+        const parent = await Zotero.Collections.getByLibraryAndKeyAsync(
           libraryID,
           body.parentCollection,
         );
@@ -1060,7 +1185,7 @@ export async function handleUpdateCollection(
             statusText: "Not Found",
             headers: { "Content-Type": "application/json; charset=utf-8" },
             body: JSON.stringify({
-              error: `Parent collection ${body.parentCollection} not found`,
+              error: `Parent collection ${body.parentCollection} not found in library ${libraryID}`,
             }),
           };
         }
@@ -1104,7 +1229,7 @@ export async function handleUpdateCollection(
  */
 export async function handleDeleteCollection(
   params: Record<string, string>,
-  body: { deleteItems?: boolean },
+  body: { deleteItems?: boolean; libraryID?: number },
 ): Promise<HttpResponse> {
   try {
     const collectionKey = params[1];
@@ -1117,8 +1242,8 @@ export async function handleDeleteCollection(
       };
     }
 
-    const libraryID = Zotero.Libraries.userLibraryID;
-    const collection = Zotero.Collections.getByLibraryAndKey(
+    const libraryID = body.libraryID ?? Zotero.Libraries.userLibraryID;
+    const collection = await Zotero.Collections.getByLibraryAndKeyAsync(
       libraryID,
       collectionKey,
     );
@@ -1129,7 +1254,7 @@ export async function handleDeleteCollection(
         statusText: "Not Found",
         headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({
-          error: `Collection with key ${collectionKey} not found`,
+          error: `Collection with key ${collectionKey} not found in library ${libraryID}`,
         }),
       };
     }
@@ -1173,7 +1298,7 @@ export async function handleDeleteCollection(
  */
 export async function handleAddItemsToCollection(
   params: Record<string, string>,
-  body: { itemKeys: string[] },
+  body: { itemKeys: string[]; libraryID?: number },
 ): Promise<HttpResponse> {
   try {
     const collectionKey = params[1];
@@ -1195,8 +1320,8 @@ export async function handleAddItemsToCollection(
       };
     }
 
-    const libraryID = Zotero.Libraries.userLibraryID;
-    const collection = Zotero.Collections.getByLibraryAndKey(
+    const libraryID = body.libraryID ?? Zotero.Libraries.userLibraryID;
+    const collection = await Zotero.Collections.getByLibraryAndKeyAsync(
       libraryID,
       collectionKey,
     );
@@ -1207,7 +1332,7 @@ export async function handleAddItemsToCollection(
         statusText: "Not Found",
         headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({
-          error: `Collection with key ${collectionKey} not found`,
+          error: `Collection with key ${collectionKey} not found in library ${libraryID}`,
         }),
       };
     }
@@ -1217,7 +1342,7 @@ export async function handleAddItemsToCollection(
     const alreadyInCollection: string[] = [];
 
     for (const itemKey of body.itemKeys) {
-      const item = Zotero.Items.getByLibraryAndKey(libraryID, itemKey);
+      const item = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, itemKey);
       if (!item) {
         notFound.push(itemKey);
         continue;
@@ -1230,9 +1355,9 @@ export async function handleAddItemsToCollection(
     }
 
     if (added.length > 0) {
-      const itemIDs = added.map(
-        (key: string) => (Zotero.Items.getByLibraryAndKey(libraryID, key) as Zotero.Item).id,
-      );
+      const itemIDs = (await Promise.all(added.map(
+        (key: string) => Zotero.Items.getByLibraryAndKeyAsync(libraryID, key),
+      ))).map((item) => (item as Zotero.Item).id);
       await Zotero.DB.executeTransaction(async () => {
         await collection.addItems(itemIDs);
       });
@@ -1271,7 +1396,7 @@ export async function handleAddItemsToCollection(
  */
 export async function handleRemoveItemsFromCollection(
   params: Record<string, string>,
-  body: { itemKeys: string[] },
+  body: { itemKeys: string[]; libraryID?: number },
 ): Promise<HttpResponse> {
   try {
     const collectionKey = params[1];
@@ -1293,8 +1418,8 @@ export async function handleRemoveItemsFromCollection(
       };
     }
 
-    const libraryID = Zotero.Libraries.userLibraryID;
-    const collection = Zotero.Collections.getByLibraryAndKey(
+    const libraryID = body.libraryID ?? Zotero.Libraries.userLibraryID;
+    const collection = await Zotero.Collections.getByLibraryAndKeyAsync(
       libraryID,
       collectionKey,
     );
@@ -1305,7 +1430,7 @@ export async function handleRemoveItemsFromCollection(
         statusText: "Not Found",
         headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({
-          error: `Collection with key ${collectionKey} not found`,
+          error: `Collection with key ${collectionKey} not found in library ${libraryID}`,
         }),
       };
     }
@@ -1315,7 +1440,7 @@ export async function handleRemoveItemsFromCollection(
     const notInCollection: string[] = [];
 
     for (const itemKey of body.itemKeys) {
-      const item = Zotero.Items.getByLibraryAndKey(libraryID, itemKey);
+      const item = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, itemKey);
       if (!item) {
         notFound.push(itemKey);
         continue;
@@ -1328,9 +1453,9 @@ export async function handleRemoveItemsFromCollection(
     }
 
     if (removed.length > 0) {
-      const itemIDs = removed.map(
-        (key: string) => (Zotero.Items.getByLibraryAndKey(libraryID, key) as Zotero.Item).id,
-      );
+      const itemIDs = (await Promise.all(removed.map(
+        (key: string) => Zotero.Items.getByLibraryAndKeyAsync(libraryID, key),
+      ))).map((item) => (item as Zotero.Item).id);
       await Zotero.DB.executeTransaction(async () => {
         await collection.removeItems(itemIDs);
       });

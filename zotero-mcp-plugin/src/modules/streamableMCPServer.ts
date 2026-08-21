@@ -1,4 +1,6 @@
 import {
+  handleGetLibraries,
+  handleSearchLibraries,
   handleSearch,
   handleGetItem,
   handleGetCollections,
@@ -291,11 +293,26 @@ export class StreamableMCPServer {
   private handleToolsList(request: MCPRequest): MCPResponse {
     const tools = [
       {
+        name: 'get_libraries',
+        description: 'List all Zotero libraries available in the current client. Returns minimal library metadata for each library as a paginated array.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            limit: { type: 'number', description: 'Maximum results to return' },
+            offset: { type: 'number', description: 'Pagination offset' },
+          },
+        },
+      },
+      {
         name: 'search_library',
         description: 'Search the Zotero library with advanced parameters, boolean operators, relevance scoring, and pagination. Results are from user\'s personal library. Use itemKey with get_content for full text. To find standalone PDFs without metadata, use itemType="attachment" with includeAttachments="true".',
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             q: { type: 'string', description: 'General search query' },
             title: { type: 'string', description: 'Title search' },
             titleOperator: {
@@ -341,11 +358,28 @@ export class StreamableMCPServer {
         },
       },
       {
+        name: 'search_libraries',
+        description: 'Search libraries by name',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            q: { type: 'string', description: 'Library name search query' },
+            limit: { type: 'number', description: 'Maximum results to return' },
+            offset: { type: 'number', description: 'Pagination offset' },
+          },
+          required: ['q'],
+        },
+      },
+      {
         name: 'search_annotations',
         description: 'Search and filter annotations (highlights, notes, comments) by query, colors, or tags. Returns user\'s personal research notes with relevance scoring. Preserve exact wording when quoting.',
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             q: { type: 'string', description: 'Search query (optional if colors or tags provided)' },
             itemKeys: {
               type: 'array',
@@ -398,6 +432,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             itemKey: { type: 'string', description: 'Unique item key' },
             mode: {
               type: 'string',
@@ -410,10 +448,14 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_annotations',
-        description: 'Get annotations and notes for specific items with color/tag filtering. Returns user\'s personal highlights and comments from PDFs. Preserve exact wording when quoting.',
+        description: 'Get annotations and notes for specific items with color/tag filtering. REQUIRED: provide one of itemKey, annotationId, or annotationIds (use search_library first to find the itemKey; use search_annotations to search by colors/tags across the library). Returns user\'s personal highlights and comments from PDFs. Preserve exact wording when quoting.',
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             itemKey: { type: 'string', description: 'Get all annotations for this item' },
             annotationId: { type: 'string', description: 'Get specific annotation by ID' },
             annotationIds: {
@@ -461,6 +503,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             itemKey: { type: 'string', description: 'Item key to get all content from this item' },
             attachmentKey: { type: 'string', description: 'Attachment key to get content from specific attachment' },
             mode: {
@@ -520,6 +566,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             mode: {
               type: 'string',
               enum: ['minimal', 'preview', 'standard', 'complete'],
@@ -544,6 +594,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             q: { type: 'string', description: 'Collection name search query' },
             limit: { type: 'number', description: 'Maximum results to return' },
           },
@@ -556,6 +610,10 @@ export class StreamableMCPServer {
           type: 'object',
           properties: {
             collectionKey: { type: 'string', description: 'Collection key' },
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
           },
           required: ['collectionKey'],
         },
@@ -567,6 +625,10 @@ export class StreamableMCPServer {
           type: 'object',
           properties: {
             collectionKey: { type: 'string', description: 'Collection key' },
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             limit: { type: 'number', description: 'Maximum results to return' },
             offset: { type: 'number', description: 'Pagination offset' },
           },
@@ -580,6 +642,10 @@ export class StreamableMCPServer {
           type: 'object',
           properties: {
             collectionKey: { type: 'string', description: 'Parent collection key' },
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             limit: { type: 'number', description: 'Maximum results to return (default: 100). Ignored when recursive=true.' },
             offset: { type: 'number', description: 'Pagination offset (default: 0). Ignored when recursive=true.' },
             recursive: { 
@@ -596,6 +662,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             name: { type: 'string', description: 'Name of the new collection' },
             parentCollection: {
               type: 'string',
@@ -611,6 +681,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             collectionKey: { type: 'string', description: 'Key of the collection to update' },
             name: { type: 'string', description: 'New name for the collection' },
             parentCollection: {
@@ -627,6 +701,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             collectionKey: { type: 'string', description: 'Key of the collection to delete' },
             deleteItems: {
               type: 'boolean',
@@ -642,6 +720,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             collectionKey: { type: 'string', description: 'Key of the target collection' },
             itemKeys: {
               type: 'array',
@@ -658,6 +740,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             collectionKey: { type: 'string', description: 'Key of the collection' },
             itemKeys: {
               type: 'array',
@@ -674,6 +760,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             q: { type: 'string', description: 'Search query' },
             itemKeys: { 
               type: 'array', 
@@ -698,6 +788,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             itemKey: { type: 'string', description: 'Item key' },
             format: {
               type: 'string',
@@ -806,6 +900,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             action: {
               type: 'string',
               enum: ['create', 'update', 'append'],
@@ -838,6 +936,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             action: {
               type: 'string',
               enum: ['add', 'remove', 'set'],
@@ -862,6 +964,10 @@ export class StreamableMCPServer {
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             itemKey: {
               type: 'string',
               description: 'Item key to update metadata on'
@@ -894,14 +1000,18 @@ export class StreamableMCPServer {
       },
       {
         name: 'write_item',
-        description: 'Create a new Zotero item or re-parent existing attachments. Common workflow: read PDF → extract metadata → create item → attach PDF via attachmentKeys. Confirm with user before executing.',
+        description: 'Create a new Zotero item, re-parent existing attachments, or import a local file as an attachment. Common workflows: (1) read PDF → extract metadata → create item → attach PDF via attachmentKeys; (2) convert PDF to Markdown → import the .md file as attachment via import action. Confirm with user before executing.',
         inputSchema: {
           type: 'object',
           properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
             action: {
               type: 'string',
-              enum: ['create', 'reparent'],
-              description: 'create: create a new item with metadata. reparent: move an attachment under a different parent item.'
+              enum: ['create', 'reparent', 'import'],
+              description: 'create: create a new item with metadata. reparent: move an attachment under a different parent item. import: import a local file (e.g., Markdown, PDF) as an attachment to an existing item.'
             },
             itemType: {
               type: 'string',
@@ -939,6 +1049,18 @@ export class StreamableMCPServer {
             parentKey: {
               type: 'string',
               description: 'For reparent action: the target parent item key to move attachments to'
+            },
+            filePath: {
+              type: 'string',
+              description: 'For import action: absolute path to the file to import as an attachment'
+            },
+            parentItemKey: {
+              type: 'string',
+              description: 'For import action: Zotero item key of the parent to attach the file to'
+            },
+            title: {
+              type: 'string',
+              description: 'For import action: display title for the attachment (defaults to the file name)'
             }
           },
           required: ['action']
@@ -1012,6 +1134,17 @@ export class StreamableMCPServer {
       let result;
       
       switch (name) {
+        case 'get_libraries':
+          result = await this.callGetLibraries(args);
+          break;
+
+        case 'search_libraries':
+          if (!args?.q) {
+            throw new Error('q is required');
+          }
+          result = await this.callSearchLibraries(args);
+          break;
+
         case 'search_library':
           result = await this.callSearchLibrary(args);
           break;
@@ -1057,7 +1190,7 @@ export class StreamableMCPServer {
           if (!args?.collectionKey) {
             throw new Error('collectionKey is required');
           }
-          result = await this.callGetCollectionDetails(args.collectionKey);
+          result = await this.callGetCollectionDetails(args);
           break;
 
         case 'get_collection_items':
@@ -1118,10 +1251,11 @@ export class StreamableMCPServer {
           if (!args?.collectionKey) {
             throw new Error('collectionKey is required');
           }
-          if (!args?.itemKeys || !Array.isArray(args.itemKeys) || args.itemKeys.length === 0) {
-            throw new Error('itemKeys array is required');
+          const addKeys = this.coerceStringArray(args?.itemKeys);
+          if (!addKeys || addKeys.length === 0) {
+            throw new Error(`itemKeys array is required, e.g. ["ABCD1234"]. Received: ${JSON.stringify(args?.itemKeys)}`);
           }
-          result = await this.callAddItemsToCollection(args);
+          result = await this.callAddItemsToCollection({ ...args, itemKeys: addKeys });
           break;
         }
 
@@ -1133,10 +1267,11 @@ export class StreamableMCPServer {
           if (!args?.collectionKey) {
             throw new Error('collectionKey is required');
           }
-          if (!args?.itemKeys || !Array.isArray(args.itemKeys) || args.itemKeys.length === 0) {
-            throw new Error('itemKeys array is required');
+          const removeKeys = this.coerceStringArray(args?.itemKeys);
+          if (!removeKeys || removeKeys.length === 0) {
+            throw new Error(`itemKeys array is required, e.g. ["ABCD1234"]. Received: ${JSON.stringify(args?.itemKeys)}`);
           }
-          result = await this.callRemoveItemsFromCollection(args);
+          result = await this.callRemoveItemsFromCollection({ ...args, itemKeys: removeKeys });
           break;
         }
 
@@ -1253,12 +1388,15 @@ export class StreamableMCPServer {
           throw new Error(`Unknown tool: ${name}`);
       }
 
-      // Wrap result in MCP content format with proper text type
-      return this.createResponse(request.id ?? null, { 
+      // Wrap result in MCP content format with proper text type.
+      // Keep large results compact: the HTTP layer writes the body in a
+      // single synchronous call, so avoid inflating multi-MB payloads.
+      const compactJson = JSON.stringify(result);
+      return this.createResponse(request.id ?? null, {
         content: [
           {
             type: "text",
-            text: JSON.stringify(result, null, 2)
+            text: compactJson.length > 100000 ? compactJson : JSON.stringify(result, null, 2)
           }
         ]
       });
@@ -1268,6 +1406,31 @@ export class StreamableMCPServer {
       return this.createError(request.id ?? null, -32603, 
         `Error executing ${name}: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  private async callGetLibraries(args: any): Promise<any> {
+    const queryParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(args || {})) {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, String(value));
+      }
+    }
+
+    const response = await handleGetLibraries(queryParams);
+    const result = response.body ? JSON.parse(response.body) : response;
+    return result;
+  }
+
+  private async callSearchLibraries(args: any): Promise<any> {
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(args || {})) {
+      if (value !== undefined && value !== null) {
+        searchParams.append(key, String(value));
+      }
+    }
+    const response = await handleSearchLibraries(searchParams);
+    const result = response.body ? JSON.parse(response.body) : response;
+    return result;
   }
 
   private async callSearchLibrary(args: any): Promise<any> {
@@ -1323,7 +1486,7 @@ export class StreamableMCPServer {
   }
 
   private async callGetItemDetails(args: any): Promise<any> {
-    const { itemKey, mode } = args;
+    const { itemKey, mode, libraryID } = args;
     
     // Import the specific handler for item details
     const { handleGetItem } = await import('./apiHandlers');
@@ -1333,6 +1496,9 @@ export class StreamableMCPServer {
     
     // Create query params with mode-based field selection
     const queryParams = new URLSearchParams();
+    if (libraryID !== undefined && libraryID !== null) {
+      queryParams.append('libraryID', String(libraryID));
+    }
     if (effectiveMode !== 'complete') {
       // Apply field filtering based on mode (this could be enhanced in apiHandlers)
       const modeConfig = this.getItemDetailsModeConfiguration(effectiveMode);
@@ -1364,7 +1530,7 @@ export class StreamableMCPServer {
   }
 
   private async callGetContent(args: any): Promise<any> {
-    const { itemKey, attachmentKey, include, format, mode, contentControl } = args;
+    const { itemKey, attachmentKey, include, format, mode, contentControl, libraryID } = args;
     const extractor = new UnifiedContentExtractor();
     
     try {
@@ -1372,10 +1538,10 @@ export class StreamableMCPServer {
       
       if (itemKey) {
         // Get content from item with unified mode control and content control parameters
-        result = await extractor.getItemContent(itemKey, include || {}, mode, contentControl);
+        result = await extractor.getItemContent(itemKey, include || {}, mode, contentControl, libraryID);
       } else if (attachmentKey) {
         // Get content from specific attachment with unified mode control and content control parameters
-        result = await extractor.getAttachmentContent(attachmentKey, mode, contentControl);
+        result = await extractor.getAttachmentContent(attachmentKey, mode, contentControl, libraryID);
       } else {
         throw new Error('Either itemKey or attachmentKey must be provided');
       }
@@ -1441,8 +1607,15 @@ export class StreamableMCPServer {
     return result;
   }
 
-  private async callGetCollectionDetails(collectionKey: string): Promise<any> {
-    const response = await handleGetCollectionDetails({ 1: collectionKey }, new URLSearchParams());
+  private async callGetCollectionDetails(args: any): Promise<any> {
+    const { collectionKey, ...otherArgs } = args;
+    const detailParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(otherArgs)) {
+      if (value !== undefined && value !== null) {
+        detailParams.append(key, String(value));
+      }
+    }
+    const response = await handleGetCollectionDetails({ 1: collectionKey }, detailParams);
     const result = response.body ? JSON.parse(response.body) : response;
     return result;
   }
@@ -1475,6 +1648,7 @@ export class StreamableMCPServer {
 
   private async callCreateCollection(args: any): Promise<any> {
     const response = await handleCreateCollection({
+      libraryID: args.libraryID,
       name: args.name,
       parentCollection: args.parentCollection,
     });
@@ -1493,15 +1667,40 @@ export class StreamableMCPServer {
     return response.body ? JSON.parse(response.body) : response;
   }
 
+  /**
+   * Accept arrays that some MCP clients serialize as strings, e.g.
+   * '["KEY1","KEY2"]' or 'KEY1,KEY2' (#71).
+   */
+  private coerceStringArray(value: unknown): string[] | undefined {
+    if (Array.isArray(value)) {
+      return value.map(String);
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return parsed.map(String);
+        } catch {
+          // fall through to comma-split
+        }
+      }
+      if (trimmed.length > 0) {
+        return trimmed.split(',').map((s) => s.trim()).filter(Boolean);
+      }
+    }
+    return undefined;
+  }
+
   private async callAddItemsToCollection(args: any): Promise<any> {
-    const { collectionKey, itemKeys } = args;
-    const response = await handleAddItemsToCollection({ 1: collectionKey }, { itemKeys });
+    const { collectionKey, itemKeys, libraryID } = args;
+    const response = await handleAddItemsToCollection({ 1: collectionKey }, { itemKeys, libraryID });
     return response.body ? JSON.parse(response.body) : response;
   }
 
   private async callRemoveItemsFromCollection(args: any): Promise<any> {
-    const { collectionKey, itemKeys } = args;
-    const response = await handleRemoveItemsFromCollection({ 1: collectionKey }, { itemKeys });
+    const { collectionKey, itemKeys, libraryID } = args;
+    const response = await handleRemoveItemsFromCollection({ 1: collectionKey }, { itemKeys, libraryID });
     return response.body ? JSON.parse(response.body) : response;
   }
 
@@ -1552,6 +1751,11 @@ export class StreamableMCPServer {
       }
     }
     const response = await handleGetItemAbstract({ 1: itemKey }, abstractParams);
+    const contentType = response.headers?.['Content-Type'] || '';
+    if (contentType.startsWith('text/plain')) {
+      // format=text returns a plain-text body that must not be JSON.parsed
+      return response.body;
+    }
     const result = response.body ? JSON.parse(response.body) : response;
     return result;
   }
@@ -1857,7 +2061,7 @@ export class StreamableMCPServer {
    * Handle write_note tool calls: create, update, append notes
    */
   private async callWriteNote(args: any): Promise<any> {
-    const { action, parentKey, noteKey, content, tags } = args;
+    const { action, parentKey, noteKey, content, tags, libraryID = Zotero.Libraries.userLibraryID } = args;
 
     try {
       const htmlContent = this.markdownToNoteHtml(content);
@@ -1865,14 +2069,14 @@ export class StreamableMCPServer {
       switch (action) {
         case 'create': {
           const note = new Zotero.Item('note');
-          note.libraryID = Zotero.Libraries.userLibraryID;
+          note.libraryID = libraryID;
 
           if (parentKey) {
-            const parentItem = Zotero.Items.getByLibraryAndKey(
-              Zotero.Libraries.userLibraryID, parentKey
+            const parentItem = await Zotero.Items.getByLibraryAndKeyAsync(
+              libraryID, parentKey
             );
             if (!parentItem) {
-              throw new Error(`Parent item not found: ${parentKey}`);
+              throw new Error(`Parent item not found in library ${libraryID}: ${parentKey}`);
             }
             if (parentItem.isNote()) {
               throw new Error('Cannot attach a note to another note');
@@ -1919,11 +2123,11 @@ export class StreamableMCPServer {
             throw new Error('noteKey is required for update action');
           }
 
-          const existingNote = Zotero.Items.getByLibraryAndKey(
-            Zotero.Libraries.userLibraryID, noteKey
+          const existingNote = await Zotero.Items.getByLibraryAndKeyAsync(
+            libraryID, noteKey
           );
           if (!existingNote) {
-            throw new Error(`Note not found: ${noteKey}`);
+            throw new Error(`Note not found in library ${libraryID}: ${noteKey}`);
           }
           if (!existingNote.isNote()) {
             throw new Error(`Item ${noteKey} is not a note`);
@@ -1963,11 +2167,11 @@ export class StreamableMCPServer {
             throw new Error('noteKey is required for append action');
           }
 
-          const existingNote = Zotero.Items.getByLibraryAndKey(
-            Zotero.Libraries.userLibraryID, noteKey
+          const existingNote = await Zotero.Items.getByLibraryAndKeyAsync(
+            libraryID, noteKey
           );
           if (!existingNote) {
-            throw new Error(`Note not found: ${noteKey}`);
+            throw new Error(`Note not found in library ${libraryID}: ${noteKey}`);
           }
           if (!existingNote.isNote()) {
             throw new Error(`Item ${noteKey} is not a note`);
@@ -2021,14 +2225,14 @@ export class StreamableMCPServer {
    * Handle write_tag tool calls: add, remove, set tags on items
    */
   private async callWriteTag(args: any): Promise<any> {
-    const { action, itemKey, tags } = args;
+    const { action, itemKey, tags, libraryID = Zotero.Libraries.userLibraryID } = args;
 
     try {
-      const item = Zotero.Items.getByLibraryAndKey(
-        Zotero.Libraries.userLibraryID, itemKey
+      const item = await Zotero.Items.getByLibraryAndKeyAsync(
+        libraryID, itemKey
       );
       if (!item) {
-        throw new Error(`Item not found: ${itemKey}`);
+        throw new Error(`Item not found in library ${libraryID}: ${itemKey}`);
       }
 
       const beforeTags = item.getTags().map((t: any) => t.tag);
@@ -2097,14 +2301,14 @@ export class StreamableMCPServer {
    * Handle write_metadata tool calls: update fields and creators on items
    */
   private async callWriteMetadata(args: any): Promise<any> {
-    const { itemKey, fields, creators } = args;
+    const { itemKey, fields, creators, libraryID = Zotero.Libraries.userLibraryID } = args;
 
     try {
-      const item = Zotero.Items.getByLibraryAndKey(
-        Zotero.Libraries.userLibraryID, itemKey
+      const item = await Zotero.Items.getByLibraryAndKeyAsync(
+        libraryID, itemKey
       );
       if (!item) {
-        throw new Error(`Item not found: ${itemKey}`);
+        throw new Error(`Item not found in library ${libraryID}: ${itemKey}`);
       }
       if (!item.isRegularItem()) {
         throw new Error(`Item ${itemKey} is not a regular item (it is a ${item.itemType}). Use write_note for notes.`);
@@ -2181,10 +2385,10 @@ export class StreamableMCPServer {
   }
 
   /**
-   * Handle write_item tool calls: create items and reparent attachments
+   * Handle write_item tool calls: create items, reparent attachments, and import files
    */
   private async callWriteItem(args: any): Promise<any> {
-    const { action, itemType, fields, creators, tags, attachmentKeys, parentKey } = args;
+    const { action, itemType, fields, creators, tags, attachmentKeys, parentKey, filePath, parentItemKey, title, libraryID = Zotero.Libraries.userLibraryID } = args;
 
     try {
       switch (action) {
@@ -2195,7 +2399,7 @@ export class StreamableMCPServer {
 
           // Create new item
           const item = new Zotero.Item(itemType);
-          item.libraryID = Zotero.Libraries.userLibraryID;
+          item.libraryID = libraryID;
 
           // Set fields
           if (fields && typeof fields === 'object') {
@@ -2237,15 +2441,15 @@ export class StreamableMCPServer {
           const reparentedAttachments: string[] = [];
           if (attachmentKeys && Array.isArray(attachmentKeys)) {
             for (const attKey of attachmentKeys) {
-              const attachment = Zotero.Items.getByLibraryAndKey(
-                Zotero.Libraries.userLibraryID, attKey
+              const attachment = await Zotero.Items.getByLibraryAndKeyAsync(
+                libraryID, attKey
               );
               if (!attachment) {
-                ztoolkit.log(`[StreamableMCP] Attachment not found: ${attKey}`, 'warn');
+                ztoolkit.log(`[StreamableMCP] Attachment not found in library ${libraryID}: ${attKey}`, 'warn');
                 continue;
               }
               if (!attachment.isAttachment()) {
-                ztoolkit.log(`[StreamableMCP] Item ${attKey} is not an attachment, skipping`, 'warn');
+                ztoolkit.log(`[StreamableMCP] Item ${attKey} is not an attachment (type: ${attachment.itemType}), skipping`, 'warn');
                 continue;
               }
               attachment.parentKey = item.key;
@@ -2283,11 +2487,11 @@ export class StreamableMCPServer {
           }
 
           // Verify parent exists
-          const parentItem = Zotero.Items.getByLibraryAndKey(
-            Zotero.Libraries.userLibraryID, parentKey
+          const parentItem = await Zotero.Items.getByLibraryAndKeyAsync(
+            libraryID, parentKey
           );
           if (!parentItem) {
-            throw new Error(`Parent item not found: ${parentKey}`);
+            throw new Error(`Parent item not found in library ${libraryID}: ${parentKey}`);
           }
           if (!parentItem.isRegularItem()) {
             throw new Error(`Parent ${parentKey} is not a regular item (type: ${parentItem.itemType})`);
@@ -2296,11 +2500,11 @@ export class StreamableMCPServer {
           const results: Array<{ key: string; success: boolean; error?: string }> = [];
           for (const attKey of attachmentKeys) {
             try {
-              const attachment = Zotero.Items.getByLibraryAndKey(
-                Zotero.Libraries.userLibraryID, attKey
+              const attachment = await Zotero.Items.getByLibraryAndKeyAsync(
+                libraryID, attKey
               );
               if (!attachment) {
-                results.push({ key: attKey, success: false, error: 'Not found' });
+                results.push({ key: attKey, success: false, error: `Not found in library ${libraryID}` });
                 continue;
               }
               if (!attachment.isAttachment() && !attachment.isNote()) {
@@ -2334,8 +2538,56 @@ export class StreamableMCPServer {
           };
         }
 
+        case 'import': {
+          if (!filePath || typeof filePath !== 'string') {
+            throw new Error('filePath is required for import action (absolute path to the file)');
+          }
+          const importParentKey = parentItemKey || parentKey;
+          if (!importParentKey) {
+            throw new Error('parentItemKey is required for import action');
+          }
+          if (!(await IOUtils.exists(filePath))) {
+            throw new Error(`File not found: ${filePath}`);
+          }
+
+          // Verify parent exists
+          const parentItem = await Zotero.Items.getByLibraryAndKeyAsync(
+            libraryID, importParentKey
+          );
+          if (!parentItem) {
+            throw new Error(`Parent item not found in library ${libraryID}: ${importParentKey}`);
+          }
+          if (!parentItem.isRegularItem()) {
+            throw new Error(`Parent ${importParentKey} is not a regular item (type: ${parentItem.itemType}), cannot attach files`);
+          }
+
+          // Import file as attachment
+          const attachment = await Zotero.Attachments.importFromFile({
+            file: filePath,
+            parentItemID: parentItem.id,
+            title: title || filePath.split(/[\\/]/).pop() || 'Imported Attachment'
+          });
+
+          ztoolkit.log(`[StreamableMCP] Imported file as attachment ${attachment.key} under ${importParentKey}`);
+
+          return {
+            action: 'import',
+            success: true,
+            data: {
+              attachmentKey: attachment.key,
+              parentItemKey: importParentKey,
+              filePath,
+              title: attachment.getField('title')
+            },
+            metadata: {
+              extractedAt: new Date().toISOString(),
+              message: `File imported as attachment (key: ${attachment.key}) under parent ${importParentKey}`
+            }
+          };
+        }
+
         default:
-          throw new Error(`Unknown action: ${action}. Use create or reparent.`);
+          throw new Error(`Unknown action: ${action}. Use create, reparent, or import.`);
       }
     } catch (error) {
       ztoolkit.log(`[StreamableMCP] Write item error: ${error}`, 'error');
@@ -2536,6 +2788,8 @@ export class StreamableMCPServer {
         'ping'
       ],
       availableTools: [
+        'get_libraries',
+        'search_libraries',
         'search_library',
         'search_annotations',
         'get_item_details',
