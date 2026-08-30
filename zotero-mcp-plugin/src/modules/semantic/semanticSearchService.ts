@@ -1342,8 +1342,6 @@ export function getSemanticSearchService(): SemanticSearchService {
   if (!semanticSearchInstance) {
     ztoolkit.log(`[SemanticSearch] getSemanticSearchService() creating new singleton instance`);
     semanticSearchInstance = new SemanticSearchService();
-  } else {
-    ztoolkit.log(`[SemanticSearch] getSemanticSearchService() returning existing instance`);
   }
   return semanticSearchInstance;
 }

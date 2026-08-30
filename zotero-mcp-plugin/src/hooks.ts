@@ -6,6 +6,7 @@ import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
 import { MCPSettingsService } from "./modules/mcpSettingsService";
 import { registerSemanticIndexColumn, unregisterSemanticIndexColumn, refreshSemanticColumn } from "./modules/semanticIndexColumn";
+import { registerSemanticSearchToolbar, registerFindSimilarMenu, unregisterSemanticSearchUI } from "./modules/semanticSearchDialog";
 
 // Preference keys for semantic search settings
 const PREF_SEMANTIC_ENABLED = 'extensions.zotero.zotero-mcp-plugin.semantic.enabled';
@@ -492,10 +493,15 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
 
   // Register semantic index status column
   registerSemanticIndexColumn();
+
+  // Register semantic search toolbar button and find-similar menu
+  registerSemanticSearchToolbar(win);
+  registerFindSimilarMenu(win);
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
   unregisterSemanticIndexMenus(win);
+  unregisterSemanticSearchUI(win);
   ztoolkit.unregisterAll();
 }
 
@@ -579,12 +585,24 @@ function onShutdown(): void {
     ztoolkit.log(`[MCP Plugin] [SHUTDOWN 7/7] Error: ${err.message}`, "error");
   }
 
+  // 清理外部工具注册中心
+  try {
+    ztoolkit.log("[MCP Plugin] [SHUTDOWN] Resetting external tool registry...");
+    const { resetToolRegistry } = require("./modules/toolRegistry");
+    resetToolRegistry();
+    ztoolkit.log("[MCP Plugin] [SHUTDOWN] External tool registry reset");
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    ztoolkit.log(`[MCP Plugin] [SHUTDOWN] Error resetting tool registry: ${err.message}`, "error");
+  }
+
   // Remove context-menu DOM elements from every open window — leftover dead
   // listeners break the item right-click menu after disable (#69)
   try {
     ztoolkit.log("[MCP Plugin] [SHUTDOWN] Removing context menu elements...");
     for (const win of Zotero.getMainWindows()) {
       unregisterSemanticIndexMenus(win as unknown as Window);
+      unregisterSemanticSearchUI(win as unknown as Window);
     }
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));

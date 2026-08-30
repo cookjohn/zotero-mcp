@@ -20,6 +20,8 @@ import { UnifiedContentExtractor } from './unifiedContentExtractor';
 import { SmartAnnotationExtractor } from './smartAnnotationExtractor';
 import { MCPSettingsService } from './mcpSettingsService';
 import { getSemanticSearchService, SemanticSearchService } from './semantic';
+import { CitationExportService } from './citationExportService';
+import { getToolRegistry } from './toolRegistry';
 
 export interface MCPRequest {
   jsonrpc: '2.0';
@@ -1065,6 +1067,149 @@ export class StreamableMCPServer {
           },
           required: ['action']
         }
+      },
+      {
+        name: 'export_bibliography',
+        description: 'Export one or more Zotero items as BibLaTeX/BibTeX (or CSL-JSON/CSL-YAML) entries powered by the zotero-better-bibtex (BBT) plugin. Requires Better BibTeX to be installed and running in Zotero. Use search_library first to find itemKeys, then pass them here. Returns the exported bibliography text (e.g. @article{...} entries).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
+            itemKeys: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Item keys to export, e.g. ["ABCD1234","EFGH5678"]'
+            },
+            format: {
+              type: 'string',
+              enum: ['biblatex', 'bibtex', 'csljson', 'cslyaml'],
+              description: 'Export format. biblatex = Better BibLaTeX (default), bibtex = Better BibTeX, csljson = Better CSL JSON, cslyaml = Better CSL YAML.'
+            },
+            exportNotes: {
+              type: 'boolean',
+              description: 'Include item notes in the export (default: false)'
+            },
+            useJournalAbbreviation: {
+              type: 'boolean',
+              description: 'Use journal abbreviation instead of full name (default: false)'
+            }
+          },
+          required: ['itemKeys']
+        }
+      },
+      {
+        name: 'get_citation',
+        description: 'Generate a formatted reference (bibliography entry) or in-text citation for one or more items using a CSL citation style. If no style is specified, uses the Zotero default Quick Copy style. Use list_citation_styles to discover available styles. Works without Better BibTeX (uses Zotero native citeproc).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
+            itemKeys: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Item keys to cite, e.g. ["ABCD1234"]'
+            },
+            style: {
+              type: 'string',
+              description: 'Optional CSL style ID or title, e.g. "apa", "ieee", "http://www.zotero.org/styles/american-medical-association". Omit to use the Zotero default Quick Copy style.'
+            },
+            contentType: {
+              type: 'string',
+              enum: ['html', 'text'],
+              description: 'Output content type: html (default) or plain text.'
+            },
+            mode: {
+              type: 'string',
+              enum: ['bibliography', 'citation'],
+              description: 'Generation mode: bibliography (default, full reference entry) or citation (in-text citation).'
+            }
+          },
+          required: ['itemKeys']
+        }
+      },
+      {
+        name: 'list_citation_styles',
+        description: 'List CSL citation styles available in Zotero (for use with get_citation). Each entry includes an id (styleID) and a human-readable title. Supports optional keyword filtering.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            filter: {
+              type: 'string',
+              description: 'Optional case-insensitive keyword to filter styles by title or id (e.g. "apa", "ieee", "chicago")'
+            }
+          },
+        }
+      },
+      {
+        name: 'sync_bib',
+        description: 'Sync (export) the entire Zotero library to a .bib file on disk. Exports all top-level items as BibTeX (or BibLaTeX/CSL-JSON/CSL-YAML) via the zotero-better-bibtex (BBT) plugin and writes the result to the specified file path. Requires Better BibTeX to be installed and running. Useful for keeping a references.bib file up to date with your Zotero library.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            bibPath: {
+              type: 'string',
+              description: 'Absolute path to the output .bib file (e.g. "/home/user/paper/references.bib" or "C:\\\\Users\\\\user\\\\paper\\\\references.bib")'
+            },
+            format: {
+              type: 'string',
+              enum: ['bibtex', 'biblatex', 'csljson', 'cslyaml'],
+              description: 'Export format. bibtex = Better BibTeX (default), biblatex = Better BibLaTeX, csljson = Better CSL JSON, cslyaml = Better CSL YAML.'
+            },
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
+            includeChildren: {
+              type: 'boolean',
+              description: 'Include child notes and attachments in the export (default: false, exports top-level items only)'
+            }
+          },
+          required: ['bibPath']
+        }
+      },
+      {
+        name: 'cite',
+        description: 'Insert a citation from Zotero into a LaTeX (.tex) or Markdown draft, and keep the .bib file in sync. Finds a Zotero item by itemKey or search query, exports it as BibTeX, appends the entry to the specified .bib file (skips if the citation key already exists), then inserts \\cite{key} (LaTeX) or [@key] (Markdown) into the draft file. Requires Better BibTeX to be installed and running.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            itemKey: {
+              type: 'string',
+              description: 'Zotero item key to cite (e.g. "ABCD1234"). Either itemKey or query is required.'
+            },
+            query: {
+              type: 'string',
+              description: 'Search query to find the item (matches title and creator names). Either itemKey or query is required.'
+            },
+            bibPath: {
+              type: 'string',
+              description: 'Path to the .bib file to append the entry to (e.g. "/home/user/paper/references.bib"). Will be created if it does not exist.'
+            },
+            texPath: {
+              type: 'string',
+              description: 'Path to a LaTeX .tex file to insert the citation into. Either texPath or markdownPath is required.'
+            },
+            markdownPath: {
+              type: 'string',
+              description: 'Path to a Markdown file to insert the citation into. Either texPath or markdownPath is required.'
+            },
+            marker: {
+              type: 'string',
+              description: 'A placeholder string in the draft file to replace with the citation (e.g. "<cite>"). If omitted, the citation is appended at the end of the file.'
+            },
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            }
+          },
+          required: ['bibPath']
+        }
       }
     ];
 
@@ -1083,6 +1228,12 @@ export class StreamableMCPServer {
     const finalTools = writeEnabled === true
       ? filteredTools
       : filteredTools.filter((t: any) => !writeToolNames.has(t.name));
+
+    // Append externally-registered tools from other Zotero plugins
+    const externalTools = getToolRegistry().getToolDefinitions();
+    if (externalTools.length > 0) {
+      (finalTools as any[]).push(...externalTools);
+    }
 
     return this.createResponse(request.id ?? null, { tools: finalTools });
   }
@@ -1328,8 +1479,62 @@ export class StreamableMCPServer {
           break;
         }
 
-        default:
+        // Citation & Bibliography Export Tools
+        case 'export_bibliography': {
+          const exportKeys = this.coerceStringArray(args?.itemKeys);
+          if (!exportKeys || exportKeys.length === 0) {
+            throw new Error(`itemKeys array is required, e.g. ["ABCD1234"]. Received: ${JSON.stringify(args?.itemKeys)}`);
+          }
+          result = await this.callExportBibliography({ ...args, itemKeys: exportKeys });
+          break;
+        }
+
+        case 'get_citation': {
+          const citeKeys = this.coerceStringArray(args?.itemKeys);
+          if (!citeKeys || citeKeys.length === 0) {
+            throw new Error(`itemKeys array is required, e.g. ["ABCD1234"]. Received: ${JSON.stringify(args?.itemKeys)}`);
+          }
+          result = await this.callGetCitation({ ...args, itemKeys: citeKeys });
+          break;
+        }
+
+        case 'list_citation_styles':
+          result = await this.callListCitationStyles(args);
+          break;
+
+        case 'sync_bib': {
+          if (!args?.bibPath) {
+            throw new Error('bibPath is required (absolute path to the output .bib file)');
+          }
+          result = await this.callSyncBib(args);
+          break;
+        }
+
+        case 'cite': {
+          if (!args?.bibPath) {
+            throw new Error('bibPath is required (path to the .bib file)');
+          }
+          if (!args?.itemKey && !args?.query) {
+            throw new Error('Either itemKey or query is required');
+          }
+          if (!args?.texPath && !args?.markdownPath) {
+            throw new Error('Either texPath or markdownPath is required');
+          }
+          result = await this.callCite(args);
+          break;
+        }
+
+        default: {
+          // Check externally-registered tools from other Zotero plugins
+          const registry = getToolRegistry();
+          const externalTool = registry.getTool(name);
+          if (externalTool) {
+            ztoolkit.log(`[StreamableMCP] Calling external tool: ${name}`);
+            result = await externalTool.handler(args);
+            break;
+          }
           throw new Error(`Unknown tool: ${name}`);
+        }
       }
 
       // Wrap result in MCP content format with proper text type.
@@ -1702,6 +1907,82 @@ export class StreamableMCPServer {
     }
     const result = response.body ? JSON.parse(response.body) : response;
     return result;
+  }
+
+  // ============ Citation & Bibliography Export Methods ============
+
+  private citationExportService: CitationExportService | null = null;
+
+  private getCitationExportService(): CitationExportService {
+    if (!this.citationExportService) {
+      this.citationExportService = new CitationExportService();
+    }
+    return this.citationExportService;
+  }
+
+  /**
+   * 【功能 1】通过 zotero-better-bibtex 导出 BibLaTeX/BibTeX 条目。
+   */
+  private async callExportBibliography(args: any): Promise<any> {
+    const service = this.getCitationExportService();
+    return service.exportBibliography({
+      itemKeys: args.itemKeys,
+      format: args.format,
+      libraryID: args.libraryID,
+      exportNotes: args.exportNotes,
+      useJournalAbbreviation: args.useJournalAbbreviation,
+    });
+  }
+
+  /**
+   * 【功能 2】生成指定 CSL 样式的参考文献条目（未指定样式时使用默认样式）。
+   */
+  private async callGetCitation(args: any): Promise<any> {
+    const service = this.getCitationExportService();
+    return service.getCitation({
+      itemKeys: args.itemKeys,
+      style: args.style,
+      contentType: args.contentType,
+      mode: args.mode,
+      libraryID: args.libraryID,
+    });
+  }
+
+  /**
+   * 列出可用的 CSL 引文样式。
+   */
+  private async callListCitationStyles(args: any): Promise<any> {
+    const service = this.getCitationExportService();
+    return service.listStyles(args?.filter);
+  }
+
+  /**
+   * 【功能 3】同步导出整个 Zotero 文献库到 .bib 文件。
+   */
+  private async callSyncBib(args: any): Promise<any> {
+    const service = this.getCitationExportService();
+    return service.syncBibFile({
+      bibPath: args.bibPath,
+      format: args.format,
+      libraryID: args.libraryID,
+      includeChildren: args.includeChildren,
+    });
+  }
+
+  /**
+   * 【功能 4】在草稿中插入引用，并同步 .bib 文件。
+   */
+  private async callCite(args: any): Promise<any> {
+    const service = this.getCitationExportService();
+    return service.citeInDraft({
+      itemKey: args.itemKey,
+      query: args.query,
+      bibPath: args.bibPath,
+      texPath: args.texPath,
+      markdownPath: args.markdownPath,
+      marker: args.marker,
+      libraryID: args.libraryID,
+    });
   }
 
   // ============ Semantic Search Methods ============
@@ -2757,6 +3038,7 @@ export class StreamableMCPServer {
         'write_metadata',
         'write_item'
       ],
+      externalTools: getToolRegistry().getRegisteredTools().map(t => t.name),
       transport: {
         type: "streamable-http",
         keepAliveSupported: false,

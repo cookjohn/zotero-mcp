@@ -6,7 +6,7 @@ _This README is also available in: [:cn: 简体中文](./README-zh.md) | :gb: En
 [![zotero target version](https://img.shields.io/badge/Zotero-7-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue)](https://www.typescriptlang.org)
-[![Version](https://img.shields.io/badge/Version-1.5.0-brightgreen)]()
+[![Version](https://img.shields.io/badge/Version-1.5.2-brightgreen)]()
 [![EN doc](https://img.shields.io/badge/Document-English-blue.svg)](README.md)
 [![中文文档](https://img.shields.io/badge/文档-中文-blue.svg)](README-zh.md)
 
@@ -26,6 +26,7 @@ The Zotero MCP server is a tool server based on the Model Context Protocol that 
 - 🧠 **Semantic Search**: AI-powered concept matching via embedding vectors, discover related literature across languages
 - ✏️ **Write Operations**: Create notes, manage tags, update metadata, create new items and attach PDFs
 - 💾 **Full-text Database**: Access and search cached PDF full-text content
+- 📑 **Citation Export**: Export BibLaTeX/BibTeX entries via Better BibTeX, generate CSL-formatted references and in-text citations, sync `.bib` files, and insert citations into LaTeX/Markdown drafts
 
 This enables AI assistants to help you with literature reviews, citation management, content analysis, annotation organization, knowledge base management, and more.
 
@@ -171,6 +172,7 @@ Example configuration for Claude Desktop:
     - Collection/item context menu for index management
 -   **Write Operations**: Create/modify notes, manage tags, update metadata fields, create new items and reparent standalone PDFs
 -   **Full-text Database**: Cached PDF full-text database with list, search, get, and stats operations
+-   **Citation & Bibliography Export**: Export BibLaTeX/BibTeX entries via Better BibTeX JSON-RPC, generate CSL-formatted references and in-text citations with customizable styles, list available citation styles
 -   **Standalone Attachment Management**: Search and manage standalone PDF items without parent metadata
 -   **Client Configuration Generator**: Automatically generates configuration for various AI clients
 -   **Security**: Local-only operation ensuring complete data privacy
@@ -196,7 +198,7 @@ Here are some screenshots demonstrating the functionality of Zotero MCP:
 
 ## 🔧 API Reference (MCP Tools)
 
-The integrated MCP server provides **20 tools** in 5 categories:
+The integrated MCP server provides **25 tools** in 6 categories:
 
 ### 1. Search & Query (7 tools)
 
@@ -275,6 +277,178 @@ Update metadata fields on items (title, abstract, date, DOI, creators, etc.).
 #### `write_item`
 Create new items or reparent existing attachments.
 - `action` (required: create/reparent), `itemType`, `fields`, `creators`, `tags`, `attachmentKeys`, `parentKey`
+
+### 6. Citation & Bibliography Export (5 tools)
+
+#### `export_bibliography`
+Export one or more Zotero items as BibLaTeX/BibTeX (or CSL-JSON/CSL-YAML) entries via the zotero-better-bibtex (BBT) plugin. Requires Better BibTeX to be installed and running.
+- `itemKeys` (required: string[]), `format` (biblatex/bibtex/csljson/cslyaml), `libraryID`, `exportNotes`, `useJournalAbbreviation`
+
+#### `get_citation`
+Generate a formatted reference (bibliography entry) or in-text citation for items using a CSL citation style. If no style is specified, uses the Zotero default Quick Copy style. Works without Better BibTeX.
+- `itemKeys` (required: string[]), `style` (CSL style ID or title, e.g. "apa"/"ieee"), `contentType` (html/text), `mode` (bibliography/citation), `libraryID`
+
+#### `list_citation_styles`
+List CSL citation styles available in Zotero (for use with `get_citation`). Each entry includes an id and title. Supports optional keyword filtering.
+- `filter` (optional keyword to filter by title or id)
+
+#### `sync_bib`
+Sync (export) the entire Zotero library to a `.bib` file on disk. Exports all top-level items as BibTeX (or BibLaTeX/CSL-JSON/CSL-YAML) via BBT and writes the result to the specified file path. Requires Better BibTeX.
+- `bibPath` (required: absolute path to output `.bib` file), `format` (bibtex/biblatex/csljson/cslyaml, default: bibtex), `libraryID`, `includeChildren` (boolean, default: false)
+
+#### `cite`
+Insert a citation from Zotero into a LaTeX (`.tex`) or Markdown draft, and keep the `.bib` file in sync. Finds a Zotero item by itemKey or search query, exports it as BibTeX, appends the entry to the specified `.bib` file (skips if the citation key already exists), then inserts `\cite{key}` (LaTeX) or `[@key]` (Markdown) into the draft file. Requires Better BibTeX.
+- `bibPath` (required: path to `.bib` file), `itemKey` (Zotero item key) or `query` (search query, at least one required), `texPath` (LaTeX file) or `markdownPath` (Markdown file, at least one required), `marker` (placeholder to replace with citation, optional), `libraryID`
+
+---
+
+## 🔌 External Tool Registration API
+
+Other Zotero plugins can register custom MCP tools that are exposed through this plugin's MCP server. This allows third-party plugins to extend the AI-accessible toolset without running their own HTTP server.
+
+### How It Works
+
+1. Your plugin calls `Zotero.ZoteroMCP.api.registerTool(...)` to register a tool.
+2. The tool appears in `tools/list` alongside built-in tools.
+3. When an AI client calls the tool, the MCP server dispatches the call to your handler.
+4. On disable/uninstall, call `Zotero.ZoteroMCP.api.unregisterTool(...)` or `unregisterAllTools(pluginID)`.
+
+### API Methods
+
+| Method | Description |
+|---|---|
+| `registerTool(def)` | Register a custom MCP tool. Throws on invalid input or name collision. |
+| `unregisterTool(name)` | Unregister a tool by name. Returns `true` if removed. |
+| `unregisterAllTools(pluginID)` | Unregister all tools from a specific plugin. Returns count removed. |
+| `getRegisteredTools()` | List registered tools (readonly, handler excluded). |
+| `isToolRegistered(name)` | Check if a tool name is already registered. |
+| `onToolListChanged(cb)` | Subscribe to tool list changes. Returns an unsubscribe function. |
+
+### Tool Definition
+
+```typescript
+{
+  name: string;           // Unique, matches /^[a-z][a-z0-9_]*$/, must not collide with built-in tools
+  description: string;    // Shown to AI clients
+  inputSchema: object;    // JSON Schema for input parameters
+  handler: (args: any) => Promise<any> | any;  // Called when AI invokes the tool
+  pluginID?: string;      // Optional: your plugin ID (for bulk cleanup)
+  enabled?: boolean;      // Optional: visibility toggle (default: true)
+}
+```
+
+### Example (from another plugin)
+
+```javascript
+// Register a custom MCP tool from your Zotero plugin
+const mcp = Zotero.ZoteroMCP;
+if (mcp && mcp.api && mcp.api.registerTool) {
+  mcp.api.registerTool({
+    name: 'my_plugin_count_items',
+    description: 'Count items in the Zotero library by type',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemType: { type: 'string', description: 'Filter by item type (e.g. journalArticle)' }
+      }
+    },
+    handler: async (args) => {
+      const items = await Zotero.Items.getAll(Zotero.Libraries.userLibraryID);
+      const filtered = args.itemType
+        ? items.filter(i => i.itemType === args.itemType)
+        : items;
+      return { total: filtered.length, itemType: args.itemType || 'all' };
+    },
+    pluginID: 'my-plugin@example.com'
+  });
+}
+```
+
+### Cleanup on Uninstall
+
+```javascript
+// In your plugin's shutdown hook:
+const mcp = Zotero.ZoteroMCP;
+if (mcp && mcp.api && mcp.api.unregisterAllTools) {
+  mcp.api.unregisterAllTools('my-plugin@example.com');
+}
+```
+
+### Notes
+
+- Tool names must not collide with built-in tools (see list above). Use a prefix like `my_plugin_*`.
+- The registry survives MCP server restarts (e.g. port changes). Tools registered before the server starts will appear once it does.
+- Handler errors are caught and returned as MCP error responses — no need to wrap in try/catch.
+- Results are JSON-serialised and wrapped in MCP `text` content automatically.
+
+---
+
+## 🔍 Comparison: OpenAI Codex Zotero Skill vs. This Plugin
+
+The `sync_bib` and `cite` tools added in v1.5.2 are inspired by [OpenAI's Codex Zotero skill](https://github.com/openai/codex), which ships a standalone Python CLI helper (`zotero.py`) for operating Zotero's local HTTP API. Below is a detailed comparison of the two implementation approaches.
+
+### Architecture
+
+| Dimension | OpenAI Codex Zotero Skill | This Plugin (Zotero MCP) |
+|---|---|---|
+| **Runtime location** | External Python script invoked by the Codex CLI | In-process Zotero plugin (TypeScript/JS) |
+| **Communication** | HTTP requests to Zotero's local API (`127.0.0.1:23119`) and connector server | Direct access to Zotero's JavaScript API + BBT JSON-RPC |
+| **Protocol** | CLI subcommands (`zotero.py sync-bib`, `zotero.py cite ...`) | MCP (Model Context Protocol) over Streamable HTTP |
+| **Dependencies** | Python 3 stdlib only (no `pip install` needed) | Zotero 7 plugin runtime, Better BibTeX plugin |
+| **File I/O** | Python `pathlib` / `os` | Mozilla `IOUtils` (Gecko/Firefox runtime) |
+| **BibTeX export** | Zotero local API `?format=bibtex` endpoint | BBT JSON-RPC `item.export` (richer format support) |
+| **Citation key resolution** | Extracted from exported BibTeX text via regex | BBT `item.citationkey` JSON-RPC (canonical, reliable) |
+
+### Feature Comparison
+
+| Feature | OpenAI Codex (`zotero.py`) | This Plugin |
+|---|---|---|
+| `sync-bib` (full library export to `.bib`) | ✅ `sync-bib --out references.bib` | ✅ `sync_bib` tool with `bibPath` param |
+| `cite` (insert citation into draft + sync `.bib`) | ✅ `cite --query "..." --tex paper.tex --bib references.bib` | ✅ `cite` tool with `itemKey`/`query`, `texPath`/`markdownPath`, `marker` |
+| Duplicate detection in `.bib` | ✅ Regex match on `@type{key,` | ✅ Regex match on `@type{key,` |
+| Marker-based citation replacement | ✅ `--marker '<cite>'` | ✅ `marker` param |
+| Markdown citation format | ✅ `[@key]` (Pandoc) | ✅ `[@key]` (Pandoc) |
+| LaTeX citation format | ✅ `\cite{key}` | ✅ `\cite{key}` |
+| Search by query (fallback to `itemKey`) | ✅ `--query` via local API `?q=` | ✅ `query` via in-process `Zotero.Search` |
+| Multiple export formats | BibTeX only (via API `?format=bibtex`) | BibTeX, BibLaTeX, CSL-JSON, CSL-YAML (via BBT) |
+| Semantic search | ❌ | ✅ Built-in embedding-based search |
+| Full-text search | ❌ | ✅ Built-in full-text database |
+| Annotation search | ❌ | ✅ Color/tag/keyword filtering |
+| External tool registration | ❌ | ✅ Other plugins can register MCP tools |
+| Library write operations | ✅ `import-bibtex`, `import-ris` via connector | ✅ `write_note`, `write_tag`, `write_metadata`, `write_item` |
+
+### Pros & Cons
+
+**OpenAI Codex approach:**
+- ✅ Zero-installation: runs with Python 3 stdlib, no Zotero plugin needed
+- ✅ Works with any Zotero version that exposes the local API
+- ✅ Simple, auditable CLI commands
+- ✅ No dependency on Better BibTeX for basic BibTeX export
+- ❌ Requires external Python process management
+- ❌ Limited to Zotero's local HTTP API surface (no direct JS API access)
+- ❌ No semantic search, annotation search, or full-text database
+- ❌ Cannot extend with custom tools from other plugins
+- ❌ Citation key extraction via regex is fragile (depends on BBT output format)
+
+**This plugin approach:**
+- ✅ In-process: no external process, lower latency, richer API access
+- ✅ Full MCP protocol support for AI clients (Claude, Cherry Studio, Cursor, etc.)
+- ✅ Canonical citation key resolution via BBT JSON-RPC (not regex parsing)
+- ✅ Multiple export formats (BibLaTeX, CSL-JSON, CSL-YAML) beyond plain BibTeX
+- ✅ Extensible: other Zotero plugins can register additional MCP tools
+- ✅ Integrated with semantic search, full-text search, annotation analysis
+- ✅ File I/O via Gecko's `IOUtils` (same security model as Zotero itself)
+- ❌ Requires Zotero 7 plugin installation
+- ❌ Requires Better BibTeX plugin for `sync_bib` and `cite` (BBT provides canonical citekeys)
+- ❌ Plugin lifecycle management (enable/disable/restart)
+
+### Design Philosophy
+
+The OpenAI Codex skill prioritizes **simplicity and portability**: a single stdlib-only Python script that any CLI agent can invoke. It treats Zotero as a black box accessible via HTTP.
+
+This plugin prioritizes **deep integration and extensibility**: running inside Zotero's process gives it access to the full JavaScript API, BBT's JSON-RPC, and the ability to register custom tools from other plugins. It treats Zotero as a platform.
+
+Both approaches converge on the same user-facing capabilities (`sync-bib`, `cite`) but differ fundamentally in where the intelligence lives — outside the process (OpenAI) or inside it (this plugin).
 
 ---
 

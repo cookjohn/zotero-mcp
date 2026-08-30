@@ -6,7 +6,7 @@ _This README is also available in: [:gb: English](./README.md) | :cn: 简体中�
 [![zotero target version](https://img.shields.io/badge/Zotero-7-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue)](https://www.typescriptlang.org)
-[![Version](https://img.shields.io/badge/Version-1.5.0-brightgreen)]()
+[![Version](https://img.shields.io/badge/Version-1.5.2-brightgreen)]()
 [![EN doc](https://img.shields.io/badge/Document-English-blue.svg)](README.md)
 [![中文文档](https://img.shields.io/badge/文档-中文-blue.svg)](README-zh.md)
 
@@ -27,6 +27,7 @@ Zotero MCP 服务器是一个基于 Model Context Protocol 的工具服务器，
 - 🧠 **语义搜索**：基于 AI 向量嵌入的概念匹配，发现跨语言的相关文献
 - ✏️ **写入操作**：创建笔记、管理标签、更新元数据、创建新条目并关联附件
 - 💾 **全文数据库**：访问和搜索缓存的 PDF 全文内容
+- 📑 **引文导出**：通过 Better BibTeX 导出 BibLaTeX/BibTeX 条目，生成 CSL 格式的参考文献和文内引用，同步 `.bib` 文件，在 LaTeX/Markdown 草稿中插入引用
 
 这使得 AI 助手能够帮助您进行文献综述、引用管理、内容分析、批注整理、知识库管理等学术工作。
 
@@ -160,6 +161,7 @@ AI 客户端 ↔ Streamable HTTP ↔ Zotero 插件（集成 MCP 服务器）
 -   **语义搜索**: 基于 AI 向量嵌入的语义搜索，支持 OpenAI/Ollama API，发现概念相关的文献
 -   **写入功能**: 创建/修改笔记、管理标签、更新元数据字段、创建新条目并关联独立 PDF
 -   **全文数据库**: 缓存的 PDF 全文数据库，支持列表、搜索、获取和统计操作
+-   **引文与参考文献导出**: 通过 Better BibTeX JSON-RPC 导出 BibLaTeX/BibTeX 条目，生成可自定义 CSL 样式的参考文献和文内引用，列出可用引文样式
 -   **独立附件管理**: 搜索和管理只有 PDF 没有元数据信息的独立条目
 -   **客户端配置生成器**: 自动为各种 AI 客户端生成配置
 -   **安全性**: 仅本地操作，确保数据完全隐私
@@ -312,7 +314,7 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 
 ## 🔧 API 参考（MCP 工具列表）
 
-插件集成的 MCP 服务器提供以下 **20 个工具**，分为 5 大类：
+插件集成的 MCP 服务器提供以下 **25 个工具**，分为 6 大类：
 
 ### 一、搜索与查询（7 个）
 
@@ -464,6 +466,141 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 | `attachmentKeys` | string[] | 要关联的独立附件 Key 列表 |
 | `parentKey` | string | reparent 操作的目标父条目 Key |
 
+### 六、引文与参考文献导出（5 个）
+
+#### `export_bibliography`
+通过 zotero-better-bibtex (BBT) 插件将一个或多个条目导出为 BibLaTeX/BibTeX（或 CSL-JSON/CSL-YAML）条目。需安装并启用 Better BibTeX。
+
+| 参数 | 类型 | 描述 |
+|---|---|---|
+| `itemKeys` | string[] | **必需**，要导出的条目 Key 列表 |
+| `format` | string | 导出格式：biblatex(默认)/bibtex/csljson/cslyaml |
+| `libraryID` | number | 目标库 ID（默认用户库） |
+| `exportNotes` | boolean | 是否导出笔记（默认 false） |
+| `useJournalAbbreviation` | boolean | 是否使用期刊缩写（默认 false） |
+
+#### `get_citation`
+使用 CSL 引文样式为条目生成格式化的参考文献条目或文内引用。未指定样式时使用 Zotero 默认 Quick Copy 样式。无需 Better BibTeX。
+
+| 参数 | 类型 | 描述 |
+|---|---|---|
+| `itemKeys` | string[] | **必需**，要引用的条目 Key 列表 |
+| `style` | string | CSL 样式 ID 或标题（如 "apa"/"ieee"），省略则使用默认样式 |
+| `contentType` | string | 输出格式：html(默认)/text |
+| `mode` | string | 生成模式：bibliography(默认，参考文献条目)/citation(文内引用) |
+| `libraryID` | number | 目标库 ID（默认用户库） |
+
+#### `list_citation_styles`
+列出 Zotero 中可用的 CSL 引文样式（供 `get_citation` 使用），每项包含 id 和 title，支持关键字过滤。
+
+| 参数 | 类型 | 描述 |
+|---|---|---|
+| `filter` | string | 可选关键字，按标题或 ID 过滤（如 "apa"/"ieee"/"chicago"） |
+
+#### `sync_bib`
+将整个 Zotero 文献库同步导出到磁盘上的 `.bib` 文件。通过 BBT 导出所有顶级条目为 BibTeX（或 BibLaTeX/CSL-JSON/CSL-YAML）格式，并写入指定路径。需安装并启用 Better BibTeX。
+
+| 参数 | 类型 | 描述 |
+|---|---|---|
+| `bibPath` | string | **必需**，输出 `.bib` 文件的绝对路径 |
+| `format` | string | 导出格式：bibtex(默认)/biblatex/csljson/cslyaml |
+| `libraryID` | number | 目标库 ID（默认用户库） |
+| `includeChildren` | boolean | 是否包含子条目（笔记、附件等），默认 false |
+
+#### `cite`
+在 LaTeX（`.tex`）或 Markdown 草稿中插入引用，并同步 `.bib` 文件。通过 itemKey 或搜索关键词查找 Zotero 条目，导出为 BibTeX，追加到指定 `.bib` 文件（若引用键已存在则跳过），然后在草稿中插入 `\cite{key}`（LaTeX）或 `[@key]`（Markdown）。需安装并启用 Better BibTeX。
+
+| 参数 | 类型 | 描述 |
+|---|---|---|
+| `bibPath` | string | **必需**，`.bib` 文件路径（不存在则创建） |
+| `itemKey` | string | Zotero 条目 Key（与 query 二选一） |
+| `query` | string | 搜索关键词（匹配标题和作者，与 itemKey 二选一） |
+| `texPath` | string | LaTeX 草稿路径（与 markdownPath 二选一） |
+| `markdownPath` | string | Markdown 草稿路径（与 texPath 二选一） |
+| `marker` | string | 占位符，若提供则替换为引用；否则在文件末尾追加 |
+| `libraryID` | number | 目标库 ID（默认用户库） |
+
+---
+
+## 🔌 外部工具注册 API
+
+其他 Zotero 插件可以通过本插件的 MCP 服务器注册自定义 MCP 工具。这样第三方插件无需运行自己的 HTTP 服务器即可扩展 AI 可调用的工具集。
+
+### 工作原理
+
+1. 你的插件调用 `Zotero.ZoteroMCP.api.registerTool(...)` 注册工具。
+2. 该工具会与内置工具一起出现在 `tools/list` 中。
+3. AI 客户端调用该工具时，MCP 服务器将请求转发到你的 handler。
+4. 插件禁用/卸载时，调用 `Zotero.ZoteroMCP.api.unregisterTool(...)` 或 `unregisterAllTools(pluginID)` 清理。
+
+### API 方法
+
+| 方法 | 说明 |
+|---|---|
+| `registerTool(def)` | 注册自定义 MCP 工具，参数非法或名称冲突时抛出异常 |
+| `unregisterTool(name)` | 按名称注销工具，返回是否成功移除 |
+| `unregisterAllTools(pluginID)` | 注销某插件注册的所有工具，返回移除数量 |
+| `getRegisteredTools()` | 列出已注册工具（只读，不含 handler） |
+| `isToolRegistered(name)` | 检查某工具名是否已注册 |
+| `onToolListChanged(cb)` | 订阅工具列表变更，返回取消订阅函数 |
+
+### 工具定义
+
+```typescript
+{
+  name: string;           // 唯一名称，匹配 /^[a-z][a-z0-9_]*$/，不能与内置工具冲突
+  description: string;    // 显示给 AI 客户端的描述
+  inputSchema: object;    // 输入参数的 JSON Schema
+  handler: (args: any) => Promise<any> | any;  // AI 调用工具时执行的函数
+  pluginID?: string;      // 可选：注册方插件 ID（用于批量清理）
+  enabled?: boolean;      // 可选：是否在 tools/list 中可见（默认 true）
+}
+```
+
+### 示例（来自其他插件）
+
+```javascript
+// 从你的 Zotero 插件注册自定义 MCP 工具
+const mcp = Zotero.ZoteroMCP;
+if (mcp && mcp.api && mcp.api.registerTool) {
+  mcp.api.registerTool({
+    name: 'my_plugin_count_items',
+    description: '按类型统计 Zotero 库中的条目数量',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemType: { type: 'string', description: '按条目类型过滤（如 journalArticle）' }
+      }
+    },
+    handler: async (args) => {
+      const items = await Zotero.Items.getAll(Zotero.Libraries.userLibraryID);
+      const filtered = args.itemType
+        ? items.filter(i => i.itemType === args.itemType)
+        : items;
+      return { total: filtered.length, itemType: args.itemType || 'all' };
+    },
+    pluginID: 'my-plugin@example.com'
+  });
+}
+```
+
+### 卸载时清理
+
+```javascript
+// 在你的插件关闭钩子中：
+const mcp = Zotero.ZoteroMCP;
+if (mcp && mcp.api && mcp.api.unregisterAllTools) {
+  mcp.api.unregisterAllTools('my-plugin@example.com');
+}
+```
+
+### 注意事项
+
+- 工具名称不能与内置工具冲突（见上方列表），建议使用前缀如 `my_plugin_*`。
+- 注册中心在 MCP 服务器重启（如端口变更）后仍然保留。服务器启动前注册的工具会在服务器启动后出现。
+- handler 中的异常会被捕获并以 MCP 错误响应返回，无需自行 try/catch。
+- 返回结果会自动 JSON 序列化并包装为 MCP `text` 内容。
+
 ---
 
 ## 🐛 常见问题 (FAQ)
@@ -501,6 +638,75 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 - 检查端口是否被占用，尝试更换端口
 - 重启 Zotero 应用
 - 查看 Zotero 错误控制台（`工具 -> 开发者 -> 错误控制台`）
+
+---
+
+## 🔍 对比：OpenAI Codex Zotero Skill vs. 本插件
+
+v1.5.2 新增的 `sync_bib` 和 `cite` 工具灵感来自 [OpenAI Codex 的 Zotero 技能](https://github.com/openai/codex)，后者提供了一个独立的 Python CLI 助手（`zotero.py`）来操作 Zotero 的本地 HTTP API。以下是两种实现方案的详细对比。
+
+### 架构对比
+
+| 维度 | OpenAI Codex Zotero Skill | 本插件（Zotero MCP） |
+|---|---|---|
+| **运行位置** | 外部 Python 脚本，由 Codex CLI 调用 | Zotero 插件进程内（TypeScript/JS） |
+| **通信方式** | HTTP 请求到 Zotero 本地 API（`127.0.0.1:23119`）和连接器服务 | 直接访问 Zotero JavaScript API + BBT JSON-RPC |
+| **协议** | CLI 子命令（`zotero.py sync-bib`、`zotero.py cite ...`） | MCP（模型上下文协议）over Streamable HTTP |
+| **依赖** | 仅需 Python 3 标准库（无需 `pip install`） | Zotero 7 插件运行时、Better BibTeX 插件 |
+| **文件 I/O** | Python `pathlib` / `os` | Mozilla `IOUtils`（Gecko/Firefox 运行时） |
+| **BibTeX 导出** | Zotero 本地 API `?format=bibtex` 端点 | BBT JSON-RPC `item.export`（支持更多格式） |
+| **引用键解析** | 从导出的 BibTeX 文本中用正则提取 | BBT `item.citationkey` JSON-RPC（规范、可靠） |
+
+### 功能对比
+
+| 功能 | OpenAI Codex（`zotero.py`） | 本插件 |
+|---|---|---|
+| `sync-bib`（全库导出为 `.bib`） | ✅ `sync-bib --out references.bib` | ✅ `sync_bib` 工具，`bibPath` 参数 |
+| `cite`（草稿中插入引用 + 同步 `.bib`） | ✅ `cite --query "..." --tex paper.tex --bib references.bib` | ✅ `cite` 工具，支持 `itemKey`/`query`、`texPath`/`markdownPath`、`marker` |
+| `.bib` 文件去重检测 | ✅ 正则匹配 `@type{key,` | ✅ 正则匹配 `@type{key,` |
+| 基于标记的引用替换 | ✅ `--marker '<cite>'` | ✅ `marker` 参数 |
+| Markdown 引用格式 | ✅ `[@key]`（Pandoc） | ✅ `[@key]`（Pandoc） |
+| LaTeX 引用格式 | ✅ `\cite{key}` | ✅ `\cite{key}` |
+| 按关键词搜索（`itemKey` 的备选） | ✅ `--query` 通过本地 API `?q=` | ✅ `query` 通过进程内 `Zotero.Search` |
+| 多种导出格式 | 仅 BibTeX（通过 API `?format=bibtex`） | BibTeX、BibLaTeX、CSL-JSON、CSL-YAML（通过 BBT） |
+| 语义搜索 | ❌ | ✅ 内置向量嵌入搜索 |
+| 全文搜索 | ❌ | ✅ 内置全文数据库 |
+| 批注搜索 | ❌ | ✅ 按颜色/标签/关键词过滤 |
+| 外部工具注册 | ❌ | ✅ 其他插件可注册 MCP 工具 |
+| 文献库写入操作 | ✅ `import-bibtex`、`import-ris`（通过连接器） | ✅ `write_note`、`write_tag`、`write_metadata`、`write_item` |
+
+### 优缺点
+
+**OpenAI Codex 方案：**
+- ✅ 零安装：Python 3 标准库即可运行，无需 Zotero 插件
+- ✅ 兼容任何开启本地 API 的 Zotero 版本
+- ✅ 简单、可审计的 CLI 命令
+- ✅ 基本 BibTeX 导出不依赖 Better BibTeX
+- ❌ 需要外部 Python 进程管理
+- ❌ 仅限于 Zotero 本地 HTTP API 接口（无法直接访问 JS API）
+- ❌ 无语义搜索、批注搜索或全文数据库
+- ❌ 无法通过其他插件扩展自定义工具
+- ❌ 正则提取引用键较脆弱（依赖 BBT 输出格式）
+
+**本插件方案：**
+- ✅ 进程内运行：无外部进程，延迟更低，API 访问更丰富
+- ✅ 完整 MCP 协议支持（Claude、Cherry Studio、Cursor 等 AI 客户端）
+- ✅ 通过 BBT JSON-RPC 获取规范引用键（非正则解析）
+- ✅ 支持多种导出格式（BibLaTeX、CSL-JSON、CSL-YAML），超越纯 BibTeX
+- ✅ 可扩展：其他 Zotero 插件可注册额外的 MCP 工具
+- ✅ 集成语义搜索、全文搜索、批注分析
+- ✅ 文件 I/O 使用 Gecko 的 `IOUtils`（与 Zotero 安全模型一致）
+- ❌ 需要安装 Zotero 7 插件
+- ❌ `sync_bib` 和 `cite` 依赖 Better BibTeX 插件（BBT 提供规范引用键）
+- ❌ 需要插件生命周期管理（启用/禁用/重启）
+
+### 设计理念
+
+OpenAI Codex 技能优先考虑**简洁与可移植性**：一个仅依赖标准库的 Python 脚本，任何 CLI 代理都能调用。它将 Zotero 视为可通过 HTTP 访问的黑盒。
+
+本插件优先考虑**深度集成与可扩展性**：在 Zotero 进程内运行，可以访问完整的 JavaScript API、BBT 的 JSON-RPC，以及从其他插件注册自定义工具的能力。它将 Zotero 视为一个平台。
+
+两种方案在用户可见的能力上趋同（`sync-bib`、`cite`），但根本区别在于智能的位置——在进程外部（OpenAI）还是在进程内部（本插件）。
 
 ---
 
