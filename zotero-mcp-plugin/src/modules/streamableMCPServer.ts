@@ -13,6 +13,7 @@ import {
   handleCreateCollection,
   handleUpdateCollection,
   handleDeleteCollection,
+  handleTrashItems,
   handleAddItemsToCollection,
   handleRemoveItemsFromCollection,
 } from './apiHandlers';
@@ -721,6 +722,26 @@ export class StreamableMCPServer {
         },
       },
       {
+        name: 'trash_item',
+        description: 'Move one or more items to Zotero Trash. Items remain recoverable until the user empties Trash; permanent deletion is not supported.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
+            itemKeys: {
+              type: 'array',
+              items: { type: 'string' },
+              minItems: 1,
+              description: 'Item keys to move to Trash, e.g. ["ABCD1234"]'
+            },
+          },
+          required: ['itemKeys'],
+        },
+      },
+      {
         name: 'add_items_to_collection',
         description: 'Add one or more items to a collection by their item keys.',
         inputSchema: {
@@ -1145,6 +1166,7 @@ export class StreamableMCPServer {
     const writeEnabled = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
     const writeToolNames = new Set([
       'write_note', 'write_tag', 'write_metadata', 'write_item', 'add_by_identifier',
+      'trash_item',
     ]);
     const finalTools = writeEnabled === true
       ? filteredTools
@@ -1254,6 +1276,24 @@ export class StreamableMCPServer {
             throw new Error('collectionKey is required');
           }
           result = await runSerializedWrite(() => this.callUpdateCollection(args));
+          break;
+        }
+
+        case 'trash_item': {
+          const writeEnabledTI = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
+          if (writeEnabledTI !== true) {
+            throw new Error('Write operations are currently disabled. Please go to Zotero → Tools → Add-ons → Zotero MCP Plugin → Preferences, and enable "Write Operations" to use this feature.');
+          }
+          if (args && Object.prototype.hasOwnProperty.call(args, 'permanent')) {
+            throw new Error('The permanent option is not supported. Items can only be moved to Zotero Trash.');
+          }
+          const itemKeys = this.coerceStringArray(args?.itemKeys);
+          if (!itemKeys || itemKeys.length === 0) {
+            throw new Error(`itemKeys array is required, e.g. ["ABCD1234"]. Received: ${JSON.stringify(args?.itemKeys)}`);
+          }
+          result = await runSerializedWrite(() =>
+            this.callTrashItems({ ...args, itemKeys }),
+          );
           break;
         }
 
@@ -1701,6 +1741,11 @@ export class StreamableMCPServer {
   private async callUpdateCollection(args: any): Promise<any> {
     const { collectionKey, ...body } = args;
     const response = await handleUpdateCollection({ 1: collectionKey }, body);
+    return response.body ? JSON.parse(response.body) : response;
+  }
+
+  private async callTrashItems(args: any): Promise<any> {
+    const response = await handleTrashItems({}, args);
     return response.body ? JSON.parse(response.body) : response;
   }
 
@@ -3287,7 +3332,8 @@ export class StreamableMCPServer {
         'write_tag',
         'write_metadata',
         'write_item',
-        'add_by_identifier'
+        'add_by_identifier',
+        'trash_item'
       ],
       transport: {
         type: "streamable-http",
