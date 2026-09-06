@@ -64,7 +64,9 @@ pref-config-output-placeholder = 点击生成配置按钮来生成客户端配�
 pref-config-guide-title = 使用说明
 pref-config-guide-placeholder = 选择客户端类型并生成配置后，此处将显示详细的配置指南...
 pref-client-codex-cli = Codex CLI
+    .label = Codex CLI
 pref-client-custom-http = 自定义 HTTP 客户端
+    .label = 自定义 HTTP 客户端
 
 pref-semantic-enable =
     .label = 启用语义搜索
