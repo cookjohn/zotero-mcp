@@ -1,3 +1,4 @@
+import { handleTrashItems } from "../src/modules/apiHandlers";
 import { StreamableMCPServer } from "../src/modules/streamableMCPServer";
 import {
   DeferredNotifierCommitter,
@@ -241,5 +242,178 @@ describe("MCP write operations", function () {
       "second-start",
       "second-end",
     ]);
+  });
+
+  it("moves items to Trash safely and rejects permanent deletion", async function () {
+    this.timeout(20000);
+
+    (globalThis as any).ztoolkit = { log: () => undefined };
+    const server = new StreamableMCPServer();
+    const createdKeys: string[] = [];
+    let requestID = 100;
+
+    Zotero.Prefs.set(WRITE_ENABLED_PREF, true, true);
+
+    const request = async (method: string, params?: unknown) => {
+      const response = await server.handleMCPRequest(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: requestID++,
+          method,
+          ...(params === undefined ? {} : { params }),
+        }),
+      );
+      return JSON.parse(response.body);
+    };
+
+    const callTool = (name: string, args: unknown) =>
+      request("tools/call", { name, arguments: args });
+
+    const parseToolResult = (envelope: any) => {
+      expect(envelope).not.to.have.property("error");
+      return JSON.parse(envelope.result.content[0].text);
+    };
+
+    const makeItem = async (title: string) => {
+      const envelope = await callTool("write_item", {
+        action: "create",
+        itemType: "journalArticle",
+        fields: { title },
+      });
+      const created = parseToolResult(envelope);
+      const key = created.data.itemKey as string;
+      createdKeys.push(key);
+      return key;
+    };
+
+    try {
+      const toolsEnvelope = await request("tools/list", {});
+      const tools = toolsEnvelope.result.tools as Array<{
+        name: string;
+        inputSchema: {
+          properties: Record<string, any>;
+        };
+      }>;
+      const toolNames = tools.map((tool) => tool.name);
+      const trashTool = tools.find((tool) => tool.name === "trash_item");
+
+      expect(toolNames).to.include("trash_item");
+      expect(toolNames).not.to.include("delete_item");
+      expect(trashTool).not.to.equal(undefined);
+      expect(trashTool!.inputSchema.properties).not.to.have.property(
+        "permanent",
+      );
+      expect(trashTool!.inputSchema.properties.itemKeys.minItems).to.equal(1);
+      expect(server.getStatus().availableTools).to.include("trash_item");
+
+      const firstTitle = `MCP trash_item first ${Date.now()}`;
+      const secondTitle = `MCP trash_item second ${Date.now()}`;
+      const firstKey = await makeItem(firstTitle);
+      const secondKey = await makeItem(secondTitle);
+
+      const trashed = parseToolResult(
+        await callTool("trash_item", {
+          itemKeys: JSON.stringify([
+            ` ${firstKey} `,
+            firstKey,
+            secondKey,
+            "ZZZZNOPE",
+          ]),
+        }),
+      );
+
+      expect(trashed.success).to.equal(true);
+      expect(trashed.trashedCount).to.equal(2);
+      expect(trashed.trashed.map((item: any) => item.key)).to.deep.equal([
+        firstKey,
+        secondKey,
+      ]);
+      expect(trashed.trashed.map((item: any) => item.title)).to.deep.equal([
+        firstTitle,
+        secondTitle,
+      ]);
+      expect(trashed.trashed.map((item: any) => item.itemType)).to.deep.equal([
+        "journalArticle",
+        "journalArticle",
+      ]);
+      expect(trashed.notFound).to.deep.equal(["ZZZZNOPE"]);
+      expect(["completed", "pending"]).to.include(trashed.notificationStatus);
+      expect(trashed).not.to.have.property("permanent");
+      expect(trashed).not.to.have.property("deleted");
+
+      for (const key of [firstKey, secondKey]) {
+        const item = await Zotero.Items.getByLibraryAndKeyAsync(
+          Zotero.Libraries.userLibraryID,
+          key,
+        );
+        expect(
+          !!item,
+          `trashed item ${key} should remain retrievable`,
+        ).to.equal(true);
+        expect(item!.deleted).to.equal(true);
+      }
+
+      const missing = parseToolResult(
+        await callTool("trash_item", {
+          itemKeys: ["YYYYNOPE"],
+        }),
+      );
+      expect(missing.notFound).to.deep.equal(["YYYYNOPE"]);
+      expect(missing.error).to.contain("No items found");
+
+      const protectedKey = await makeItem(
+        `MCP trash_item protected ${Date.now()}`,
+      );
+
+      Zotero.Prefs.set(WRITE_ENABLED_PREF, false, true);
+      const hiddenTools = await request("tools/list", {});
+      expect(
+        hiddenTools.result.tools.map((tool: any) => tool.name),
+      ).not.to.include("trash_item");
+
+      const disabled = await callTool("trash_item", {
+        itemKeys: [protectedKey],
+      });
+      expect(disabled.error.message).to.contain(
+        "Write operations are currently disabled",
+      );
+
+      Zotero.Prefs.set(WRITE_ENABLED_PREF, true, true);
+      const refused = await callTool("trash_item", {
+        itemKeys: [protectedKey],
+        permanent: true,
+      });
+      expect(refused.error.code).to.equal(-32603);
+      expect(refused.error.message).to.contain(
+        "permanent option is not supported",
+      );
+
+      const directRefusal = await handleTrashItems({}, {
+        itemKeys: [protectedKey],
+        permanent: true,
+      } as any);
+      expect(directRefusal.status).to.equal(400);
+      expect(JSON.parse(directRefusal.body).error).to.contain(
+        "permanent option is not supported",
+      );
+
+      const protectedItem = await Zotero.Items.getByLibraryAndKeyAsync(
+        Zotero.Libraries.userLibraryID,
+        protectedKey,
+      );
+      expect(!!protectedItem).to.equal(true);
+      expect(protectedItem!.deleted).to.equal(false);
+    } finally {
+      Zotero.Prefs.set(WRITE_ENABLED_PREF, true, true);
+      for (const key of createdKeys) {
+        const item = await Zotero.Items.getByLibraryAndKeyAsync(
+          Zotero.Libraries.userLibraryID,
+          key,
+        );
+        if (item) {
+          await item.eraseTx({ skipNotifier: true });
+        }
+      }
+    }
   });
 });

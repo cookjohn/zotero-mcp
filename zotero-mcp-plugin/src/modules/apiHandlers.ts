@@ -1530,3 +1530,130 @@ export async function handleRemoveItemsFromCollection(
     };
   }
 }
+
+/**
+ * Moves items to Zotero Trash. Permanent deletion is intentionally unsupported.
+ */
+export async function handleTrashItems(
+  _params: Record<string, string>,
+  body: { itemKeys?: string[]; libraryID?: number },
+): Promise<HttpResponse> {
+  try {
+    if (Object.prototype.hasOwnProperty.call(body, "permanent")) {
+      return {
+        status: 400,
+        statusText: "Bad Request",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({
+          error:
+            "The permanent option is not supported. Items can only be moved to Zotero Trash.",
+        }),
+      };
+    }
+
+    const keys = Array.isArray(body.itemKeys)
+      ? [
+          ...new Set(
+            body.itemKeys
+              .map((key) => String(key).trim())
+              .filter(Boolean),
+          ),
+        ]
+      : [];
+
+    if (keys.length === 0) {
+      return {
+        status: 400,
+        statusText: "Bad Request",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ error: "itemKeys array is required" }),
+      };
+    }
+
+    const libraryID = body.libraryID ?? Zotero.Libraries.userLibraryID;
+    const items: Zotero.Item[] = [];
+    const notFound: string[] = [];
+
+    for (const key of keys) {
+      const item = await Zotero.Items.getByLibraryAndKeyAsync(
+        libraryID,
+        key,
+      );
+      if (item) {
+        items.push(item);
+      } else {
+        notFound.push(key);
+      }
+    }
+
+    if (items.length === 0) {
+      return {
+        status: 404,
+        statusText: "Not Found",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({
+          error: `No items found in library ${libraryID}`,
+          notFound,
+        }),
+      };
+    }
+
+    const trashed: Array<{
+      key: string;
+      title: string;
+      itemType: string;
+    }> = [];
+    const notifierQueue = createNotifierQueue();
+    let writeFailed = false;
+    let writeError: unknown;
+
+    try {
+      for (const item of items) {
+        const summary = {
+          key: item.key,
+          title: item.getDisplayTitle ? item.getDisplayTitle() : "",
+          itemType: Zotero.ItemTypes.getName(item.itemTypeID),
+        };
+        item.deleted = true;
+        await item.saveTx(notifierSaveOptions(notifierQueue));
+        trashed.push(summary);
+      }
+    } catch (error) {
+      writeFailed = true;
+      writeError = error;
+    }
+
+    // A batch can fail after earlier saveTx calls have committed. Hand their
+    // queued notifications to the deferred committer before surfacing the
+    // error, matching the other write handlers.
+    const notification = await commitNotifierQueue(
+      notifierQueue,
+      `trash ${trashed.length} item(s)`,
+    );
+    if (writeFailed) throw writeError;
+
+    ztoolkit.log(`[ApiHandlers] Trashed ${trashed.length} item(s)`);
+
+    return {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        success: true,
+        notificationStatus: notification.status,
+        trashedCount: trashed.length,
+        trashed,
+        notFound,
+      }),
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    Zotero.logError(error);
+    return {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ error: error.message }),
+    };
+  }
+}
