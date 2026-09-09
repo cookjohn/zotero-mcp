@@ -176,7 +176,7 @@ function bindPrefEvents() {
   bindHtmlInput(doc, `#zotero-prefpane-${config.addonRef}-custom-max-annotations`, "extensions.zotero.zotero-mcp-plugin.custom.maxAnnotationsPerRequest", true);
 
   // Client config generation
-  const clientSelect = doc?.querySelector("#client-type-select") as HTMLSelectElement;
+  const clientSelect = doc?.querySelector("#client-type-select") as XULMenuListElement;
   const serverNameInput = doc?.querySelector("#server-name-input") as HTMLInputElement;
   const generateButton = doc?.querySelector("#generate-config-button") as HTMLButtonElement;
   const copyConfigButton = doc?.querySelector("#copy-config-button") as HTMLButtonElement;
@@ -263,7 +263,7 @@ function bindPrefEvents() {
   });
 
   // Auto-generate config when client type changes
-  clientSelect?.addEventListener("change", () => {
+  clientSelect?.addEventListener("command", () => {
     if (currentConfig) {
       generateButton?.click();
     }
