@@ -63,9 +63,9 @@ pref-config-output-label = Konfiguration
 pref-config-output-placeholder = Klicken Sie auf „Konfiguration generieren", um die Client-Konfiguration zu erstellen...
 pref-config-guide-title = Anleitung
 pref-config-guide-placeholder = Wählen Sie den Client-Typ und generieren Sie die Konfiguration, um hier eine detaillierte Einrichtungsanleitung anzuzeigen...
-pref-client-codex-cli = Codex CLI
+pref-client-codex-cli =
     .label = Codex CLI
-pref-client-custom-http = Benutzerdefinierter HTTP-Client
+pref-client-custom-http =
     .label = Benutzerdefinierter HTTP-Client
 
 pref-semantic-enable =
