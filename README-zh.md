@@ -312,7 +312,7 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 
 ## 🔧 API 参考（MCP 工具列表）
 
-插件集成的 MCP 服务器提供以下 **20 个工具**，分为 5 大类：
+插件集成的 MCP 服务器提供以下 **29 个工具**，分为 5 大类：
 
 ### 一、搜索与查询（7 个）
 
@@ -420,7 +420,7 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 | `itemKeys` | string[] | 指定条目（get 操作） |
 | `limit` | number | 最大结果数 |
 
-### 五、写入操作（4 个，可在偏好设置中禁用）
+### 五、写入操作（6 个，可在偏好设置中禁用）
 
 #### `write_note`
 创建或修改 Zotero 笔记，支持 Markdown 自动转换为 HTML。
@@ -480,6 +480,14 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 | `duplicates` / `titleDuplicates` | string | 重复处理策略（flag/skip/off） |
 | `dryRun` | boolean | 仅解析标识符不导入 |
 | `async` / `jobID` | - | 大批量后台任务与轮询 |
+
+#### `trash_item`
+将一个或多个条目移入 Zotero 回收站。条目可在回收站中恢复，直到用户清空回收站；不支持永久删除（传入 `permanent` 会被拒绝）。
+
+| 参数 | 类型 | 描述 |
+|---|---|---|
+| `itemKeys` | string[] | **必需**，要移入回收站的条目 Key 列表（自动去重） |
+| `libraryID` | number | 目标文库（默认个人文库） |
 
 ---
 

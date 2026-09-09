@@ -196,7 +196,7 @@ Here are some screenshots demonstrating the functionality of Zotero MCP:
 
 ## 🔧 API Reference (MCP Tools)
 
-The integrated MCP server provides **20 tools** in 5 categories:
+The integrated MCP server provides **29 tools** in 5 categories:
 
 ### 1. Search & Query (7 tools)
 
@@ -258,7 +258,7 @@ Get semantic search service status and index statistics. No parameters required.
 Access cached full-text content database (read-only).
 - `action` (required: list/search/get/stats), `query`, `itemKeys`, `limit`
 
-### 5. Write Operations (4 tools, can be disabled in preferences)
+### 5. Write Operations (6 tools, can be disabled in preferences)
 
 #### `write_note`
 Create or modify Zotero notes. Supports Markdown auto-conversion to HTML.
@@ -279,6 +279,10 @@ Create new items, reparent existing attachments, or import local files as attach
 #### `add_by_identifier`
 Import items by identifier (DOI, arXiv, ISBN, PMID, ADS bibcode) using Zotero's native resolvers — the same pipeline as the desktop "magic wand", including translator metadata and automatic attachment fetching.
 - `identifiers` (required), `libraryID`, `collectionKey`, `saveAttachments`, `duplicates`, `titleDuplicates`, `dryRun`, `async`, `jobID`
+
+#### `trash_item`
+Move one or more items to Zotero Trash. Items stay recoverable until the user empties Trash; permanent deletion is not supported (`permanent` is rejected).
+- `itemKeys` (required, array of item keys; deduplicated), `libraryID`
 
 ---
 
