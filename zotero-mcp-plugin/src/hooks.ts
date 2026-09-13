@@ -6,6 +6,7 @@ import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
 import { MCPSettingsService } from "./modules/mcpSettingsService";
 import { registerSemanticIndexColumn, unregisterSemanticIndexColumn, refreshSemanticColumn } from "./modules/semanticIndexColumn";
+import { registerSemanticSearchToolbar, registerFindSimilarMenu, unregisterSemanticSearchUI } from "./modules/semanticSearchDialog";
 import {
   flushNotifierCommits,
   flushWriteOperations,
@@ -517,10 +518,15 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
 
   // Register semantic index status column
   registerSemanticIndexColumn();
+
+  // Semantic-search UI is registered only when semantic search is enabled.
+  registerSemanticSearchToolbar(win);
+  registerFindSimilarMenu(win);
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
   unregisterSemanticIndexMenus(win);
+  unregisterSemanticSearchUI(win);
   ztoolkit.unregisterAll();
 }
 
@@ -623,6 +629,7 @@ async function onShutdown(): Promise<void> {
     ztoolkit.log("[MCP Plugin] [SHUTDOWN] Removing context menu elements...");
     for (const win of Zotero.getMainWindows()) {
       unregisterSemanticIndexMenus(win as unknown as Window);
+      unregisterSemanticSearchUI(win as unknown as Window);
     }
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));

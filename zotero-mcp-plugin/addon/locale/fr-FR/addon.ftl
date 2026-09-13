@@ -338,3 +338,19 @@ menu-collection-rebuild-index = Reconstruire l'index
 menu-collection-clear-index = Effacer l'index
 menu-collection-clear-confirm = Etes-vous sur de vouloir effacer l'index semantique de cette collection ?
 menu-collection-index-cleared = Index efface
+
+# Semantic search dialog
+semantic-search-title = Recherche sémantique
+semantic-search-short-label = RS
+semantic-search-tooltip = Ouvrir la recherche sémantique
+semantic-search-placeholder = Rechercher par sens dans la bibliothèque indexée…
+semantic-search-btn = Rechercher
+semantic-searching = Recherche…
+semantic-search-hint = Double-cliquez pour localiser l’élément dans Zotero
+semantic-search-close = Fermer
+semantic-no-results = Aucun résultat
+semantic-search-error = Échec de la recherche
+semantic-search-score = Similarité
+semantic-search-creators = Auteurs
+semantic-search-year = Année
+menu-find-similar = Trouver des documents similaires

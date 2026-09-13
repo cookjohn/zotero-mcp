@@ -338,3 +338,19 @@ menu-collection-rebuild-index = インデックスを再構築
 menu-collection-clear-index = インデックスをクリア
 menu-collection-clear-confirm = このコレクションのセマンティックインデックスをクリアしますか？
 menu-collection-index-cleared = インデックスをクリアしました
+
+# Semantic search dialog
+semantic-search-title = セマンティック検索
+semantic-search-short-label = 意味
+semantic-search-tooltip = セマンティック検索を開く
+semantic-search-placeholder = 索引済みライブラリを意味で検索…
+semantic-search-btn = 検索
+semantic-searching = 検索中…
+semantic-search-hint = ダブルクリックで Zotero の項目を表示
+semantic-search-close = 閉じる
+semantic-no-results = 結果がありません
+semantic-search-error = 検索に失敗しました
+semantic-search-score = 類似度
+semantic-search-creators = 著者
+semantic-search-year = 年
+menu-find-similar = 類似文献を検索

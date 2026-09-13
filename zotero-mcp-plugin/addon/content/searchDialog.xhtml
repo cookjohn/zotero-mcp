@@ -1,0 +1,1041 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Semantic search dialog UI adapted from ZotSeek (https://github.com/introfini/ZotSeek), MIT License. -->
+<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
+<?xml-stylesheet href="chrome://zotero/skin/zotero.css" type="text/css"?>
+<?xml-stylesheet href="chrome://zotero-platform/content/zotero-react-client.css" type="text/css"?>
+<?xml-stylesheet href="chrome://zotero-platform/content/zotero.css" type="text/css"?>
+<?xml-stylesheet href="chrome://__addonRef__/content/searchDialog.css" type="text/css"?>
+<!DOCTYPE window>
+<window
+  id="zotero-mcp-semantic-search-window"
+  xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+  xmlns:html="http://www.w3.org/1999/xhtml"
+  title="Semantic Search"
+  width="1000"
+  height="600"
+  persist="width,height,screenX,screenY">
+
+  <script src="chrome://zotero/content/include.js"></script>
+  <script src="chrome://zotero/content/customElements.js"></script>
+
+  <script type="application/javascript">
+  <![CDATA[
+    // ========== i18n ==========
+    const I18N = {
+      'zh-CN': {
+        title: '语义搜索', search: '搜索：', placeholder: '输入搜索查询（输入时自动搜索）...',
+        addQueryTip: '添加查询以进行AND/OR组合', searchBtn: '搜索',
+        query2: '查询 2：', query3: '查询 3：', query4: '查询 4：',
+        removeQueryTip: '删除此查询', mode: '模式：',
+        modeHybrid: '🔗 混合（推荐）', modeSemantic: '🧠 仅语义', modeKeyword: '🔤 仅关键词',
+        modeHintHybrid: '匹配类型：🔗 两种搜索 · 🧠 AI匹配 · 🔤 关键词匹配',
+        modeHintSemantic: '匹配类型：🧠 AI语义匹配', modeHintKeyword: '匹配类型：🔤 仅关键词匹配',
+        results: '结果：', bySection: '按章节', byLocation: '按位置（精确页码和段落）',
+        settings: '⚙ 设置', settingsTip: '打开设置', saveCollection: '保存为合集',
+        openSelected: '打开选中项', close: '关闭', searching: '搜索中...',
+        noResults: '未找到条目', enterQueryPrompt: '请输入搜索查询',
+        resultsFound: '找到 {count} 个条目（来自 {matches} 个匹配）',
+        matchBoth: '— 结果必须匹配两个查询', matchAny: '— 结果可匹配任一查询',
+        using: '使用', minimum: '最小值', product: '乘积', average: '平均值',
+        colSimilarity: '相似度', colTitle: '标题', colAuthors: '作者',
+        colYear: '年份', colLocation: '位置', colType: '类型',
+        semantic: '语义', keyword: '关键词', both: '两者',
+        statMatch: '匹配类型统计：',
+        savedCollection: '已保存 {count} 个条目到合集：{name}',
+        saveFailed: '保存合集失败：{error}', searchFailed: '搜索失败：{error}',
+        settingsMsg: '设置请前往 zotero-mcp-plugin 首选项。',
+        snippetPreview: '匹配预览', matchedChunk: '匹配片段 {n}',
+        similarity: '相似度', noSnippet: '无匹配片段'
+      },
+      'en-US': {
+        title: 'Semantic Search', search: 'Search:', placeholder: 'Enter your search query (auto-searches as you type)...',
+        addQueryTip: 'Add another query for AND/OR combination', searchBtn: 'Search',
+        query2: 'Query 2:', query3: 'Query 3:', query4: 'Query 4:',
+        removeQueryTip: 'Remove this query', mode: 'Mode:',
+        modeHybrid: '🔗 Hybrid (Recommended)', modeSemantic: '🧠 Semantic Only', modeKeyword: '🔤 Keyword Only',
+        modeHintHybrid: 'Match type: 🔗 both searches · 🧠 AI match · 🔤 keyword match',
+        modeHintSemantic: 'Match type: 🧠 AI-powered semantic matching', modeHintKeyword: 'Match type: 🔤 keyword matching only',
+        results: 'Results:', bySection: 'By Section', byLocation: 'By Location (exact page & paragraph)',
+        settings: '⚙ Settings', settingsTip: 'Open settings', saveCollection: 'Save Results as Collection',
+        openSelected: 'Open Selected', close: 'Close', searching: 'Searching...',
+        noResults: 'No items found', enterQueryPrompt: 'Please enter a search query.',
+        resultsFound: 'Found {count} items (from {matches} matches)',
+        matchBoth: '— results must match both queries', matchAny: '— results can match either query',
+        using: 'using', minimum: 'Minimum', product: 'Product', average: 'Average',
+        colSimilarity: 'Similarity', colTitle: 'Title', colAuthors: 'Authors',
+        colYear: 'Year', colLocation: 'Location', colType: 'Type',
+        semantic: 'Semantic', keyword: 'Keyword', both: 'Both',
+        statMatch: 'Match type stats: ',
+        savedCollection: 'Saved {count} items to collection: {name}',
+        saveFailed: 'Failed to save collection: {error}', searchFailed: 'Search failed: {error}',
+        settingsMsg: 'Settings are managed via zotero-mcp-plugin preferences.',
+        snippetPreview: 'Snippet Preview', matchedChunk: 'Chunk {n}',
+        similarity: 'Similarity', noSnippet: 'No snippet available'
+      }
+    };
+
+    function getLocale() {
+      try {
+        // Zotero 7: Zotero.locale is the standard way (e.g. 'zh-CN', 'en-US')
+        let locale = '';
+        if (typeof Zotero !== 'undefined' && Zotero.locale) {
+          locale = Zotero.locale;
+        }
+        // Fallback: Services.locale.appLocaleAsBCP47
+        if (!locale && typeof Services !== 'undefined' && Services.locale) {
+          locale = Services.locale.appLocaleAsBCP47;
+        }
+        // Fallback: global pref
+        if (!locale) {
+          locale = Zotero.Prefs.get('general.useragent.locale', true) || 'en-US';
+        }
+        // Exact match
+        if (I18N[locale]) return locale;
+        // Try lowercase match (e.g. 'zh-cn' → 'zh-CN')
+        const lower = locale.toLowerCase();
+        for (const key of Object.keys(I18N)) {
+          if (key.toLowerCase() === lower) return key;
+        }
+        // Try language prefix match (e.g. 'zh-CN.UTF-8' → 'zh-CN', 'zh' → 'zh-CN')
+        const prefix = locale.split(/[-_.]/)[0].toLowerCase();
+        for (const key of Object.keys(I18N)) {
+          if (key.toLowerCase().startsWith(prefix)) return key;
+        }
+        return 'en-US';
+      } catch (e) { return 'en-US'; }
+    }
+
+    function t(key, params) {
+      const locale = getLocale();
+      let str = (I18N[locale] && I18N[locale][key]) || (I18N['en-US'][key]) || key;
+      if (params) {
+        for (const [k, v] of Object.entries(params)) {
+          str = str.replace('{' + k + '}', String(v));
+        }
+      }
+      return str;
+    }
+
+    // ========== Window Arguments ==========
+    const args = window.arguments[0];
+    const searchCallback = args.searchCallback;
+    const openItemCallback = args.openItemCallback;
+    const findSimilarCallback = args.findSimilarCallback;
+    const VTHelper = args.VirtualizedTableHelper;
+
+    // ========== State ==========
+    let searchResults = [];
+    let displayData = [];
+    let activeQueryCount = 1;
+    let searchMode = 'semantic';
+    let granularity = 'section';
+    let currentSortColumn = null;
+    let currentSortAscending = true;
+    let searchTimer = null;
+    let tableHelper = null;
+    let tableInitialized = false;
+
+    // Snippet tooltip state (matches ZotSeek pattern)
+    let snippetTooltip = null;
+    let highlightTerms = [];
+    let hoveredSnippetRow = -1;
+
+    const SNIPPET_STOPWORDS = new Set([
+      'the', 'a', 'an', 'and', 'or', 'of', 'to', 'in', 'on', 'at', 'by', 'for',
+      'with', 'as', 'is', 'are', 'was', 'were', 'be', 'been', 'it', 'its', 'this',
+      'that', 'these', 'those', 'from', 'how', 'do', 'does', 'did', 'can', 'we',
+      'they', 'their', 'them', 'about', 'into', 'than', 'then', 'but', 'not',
+    ]);
+
+    const HTML_NS = 'http://www.w3.org/1999/xhtml';
+
+    // ========== Init ==========
+    window.addEventListener('DOMContentLoaded', async () => {
+      if (typeof Zotero !== 'undefined' && Zotero.initializationPromise) {
+        await Zotero.initializationPromise;
+      }
+      init();
+    });
+
+    function init() {
+      applyL10n();
+
+      // Explicitly set initial mode value (XUL selected="true" can be unreliable)
+      const modeSelect = document.getElementById('search-mode-select');
+      if (modeSelect) modeSelect.value = 'semantic';
+
+      const query1 = document.getElementById('zotseek-query-1');
+      query1.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+          if (query1.value.trim().length >= 3) performSearch();
+        }, 500);
+      });
+      query1.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); clearTimeout(searchTimer); performSearch(); }
+      });
+
+      document.getElementById('zotseek-add-query-btn').addEventListener('command', addQuery);
+      document.getElementById('zotseek-btn').addEventListener('command', performSearch);
+
+      for (let i = 2; i <= 4; i++) {
+        const btn = document.getElementById('zotseek-remove-query-' + i + '-btn');
+        if (btn) btn.addEventListener('command', () => removeQuery(i));
+      }
+
+      document.getElementById('query-combine-operator').addEventListener('command', updateOperatorUI);
+      document.getElementById('search-mode-select').addEventListener('command', onSearchModeChange);
+      document.getElementById('granularity-section').addEventListener('change', onGranularityChange);
+      document.getElementById('granularity-location').addEventListener('change', onGranularityChange);
+
+      document.getElementById('zotseek-open-btn').addEventListener('command', openSelectedItem);
+      document.getElementById('zotseek-close-btn').addEventListener('command', () => window.close());
+      document.getElementById('zotseek-save-collection-btn').addEventListener('command', saveAsCollection);
+
+      // Initialize the table and snippet tooltip once
+      initTable();
+      setupSnippetTooltip();
+
+      query1.focus();
+      if (args.initialQuery) { query1.value = args.initialQuery; performSearch(); }
+    }
+
+    function applyL10n() {
+      document.title = t('title');
+      const set = (id, attr, key) => { const el = document.getElementById(id); if (el) el.setAttribute(attr, t(key)); };
+      set('zotseek-query-1', 'placeholder', 'placeholder');
+      set('zotseek-add-query-btn', 'tooltiptext', 'addQueryTip');
+      set('zotseek-btn', 'label', 'searchBtn');
+      set('zotseek-remove-query-2-btn', 'tooltiptext', 'removeQueryTip');
+      set('zotseek-remove-query-3-btn', 'tooltiptext', 'removeQueryTip');
+      set('zotseek-remove-query-4-btn', 'tooltiptext', 'removeQueryTip');
+      set('search-mode-hint', 'value', 'modeHintSemantic');
+      set('zotseek-save-collection-btn', 'label', 'saveCollection');
+      set('zotseek-open-btn', 'label', 'openSelected');
+      set('zotseek-close-btn', 'label', 'close');
+
+      const setLabel = (sel, key) => {
+        const el = document.querySelector(sel);
+        if (el) { el.setAttribute('value', t(key)); }
+      };
+      setLabel('.query-row-1 .query-label', 'search');
+      setLabel('#query-row-2 .query-label', 'query2');
+      setLabel('#query-row-3 .query-label', 'query3');
+      setLabel('#query-row-4 .query-label', 'query4');
+      setLabel('#search-mode-row .query-label', 'mode');
+      setLabel('#granularity-row .query-label', 'results');
+
+      const sectionSpan = document.querySelector('#granularity-section');
+      if (sectionSpan && sectionSpan.nextElementSibling) sectionSpan.nextElementSibling.textContent = t('bySection');
+      const locationSpan = document.querySelector('#granularity-location');
+      if (locationSpan && locationSpan.nextElementSibling) locationSpan.nextElementSibling.textContent = t('byLocation');
+
+      const modeSelect = document.getElementById('search-mode-select');
+      if (modeSelect) {
+        const items = modeSelect.querySelectorAll('menuitem');
+        if (items[0]) items[0].setAttribute('label', t('modeHybrid'));
+        if (items[1]) items[1].setAttribute('label', t('modeSemantic'));
+        if (items[2]) items[2].setAttribute('label', t('modeKeyword'));
+      }
+      const hint = document.getElementById('query-operator-hint');
+      if (hint) hint.setAttribute('value', t('matchBoth'));
+    }
+
+    // ========== Multi-Query ==========
+    function addQuery() {
+      if (activeQueryCount >= 4) return;
+      activeQueryCount++;
+      const row = document.getElementById('query-row-' + activeQueryCount);
+      if (row) {
+        row.style.display = 'flex';
+        const input = document.getElementById('zotseek-query-' + activeQueryCount);
+        if (input) {
+          input.focus();
+          input.addEventListener('input', () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => { if (input.value.trim().length >= 3) performSearch(); }, 500);
+          });
+          input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); clearTimeout(searchTimer); performSearch(); }
+          });
+        }
+      }
+      if (activeQueryCount >= 2) document.getElementById('query-operator-row').style.display = 'flex';
+      if (activeQueryCount >= 4) document.getElementById('zotseek-add-query-btn').style.visibility = 'hidden';
+    }
+
+    function removeQuery(rowNum) {
+      for (let i = rowNum; i < activeQueryCount; i++) {
+        const next = document.getElementById('zotseek-query-' + (i + 1));
+        const curr = document.getElementById('zotseek-query-' + i);
+        if (next && curr) curr.value = next.value;
+      }
+      const lastRow = document.getElementById('query-row-' + activeQueryCount);
+      if (lastRow) lastRow.style.display = 'none';
+      const lastInput = document.getElementById('zotseek-query-' + activeQueryCount);
+      if (lastInput) lastInput.value = '';
+      activeQueryCount--;
+      if (activeQueryCount < 4) document.getElementById('zotseek-add-query-btn').style.visibility = 'visible';
+      if (activeQueryCount < 2) document.getElementById('query-operator-row').style.display = 'none';
+    }
+
+    function updateOperatorUI() {
+      const op = document.getElementById('query-combine-operator').value;
+      const fc = document.getElementById('query-formula-container');
+      const hint = document.getElementById('query-operator-hint');
+      if (op === 'and') { fc.style.display = 'flex'; hint.setAttribute('value', t('matchBoth')); }
+      else { fc.style.display = 'none'; hint.setAttribute('value', t('matchAny')); }
+    }
+
+    function onSearchModeChange() {
+      searchMode = document.getElementById('search-mode-select').value;
+      const hint = document.getElementById('search-mode-hint');
+      if (searchMode === 'hybrid') hint.setAttribute('value', t('modeHintHybrid'));
+      else if (searchMode === 'semantic') hint.setAttribute('value', t('modeHintSemantic'));
+      else hint.setAttribute('value', t('modeHintKeyword'));
+    }
+
+    function onGranularityChange() {
+      const checked = document.querySelector('input[name="granularity"]:checked');
+      if (checked) {
+        granularity = checked.value;
+        if (searchResults.length > 0) refreshTable();
+      }
+    }
+
+    // ========== Search ==========
+    function collectQueries() {
+      const queries = [];
+      for (let i = 1; i <= activeQueryCount; i++) {
+        const input = document.getElementById('zotseek-query-' + i);
+        if (input && input.value.trim()) queries.push(input.value.trim());
+      }
+      return queries;
+    }
+
+    async function performSearch() {
+      const queries = collectQueries();
+      if (queries.length === 0) { showStatus(t('enterQueryPrompt')); return; }
+      showStatus(t('searching'));
+
+      // Match current ZotSeek behavior: pure semantic search has no literal-term highlighting.
+      // Keyword/hybrid modes highlight tokenized query terms in the snippet tooltip.
+      const tooltipTerms = searchMode === 'semantic'
+        ? []
+        : queries.flatMap(q => q.split(/\s+/)).filter(Boolean);
+      setQueryTerms(tooltipTerms);
+
+      try {
+        let allResults = [];
+        for (const query of queries) {
+          let results;
+          if (searchMode === 'semantic') results = await searchCallback(query);
+          else if (searchMode === 'keyword') results = await keywordSearch(query);
+          else {
+            const [sem, kw] = await Promise.all([
+              searchCallback(query).catch(() => []),
+              keywordSearch(query).catch(() => [])
+            ]);
+            results = mergeResults(sem, kw);
+          }
+          allResults.push(results);
+        }
+
+        let finalResults;
+        if (allResults.length === 1) finalResults = allResults[0];
+        else {
+          const op = document.getElementById('query-combine-operator').value;
+          if (op === 'and') finalResults = intersectResults(allResults);
+          else finalResults = unionResults(allResults);
+        }
+
+        // Reset sort to default (by score, descending)
+        currentSortColumn = null;
+        currentSortAscending = true;
+        finalResults = sortResults(finalResults, 'similarity', -1);
+        searchResults = finalResults;
+        await refreshTable();
+        updateMatchStats(searchResults);
+        updateSortIndicator();
+      } catch (error) {
+        showStatus(t('searchFailed', { error: error.message || String(error) }));
+      }
+    }
+
+    async function keywordSearch(query) {
+      const s = new Zotero.Search();
+      s.libraryID = Zotero.Libraries.userLibraryID;
+      s.addCondition('joinMode', 'any');
+      s.addCondition('title', 'contains', query);
+      s.addCondition('creator', 'contains', query);
+      s.addCondition('tag', 'contains', query);
+      s.addCondition('itemType', 'isNot', 'attachment');
+      const ids = await s.search();
+
+      const queryLower = query.toLowerCase();
+      const results = [];
+      const seenIds = new Set();
+      for (const id of ids.slice(0, 100)) {
+        seenIds.add(id);
+        const item = Zotero.Items.get(id);
+        if (!item) continue;
+        results.push(buildKeywordResult(item, query));
+      }
+      try {
+        const allIDs = Zotero.Items.getAll(Zotero.Libraries.userLibraryID, true, false, true);
+        for (const itemID of allIDs) {
+          if (seenIds.has(itemID)) continue;
+          const item = Zotero.Items.get(itemID);
+          if (!item || item.isAttachment() || item.isNote()) continue;
+          let abstract = '';
+          try { abstract = item.getField('abstractNote') || ''; } catch (e) { continue; }
+          if (abstract.toLowerCase().includes(queryLower)) {
+            seenIds.add(itemID);
+            results.push(buildKeywordResult(item, query));
+            if (results.length >= 100) break;
+          }
+        }
+      } catch (e) {}
+      return results;
+    }
+
+    function buildKeywordResult(item, query) {
+      let creators = '';
+      try { creators = item.getCreators().map(c => c.lastName || '').filter(n => n).join(', '); } catch (e) {}
+      let year = null;
+      try { year = parseInt(item.getField('year')) || null; } catch (e) {}
+      let itemType = '';
+      try { itemType = item.getItemType().name; } catch (e) {}
+      const title = item.getDisplayTitle() || 'Untitled';
+      let abstract = '';
+      try { abstract = item.getField('abstractNote') || ''; } catch (e) {}
+      const queryLower = query.toLowerCase();
+      let snippet = '';
+      if (title.toLowerCase().includes(queryLower)) snippet = title;
+      else if (abstract.toLowerCase().includes(queryLower)) {
+        const idx = abstract.toLowerCase().indexOf(queryLower);
+        const start = Math.max(0, idx - 50);
+        const end = Math.min(abstract.length, idx + query.length + 100);
+        snippet = (start > 0 ? '...' : '') + abstract.substring(start, end) + (end < abstract.length ? '...' : '');
+      } else snippet = abstract.substring(0, 150) + (abstract.length > 150 ? '...' : '');
+      return {
+        itemKey: item.key, parentKey: item.parentKey || undefined,
+        title, creators, year, itemType, score: 0.5,
+        matchedChunks: [{ chunkId: 0, text: snippet, score: 0.5 }], _sources: ['keyword']
+      };
+    }
+
+    function mergeResults(sem, kw) {
+      const map = new Map();
+      for (const r of sem) map.set(r.itemKey, { ...r, _sources: ['semantic'] });
+      for (const r of kw) {
+        if (map.has(r.itemKey)) {
+          const ex = map.get(r.itemKey);
+          ex._sources.push('keyword');
+          if (r.matchedChunks) ex.matchedChunks = [...(ex.matchedChunks || []), ...r.matchedChunks];
+          ex.score = Math.max(ex.score, 0.6) + 0.1;
+        } else map.set(r.itemKey, { ...r, _sources: ['keyword'] });
+      }
+      return Array.from(map.values()).sort((a, b) => b.score - a.score);
+    }
+
+    function intersectResults(sets) {
+      if (sets.length === 0) return [];
+      const formula = document.getElementById('query-and-formula') ? document.getElementById('query-and-formula').value : 'min';
+      const keySets = sets.map(rs => new Set(rs.map(r => r.itemKey)));
+      const inter = new Set([...keySets[0]].filter(k => keySets.every(s => s.has(k))));
+      const result = [];
+      for (const r of sets[0]) {
+        if (inter.has(r.itemKey)) {
+          const scores = sets.map(rs => { const f = rs.find(x => x.itemKey === r.itemKey); return f ? f.score : 0; });
+          let combined;
+          if (formula === 'min') combined = Math.min(...scores);
+          else if (formula === 'product') combined = scores.reduce((a, b) => a * b, 1);
+          else combined = scores.reduce((a, b) => a + b, 0) / scores.length;
+          const allChunks = [];
+          for (const rs of sets) { const f = rs.find(x => x.itemKey === r.itemKey); if (f && f.matchedChunks) allChunks.push(...f.matchedChunks); }
+          result.push({ ...r, score: combined, _sources: ['both'], matchedChunks: allChunks });
+        }
+      }
+      return result.sort((a, b) => b.score - a.score);
+    }
+
+    function unionResults(sets) {
+      const map = new Map();
+      for (const rs of sets) for (const r of rs) {
+        if (!map.has(r.itemKey)) map.set(r.itemKey, { ...r });
+        else { const ex = map.get(r.itemKey); if (r.matchedChunks) ex.matchedChunks = [...(ex.matchedChunks || []), ...r.matchedChunks]; }
+      }
+      return Array.from(map.values()).sort((a, b) => b.score - a.score);
+    }
+
+    function sortResults(results, column, direction) {
+      return [...results].sort((a, b) => {
+        let vA, vB;
+        if (column === 'similarity') { vA = a.score; vB = b.score; }
+        else if (column === 'title') { vA = (a.title || '').toLowerCase(); vB = (b.title || '').toLowerCase(); }
+        else if (column === 'authors') { vA = (a.creators || '').toLowerCase(); vB = (b.creators || '').toLowerCase(); }
+        else if (column === 'year') { vA = a.year || 0; vB = b.year || 0; }
+        else return 0;
+        if (typeof vA === 'string') return direction === 1 ? vA.localeCompare(vB) : vB.localeCompare(vA);
+        return direction === 1 ? vA - vB : vB - vA;
+      });
+    }
+
+    // ========== Match Stats ==========
+    function updateMatchStats(results) {
+      const bar = document.getElementById('zotseek-match-stats');
+      if (!bar) return;
+      let sem = 0, kw = 0, both = 0;
+      for (const r of results) {
+        const s = r._sources || ['semantic'];
+        if (s.includes('both') || (s.includes('semantic') && s.includes('keyword'))) both++;
+        else if (s.includes('keyword')) kw++;
+        else sem++;
+      }
+      const total = results.length;
+      if (total === 0) { bar.style.display = 'none'; showStatus(t('noResults')); return; }
+      bar.style.display = 'flex';
+      bar.innerHTML = '<span style="font-weight:600;">' + t('statMatch') + '</span> ' +
+        '<span style="color:#1976D2;">🧠 ' + t('semantic') + ': ' + sem + '</span> <span style="color:#757575;">·</span> ' +
+        '<span style="color:#F57C00;">🔤 ' + t('keyword') + ': ' + kw + '</span> <span style="color:#757575;">·</span> ' +
+        '<span style="color:#388E3C;">🔗 ' + t('both') + ': ' + both + '</span> <span style="color:#757575;">·</span> ' +
+        '<span style="color:#424242;">' + t('resultsFound', { count: total, matches: results.reduce((s, r) => s + (r.matchedChunks ? r.matchedChunks.length : 0), 0) }) + '</span>';
+      document.getElementById('zotseek-open-btn').disabled = false;
+      document.getElementById('zotseek-save-collection-btn').disabled = false;
+    }
+
+    // ========== Table Rendering (VirtualizedTableHelper) ==========
+
+    /**
+     * Initialize the VirtualizedTable ONCE (matches ZotSeek pattern).
+     * Subsequent data updates just call tableHelper.render().
+     */
+    function initTable() {
+      if (tableInitialized) return;
+      const container = document.getElementById('zotseek-results-container');
+
+      try {
+        tableHelper = new VTHelper(window);
+        tableHelper.setContainerId('zotseek-results-container');
+        tableHelper.setProp({
+          id: 'zotseek-results-table',
+          showHeader: true,
+          staticColumns: false,
+          multiSelect: true,
+          disableFontSizeScaling: false,
+          linesPerRow: 1.6,
+          columns: getColumns(),
+          getRowCount: () => displayData.length,
+          getRowData: getRowData,
+          getRowString: (index) => {
+            const r = displayData[index];
+            return r ? (r.title || '') : '';
+          },
+          onColumnSort: (columnIndex) => {
+            handleColumnSort(columnIndex);
+          },
+          onSelectionChange: (selection) => {
+            document.getElementById('zotseek-open-btn').disabled = selection.count === 0;
+          },
+          onActivate: (e, items) => {
+            if (items && items.length > 0) {
+              const result = displayData[items[0]];
+              if (result) openItemCallback(result.itemKey);
+            }
+          },
+          onItemContextMenu: (e, x, y) => {
+            // Could add context menu here in the future
+          },
+          storeColumnPrefs: (prefs) => {
+            // Column preferences updated
+          },
+        });
+        tableHelper.render(0);
+        tableInitialized = true;
+      } catch (err) {
+        showStatus('Table init error: ' + (err.message || String(err)));
+      }
+    }
+
+    /**
+     * Refresh the table data and re-render (without destroying the VTHelper).
+     */
+    async function refreshTable() {
+      displayData = buildDisplayData();
+      hideSnippetTooltip();
+
+      if (!tableInitialized) {
+        initTable();
+        return;
+      }
+
+      // Show empty state
+      if (displayData.length === 0) {
+        document.getElementById('zotseek-open-btn').disabled = true;
+        document.getElementById('zotseek-save-collection-btn').disabled = true;
+      }
+
+      try {
+        await tableHelper.render();
+      } catch (err) {
+        // If render fails, try re-initializing
+        tableInitialized = false;
+        initTable();
+      }
+    }
+
+    function buildDisplayData() {
+      if (granularity === 'location') {
+        const data = [];
+        for (const result of searchResults) {
+          if (result.matchedChunks && result.matchedChunks.length > 0) {
+            for (let i = 0; i < result.matchedChunks.length; i++) {
+              data.push({ ...result, _chunkIndex: i, _chunk: result.matchedChunks[i] });
+            }
+          } else {
+            data.push({ ...result, _chunkIndex: 0, _chunk: null });
+          }
+        }
+        return data;
+      }
+      // In section mode, attach the best chunk as _chunk for location display
+      return searchResults.map(r => {
+        const bestChunk = (r.matchedChunks && r.matchedChunks.length > 0) ? r.matchedChunks[0] : null;
+        return { ...r, _chunkIndex: 0, _chunk: bestChunk };
+      });
+    }
+
+    function getColumns() {
+      return [
+        { dataKey: 'indicator', label: '', fixedWidth: true, width: 32, staticWidth: true, ignoreInColumnPicker: true },
+        { dataKey: 'similarity', label: t('colSimilarity'), fixedWidth: true, width: 110, staticWidth: true },
+        { dataKey: 'title', label: t('colTitle'), flex: 1 },
+        { dataKey: 'authors', label: t('colAuthors'), fixedWidth: true, width: 180, staticWidth: true },
+        { dataKey: 'year', label: t('colYear'), fixedWidth: true, width: 50, staticWidth: true },
+        { dataKey: 'page', label: t('colLocation'), fixedWidth: true, width: 90, staticWidth: true },
+        { dataKey: 'source', label: t('colType'), fixedWidth: true, width: 80, staticWidth: true }
+      ];
+    }
+
+    function getRowData(index) {
+      const result = displayData[index];
+      if (!result) return {};
+      const sources = result._sources || ['semantic'];
+      let indicator = '🧠';
+      if (sources.includes('both') || (sources.includes('semantic') && sources.includes('keyword'))) indicator = '🔗';
+      else if (sources.includes('keyword')) indicator = '🔤';
+
+      const score = result._chunk ? result._chunk.score : result.score;
+      const similarity = Math.round(score * 100) + '%';
+      const title = result.title || 'Untitled';
+      const authors = result.creators || '';
+      const year = result.year ? String(result.year) : '';
+
+      // Location: show paragraph number from chunkId (DB limitation: no page numbers)
+      let page = '—';
+      if (result._chunk) {
+        page = '¶' + (result._chunk.chunkId + 1);
+      }
+
+      const source = result.itemType || '';
+
+      return { indicator, similarity, title, authors, year, page, source };
+    }
+
+    /**
+     * Handle column sort click (matches ZotSeek pattern).
+     * Tracks sort state internally and toggles direction.
+     */
+    function handleColumnSort(columnIndex) {
+      const columns = getColumns();
+      const column = columns[columnIndex];
+      if (!column) return;
+
+      const dataKey = column.dataKey;
+      // Skip non-sortable columns
+      if (dataKey === 'indicator' || dataKey === 'page') return;
+
+      // Determine sort direction
+      let ascending;
+      if (currentSortColumn === dataKey) {
+        ascending = !currentSortAscending;
+      } else {
+        // Default: descending for similarity/year, ascending for text
+        ascending = (dataKey !== 'similarity' && dataKey !== 'year');
+      }
+
+      currentSortColumn = dataKey;
+      currentSortAscending = ascending;
+
+      // Sort the underlying searchResults
+      const direction = ascending ? 1 : -1;
+      searchResults = sortResults(searchResults, dataKey, direction);
+      refreshTable();
+      updateSortIndicator();
+    }
+
+    /**
+     * Update visual sort indicator (CSS classes) on column headers.
+     */
+    function updateSortIndicator() {
+      const container = document.getElementById('zotseek-results-container');
+      if (!container) return;
+      const headerCells = container.querySelectorAll('.tree-header .cell');
+      headerCells.forEach((cell) => {
+        const dataKey = cell.getAttribute('data-key');
+        cell.classList.remove('sorted-ascending', 'sorted-descending');
+        if (dataKey === currentSortColumn) {
+          cell.classList.add(currentSortAscending ? 'sorted-ascending' : 'sorted-descending');
+        }
+      });
+    }
+
+    function openSelectedItem() {
+      if (!tableHelper || !tableHelper.treeInstance) return;
+      const sel = tableHelper.treeInstance.selection;
+      if (sel && sel.count > 0) {
+        const idx = sel.focused;
+        if (idx >= 0 && idx < displayData.length) {
+          openItemCallback(displayData[idx].itemKey);
+        }
+      }
+    }
+
+    // ========== Save as Collection ==========
+    async function saveAsCollection() {
+      try {
+        const queries = collectQueries();
+        const name = (t('saveCollection') + ': ' + queries.join(' / ')).substring(0, 100);
+        const collection = new Zotero.Collection();
+        collection.libraryID = Zotero.Libraries.userLibraryID;
+        collection.name = name;
+        await collection.saveTx();
+        const seenKeys = new Set();
+        const itemIDs = [];
+        for (const result of searchResults) {
+          if (seenKeys.has(result.itemKey)) continue;
+          seenKeys.add(result.itemKey);
+          const item = Zotero.Items.getByLibraryAndKey(Zotero.Libraries.userLibraryID, result.itemKey);
+          if (item) itemIDs.push(item.id);
+        }
+        collection.addItems(itemIDs);
+        await collection.saveTx();
+        showStatus(t('savedCollection', { count: itemIDs.length, name }));
+      } catch (e) {
+        showStatus(t('saveFailed', { error: e.message || String(e) }));
+      }
+    }
+
+    // ========== Snippet Tooltip (matches ZotSeek implementation exactly) ==========
+
+    /**
+     * Create the floating snippet tooltip element and wire hover/scroll handlers.
+     * Uses event delegation on the table container so it survives the
+     * VirtualizedTable recycling row DOM nodes during scroll.
+     */
+    function setupSnippetTooltip() {
+      // ZotSeek initializes one delegated tooltip per results table.
+      if (snippetTooltip) return;
+
+      const tip = document.createElementNS(HTML_NS, 'div');
+      tip.className = 'zotseek-snippet-tooltip';
+      tip.setAttribute('role', 'tooltip');
+      tip.setAttribute('aria-hidden', 'true');
+      // Append to <html> (documentElement) to keep tooltip above table and free of container overflow clipping
+      (document.documentElement || document.body).appendChild(tip);
+      snippetTooltip = tip;
+
+      const container = document.getElementById('zotseek-results-container');
+      container.addEventListener('mousemove', (e) => onTableMouseMove(e));
+      container.addEventListener('mouseleave', () => hideSnippetTooltip());
+      // Hide while scrolling: the row under the cursor changes without a mousemove
+      container.addEventListener('scroll', () => hideSnippetTooltip(), true);
+    }
+
+    /**
+     * Resolve the result row under the cursor and show/hide its snippet tooltip.
+     */
+    function onTableMouseMove(e) {
+      if (!snippetTooltip) return;
+
+      const target = e.target;
+      const rowEl = target && target.closest ? target.closest('[id^="zotseek-results-table-row-"]') : null;
+      if (!rowEl) {
+        hideSnippetTooltip();
+        return;
+      }
+
+      const idx = parseInt(rowEl.id.slice('zotseek-results-table-row-'.length), 10);
+      if (Number.isNaN(idx)) {
+        hideSnippetTooltip();
+        return;
+      }
+
+      // Mousemove fires for every pointer pixel. Avoid rebuilding the tooltip DOM
+      // while the pointer remains on the same virtualized row; only reposition it.
+      if (idx === hoveredSnippetRow && snippetTooltip.classList.contains('show')) {
+        positionTooltip(e.clientX, e.clientY);
+        return;
+      }
+
+      const result = displayData[idx];
+      const html = result ? buildSnippetHtml(result) : null;
+      if (!html) {
+        hideSnippetTooltip();
+        return;
+      }
+
+      snippetTooltip.innerHTML = html;
+      hoveredSnippetRow = idx;
+      snippetTooltip.classList.add('show');
+      snippetTooltip.setAttribute('aria-hidden', 'false');
+      positionTooltip(e.clientX, e.clientY);
+    }
+
+    /**
+     * Position the tooltip near the cursor, flipping away from viewport edges.
+     */
+    function positionTooltip(x, y) {
+      if (!snippetTooltip) return;
+      const pad = 16;
+      const w = snippetTooltip.offsetWidth;
+      const h = snippetTooltip.offsetHeight;
+      let left = x + pad;
+      let top = y + pad;
+      if (left + w > window.innerWidth - 8) left = x - w - pad;
+      if (top + h > window.innerHeight - 8) top = y - h - pad;
+      snippetTooltip.style.left = Math.max(8, left) + 'px';
+      snippetTooltip.style.top = Math.max(8, top) + 'px';
+    }
+
+    /**
+     * Hide the snippet tooltip (does not remove it, just hides via CSS).
+     */
+    function hideSnippetTooltip() {
+      if (!snippetTooltip) return;
+      snippetTooltip.classList.remove('show');
+      snippetTooltip.setAttribute('aria-hidden', 'true');
+      hoveredSnippetRow = -1;
+    }
+
+    /**
+     * Build the inner HTML of the snippet tooltip for a result.
+     * Shows metadata line (location, score) + single chunk body text.
+     */
+    function buildSnippetHtml(result) {
+      // Get the best matched chunk
+      const chunk = result._chunk || (result.matchedChunks && result.matchedChunks.length > 0 ? result.matchedChunks[0] : null);
+      const chunkText = chunk ? chunk.text : '';
+      if (!chunkText || !chunkText.trim()) return null;
+
+      const snippet = windowSnippet(chunkText, 360);
+      const body = highlightSnippet(snippet);
+
+      // Metadata line: location, score
+      const meta = [];
+      if (chunk) {
+        const paraNum = (chunk.chunkId ?? 0) + 1;
+        meta.push('📍 ' + t('colLocation') + ': ¶' + paraNum);
+      }
+      // ZotSeek's current tooltip includes a second metadata facet (section).
+      // Our semantic result model has itemType instead, so expose that existing field
+      // without changing the search result schema.
+      if (result.itemType) {
+        meta.push('🏷️ ' + t('colType') + ': ' + String(result.itemType));
+      }
+      const score = chunk ? chunk.score : result.score;
+      if (score !== null && !Number.isNaN(score)) {
+        meta.push('🎯 ' + Math.round(score * 100) + '%');
+      }
+
+      const head = meta.length
+        ? '<div class="zotseek-snippet-meta">' + meta.map(escapeHtml).join('<span class="sep">·</span>') + '</div>'
+        : '';
+      return head + '<div class="zotseek-snippet-body">' + body + '</div>';
+    }
+
+    /**
+     * Trim a long chunk to a readable window. If there is a highlight term,
+     * center the window on its first occurrence; otherwise take the start.
+     */
+    function windowSnippet(text, maxLen) {
+      const clean = text.replace(/\s+/g, ' ').trim();
+      if (clean.length <= maxLen) return clean;
+
+      let start = 0;
+      if (highlightTerms.length > 0) {
+        const lower = clean.toLowerCase();
+        let firstHit = -1;
+        for (const term of highlightTerms) {
+          const i = lower.indexOf(term);
+          if (i !== -1 && (firstHit === -1 || i < firstHit)) firstHit = i;
+        }
+        if (firstHit > maxLen / 2) start = firstHit - Math.floor(maxLen / 2);
+      }
+
+      let end = start + maxLen;
+      let slice = clean.slice(start, end);
+      if (start > 0) slice = '\u2026' + slice;
+      if (end < clean.length) slice = slice + '\u2026';
+      return slice;
+    }
+
+    /**
+     * Escape a snippet and wrap any highlight terms in <mark>.
+     */
+    function highlightSnippet(text) {
+      let out = escapeHtml(text);
+      if (highlightTerms.length === 0) return out;
+
+      // Longest terms first so compound terms aren't broken by shorter ones
+      const sorted = [...highlightTerms].sort((a, b) => b.length - a.length);
+      for (const term of sorted) {
+        const escaped = escapeHtml(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (!escaped) continue;
+        // Word-boundary match
+        const re = new RegExp('\\b(' + escaped + ')\\b', 'gi');
+        out = out.replace(re, '<mark>$1</mark>');
+      }
+      return out;
+    }
+
+    /**
+     * Escape HTML special characters.
+     */
+    function escapeHtml(s) {
+      return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    }
+
+    /**
+     * Set the query terms to highlight inside the snippet tooltip.
+     */
+    function setQueryTerms(terms) {
+      const seen = new Set();
+      highlightTerms = [];
+      for (const t of terms) {
+        // Split into words and filter
+        const words = (t || '').split(/\s+/);
+        for (const word of words) {
+          const tok = word.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
+          if (tok.length < 2 || seen.has(tok) || SNIPPET_STOPWORDS.has(tok)) continue;
+          seen.add(tok);
+          highlightTerms.push(tok);
+        }
+      }
+    }
+
+    function showStatus(msg) {
+      const s = document.getElementById('zotseek-status-text');
+      if (s) s.setAttribute('value', msg);
+    }
+
+    // ========== Expose ==========
+    window.showProgress = showStatus;
+    window.displayResults = async (results) => {
+      searchResults = results;
+      await refreshTable();
+      updateMatchStats(results);
+    };
+    window.showError = showStatus;
+    window.performSearch = performSearch;
+  ]]>
+  </script>
+
+  <vbox flex="1" style="padding: 10px;">
+    <!-- Search Queries -->
+    <vbox id="search-queries-container">
+      <hbox id="query-row-1" class="query-row query-row-1" align="center" style="margin-bottom: 4px;">
+        <label value="Search:" class="query-label"/>
+        <html:input id="zotseek-query-1" class="zotseek-query-input" type="text" placeholder="Enter search query..."/>
+        <button id="zotseek-add-query-btn" label="+" tooltiptext="Add query" class="query-action-btn"/>
+        <button id="zotseek-btn" label="Search" style="margin-left: 8px;"/>
+      </hbox>
+
+      <hbox id="query-operator-row" align="center" style="margin: 4px 0; display: none;">
+        <label value="" class="query-label"/>
+        <menulist id="query-combine-operator" style="min-width: 70px;">
+          <menupopup><menuitem value="and" label="AND"/><menuitem value="or" label="OR"/></menupopup>
+        </menulist>
+        <hbox id="query-formula-container" align="center" style="margin-left: 8px;">
+          <label value="using" style="color: #888; font-size: 11px; margin-right: 4px;"/>
+          <menulist id="query-and-formula" style="min-width: 90px; font-size: 11px;">
+            <menupopup><menuitem value="min" label="Minimum"/><menuitem value="product" label="Product"/><menuitem value="average" label="Average"/></menupopup>
+          </menulist>
+        </hbox>
+        <label id="query-operator-hint" value="—" style="margin-left: 8px; color: #888; font-size: 11px;"/>
+      </hbox>
+
+      <hbox id="query-row-2" class="query-row" align="center" style="margin-bottom: 4px; display: none;">
+        <label value="Query 2:" class="query-label" style="color: #666;"/>
+        <html:input id="zotseek-query-2" class="zotseek-query-input" type="text" placeholder="Enter query 2..."/>
+        <button id="zotseek-remove-query-2-btn" label="✕" tooltiptext="Remove" class="query-action-btn query-remove-btn"/>
+        <button label="Search" style="margin-left: 8px; visibility: hidden;"/>
+      </hbox>
+      <hbox id="query-row-3" class="query-row" align="center" style="margin-bottom: 4px; display: none;">
+        <label value="Query 3:" class="query-label" style="color: #666;"/>
+        <html:input id="zotseek-query-3" class="zotseek-query-input" type="text" placeholder="Enter query 3..."/>
+        <button id="zotseek-remove-query-3-btn" label="✕" tooltiptext="Remove" class="query-action-btn query-remove-btn"/>
+        <button label="Search" style="margin-left: 8px; visibility: hidden;"/>
+      </hbox>
+      <hbox id="query-row-4" class="query-row" align="center" style="margin-bottom: 4px; display: none;">
+        <label value="Query 4:" class="query-label" style="color: #666;"/>
+        <html:input id="zotseek-query-4" class="zotseek-query-input" type="text" placeholder="Enter query 4..."/>
+        <button id="zotseek-remove-query-4-btn" label="✕" tooltiptext="Remove" class="query-action-btn query-remove-btn"/>
+        <button label="Search" style="margin-left: 8px; visibility: hidden;"/>
+      </hbox>
+    </vbox>
+
+    <!-- Search Mode -->
+    <hbox id="search-mode-row" align="center" style="margin-bottom: 8px;">
+      <label value="Mode:" class="query-label" style="color: #666;"/>
+      <menulist id="search-mode-select" style="min-width: 180px;">
+        <menupopup>
+          <menuitem value="hybrid" label="🔗 Hybrid"/>
+          <menuitem value="semantic" label="🧠 Semantic Only" selected="true"/>
+          <menuitem value="keyword" label="🔤 Keyword Only"/>
+        </menupopup>
+      </menulist>
+      <label id="search-mode-hint" value="" style="margin-left: 12px; color: #999; font-size: 11px;"/>
+    </hbox>
+
+    <!-- Granularity -->
+    <hbox id="granularity-row" align="center" style="margin-bottom: 8px;">
+      <label value="Results:" class="query-label" style="color: #666;"/>
+      <hbox align="center" style="gap: 16px;">
+        <html:label style="display: flex; align-items: center; cursor: pointer;">
+          <html:input type="radio" name="granularity" id="granularity-section" value="section" checked="checked" style="margin-right: 4px;"/>
+          <html:span>By Section</html:span>
+        </html:label>
+        <html:label style="display: flex; align-items: center; cursor: pointer;">
+          <html:input type="radio" name="granularity" id="granularity-location" value="location" style="margin-right: 4px;"/>
+          <html:span>By Location</html:span>
+        </html:label>
+      </hbox>
+    </hbox>
+
+    <!-- Status -->
+    <hbox id="zotseek-status" align="center" style="min-height: 24px; margin: 5px 0;">
+      <label id="zotseek-status-text" value="" style="color: #666;"/>
+    </hbox>
+
+    <!-- Match Stats -->
+    <html:div id="zotseek-match-stats" style="display: none; padding: 4px 8px; margin: 2px 0 6px 0; font-size: 12px; align-items: center; gap: 4px; background: var(--material-mix-quinary, #f5f5f5); border-radius: 4px;"/>
+
+    <!-- Results Container (VirtualizedTable renders here) -->
+    <vbox class="virtualized-table-container" flex="1" style="min-height: 150px;">
+      <html:div id="zotseek-results-container"/>
+    </vbox>
+
+    <separator class="thin"/>
+
+    <!-- Footer -->
+    <hbox style="margin-top: 10px;">
+      <spacer flex="1"/>
+      <button id="zotseek-save-collection-btn" label="Save Results as Collection" disabled="true" style="margin-right: 5px;"/>
+      <button id="zotseek-open-btn" label="Open Selected" disabled="true" style="margin-right: 5px;"/>
+      <button id="zotseek-close-btn" label="Close"/>
+    </hbox>
+  </vbox>
+
+</window>

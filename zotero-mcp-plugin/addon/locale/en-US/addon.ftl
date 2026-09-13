@@ -338,3 +338,19 @@ menu-collection-rebuild-index = Rebuild Index
 menu-collection-clear-index = Clear Index
 menu-collection-clear-confirm = Are you sure you want to clear the semantic index for this collection?
 menu-collection-index-cleared = Index cleared
+
+# Semantic search dialog
+semantic-search-title = Semantic Search
+semantic-search-short-label = SS
+semantic-search-tooltip = Open semantic search
+semantic-search-placeholder = Search your indexed library by meaning…
+semantic-search-btn = Search
+semantic-searching = Searching…
+semantic-search-hint = Double-click a result to locate it in Zotero
+semantic-search-close = Close
+semantic-no-results = No results found
+semantic-search-error = Search failed
+semantic-search-score = Score
+semantic-search-creators = Creators
+semantic-search-year = Year
+menu-find-similar = Find Similar Documents

@@ -338,3 +338,19 @@ menu-collection-rebuild-index = 重建索引
 menu-collection-clear-index = 清除索引
 menu-collection-clear-confirm = 确定要清除该分类的语义索引吗？
 menu-collection-index-cleared = 索引已清除
+
+# Semantic search dialog
+semantic-search-title = 语义搜索
+semantic-search-short-label = 语义
+semantic-search-tooltip = 打开语义搜索
+semantic-search-placeholder = 按语义搜索已建立索引的文献…
+semantic-search-btn = 搜索
+semantic-searching = 搜索中…
+semantic-search-hint = 双击结果可在 Zotero 中定位条目
+semantic-search-close = 关闭
+semantic-no-results = 未找到结果
+semantic-search-error = 搜索失败
+semantic-search-score = 相似度
+semantic-search-creators = 作者
+semantic-search-year = 年份
+menu-find-similar = 查找相似文献

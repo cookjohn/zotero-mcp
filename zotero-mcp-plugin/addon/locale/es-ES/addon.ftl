@@ -338,3 +338,19 @@ menu-collection-rebuild-index = Reconstruir índice
 menu-collection-clear-index = Limpiar índice
 menu-collection-clear-confirm = ¿Estás seguro de que deseas limpiar el índice semántico de esta colección?
 menu-collection-index-cleared = Índice limpiado
+
+# Semantic search dialog
+semantic-search-title = Búsqueda semántica
+semantic-search-short-label = SS
+semantic-search-tooltip = Abrir búsqueda semántica
+semantic-search-placeholder = Buscar por significado en la biblioteca indexada…
+semantic-search-btn = Buscar
+semantic-searching = Buscando…
+semantic-search-hint = Doble clic para localizar el elemento en Zotero
+semantic-search-close = Cerrar
+semantic-no-results = No se encontraron resultados
+semantic-search-error = Error de búsqueda
+semantic-search-score = Similitud
+semantic-search-creators = Autores
+semantic-search-year = Año
+menu-find-similar = Buscar documentos similares
