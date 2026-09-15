@@ -27,6 +27,7 @@ import {
   notifierSaveOptions,
   runSerializedWrite,
 } from './deferredNotifierCommitter';
+import { version as pluginVersion } from '../../package.json';
 
 export interface MCPRequest {
   jsonrpc: '2.0';
@@ -68,7 +69,7 @@ export class StreamableMCPServer {
   private isInitialized: boolean = false;
   private serverInfo = {
     name: 'zotero-integrated-mcp',
-    version: '1.1.0',
+    version: pluginVersion,
   };
   private clientSessions: Map<string, { initTime: Date; lastActivity: Date; clientInfo?: any }> = new Map();
 

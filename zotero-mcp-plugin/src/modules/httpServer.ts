@@ -6,6 +6,7 @@ import {
   getByteLength,
   type ByteReader,
 } from "./httpRequestReader";
+import { version as pluginVersion } from "../../package.json";
 
 declare let ztoolkit: ZToolkit;
 
@@ -640,7 +641,7 @@ private getCapabilities() {
   return {
     serverInfo: {
       name: "Zotero MCP Plugin",
-      version: "1.1.0",
+      version: pluginVersion,
       description: "Model Context Protocol integration for Zotero research management",
       author: "Zotero MCP Team",
       repository: "https://github.com/zotero/zotero-mcp",
