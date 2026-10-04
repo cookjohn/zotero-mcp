@@ -4,6 +4,7 @@ import { HttpServer, httpServer } from "./modules/httpServer";
 import { serverPreferences } from "./modules/serverPreferences";
 import hooks from "./hooks";
 import { createZToolkit } from "./utils/ztoolkit";
+import { getToolRegistry, ExternalToolDefinition, RegisteredToolInfo } from "./modules/toolRegistry";
 
 class Addon {
   public data: {
@@ -51,6 +52,27 @@ class Addon {
       stopServer: () => {
         Zotero.debug("===MCP=== Manually stopping server...");
         addon.data.httpServer?.stop();
+      },
+      // ---- External Tool Registration API ----
+      // Other Zotero plugins can register custom MCP tools via:
+      //   Zotero.ZoteroMCP.api.registerTool({ ... })
+      registerTool: (def: ExternalToolDefinition): boolean => {
+        return getToolRegistry().registerTool(def);
+      },
+      unregisterTool: (name: string): boolean => {
+        return getToolRegistry().unregisterTool(name);
+      },
+      unregisterAllTools: (pluginID: string): number => {
+        return getToolRegistry().unregisterAllTools(pluginID);
+      },
+      getRegisteredTools: (): RegisteredToolInfo[] => {
+        return getToolRegistry().getRegisteredTools();
+      },
+      isToolRegistered: (name: string): boolean => {
+        return getToolRegistry().hasTool(name);
+      },
+      onToolListChanged: (listener: () => void): (() => void) => {
+        return getToolRegistry().onToolListChanged(listener);
       },
     };
   }

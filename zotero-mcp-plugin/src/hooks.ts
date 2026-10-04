@@ -617,6 +617,17 @@ async function onShutdown(): Promise<void> {
     ztoolkit.log(`[MCP Plugin] [SHUTDOWN 7/7] Error: ${err.message}`, "error");
   }
 
+  // 清理外部工具注册中心
+  try {
+    ztoolkit.log("[MCP Plugin] [SHUTDOWN] Resetting external tool registry...");
+    const { resetToolRegistry } = require("./modules/toolRegistry");
+    resetToolRegistry();
+    ztoolkit.log("[MCP Plugin] [SHUTDOWN] External tool registry reset");
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    ztoolkit.log(`[MCP Plugin] [SHUTDOWN] Error resetting tool registry: ${err.message}`, "error");
+  }
+
   // Remove context-menu DOM elements from every open window — leftover dead
   // listeners break the item right-click menu after disable (#69)
   try {
