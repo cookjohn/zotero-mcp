@@ -312,7 +312,7 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 
 ## 🔧 API 参考（MCP 工具列表）
 
-插件集成的 MCP 服务器提供以下 **29 个工具**，分为 5 大类：
+插件集成的 MCP 服务器提供以下 **32 个工具**，分为 6 大类：
 
 ### 一、搜索与查询（7 个）
 
@@ -488,6 +488,37 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 |---|---|---|
 | `itemKeys` | string[] | **必需**，要移入回收站的条目 Key 列表（自动去重） |
 | `libraryID` | number | 目标文库（默认个人文库） |
+
+### 六、引文与参考文献（3 个）
+
+#### `export_bibliography`
+通过 zotero-better-bibtex（BBT）插件将一个或多个 Zotero 条目导出为 BibLaTeX/BibTeX（或 CSL-JSON/CSL-YAML）条目。需要 Zotero 中安装并运行 Better BibTeX。
+
+| 参数 | 类型 | 描述 |
+|---|---|---|
+| `itemKeys` | string[] | **必需**，要导出的条目 Key 列表 |
+| `format` | string | 导出格式：biblatex（默认）/bibtex/csljson/cslyaml |
+| `libraryID` | number | 目标文库（默认个人文库） |
+| `exportNotes` | boolean | 是否导出笔记（默认 false） |
+| `useJournalAbbreviation` | boolean | 期刊名使用缩写代替全称（默认 false） |
+
+#### `get_citation`
+用 CSL 引文样式为一个或多个条目生成格式化的参考文献条目或文内引用。未指定样式时使用 Zotero 默认 Quick Copy 样式；不需要 Better BibTeX。
+
+| 参数 | 类型 | 描述 |
+|---|---|---|
+| `itemKeys` | string[] | **必需**，条目 Key 列表 |
+| `style` | string | CSL 样式 ID 或标题，如 "apa"、"ieee"（省略则用默认样式） |
+| `contentType` | string | 输出格式：html（默认）/text |
+| `mode` | string | bibliography（参考文献条目，默认）/citation（文内引用） |
+| `libraryID` | number | 目标文库（默认个人文库） |
+
+#### `list_citation_styles`
+列出 Zotero 中可用的 CSL 引文样式（供 `get_citation` 使用）。
+
+| 参数 | 类型 | 描述 |
+|---|---|---|
+| `filter` | string | 按标题或 ID 关键字过滤（不区分大小写，如 "apa"、"chicago"） |
 
 ---
 

@@ -196,7 +196,7 @@ Here are some screenshots demonstrating the functionality of Zotero MCP:
 
 ## 🔧 API Reference (MCP Tools)
 
-The integrated MCP server provides **29 tools** in 5 categories:
+The integrated MCP server provides **32 tools** in 6 categories:
 
 ### 1. Search & Query (7 tools)
 
@@ -283,6 +283,20 @@ Import items by identifier (DOI, arXiv, ISBN, PMID, ADS bibcode) using Zotero's 
 #### `trash_item`
 Move one or more items to Zotero Trash. Items stay recoverable until the user empties Trash; permanent deletion is not supported (`permanent` is rejected).
 - `itemKeys` (required, array of item keys; deduplicated), `libraryID`
+
+### 6. Citation & Bibliography (3 tools)
+
+#### `export_bibliography`
+Export one or more Zotero items as BibLaTeX/BibTeX (or CSL-JSON/CSL-YAML) entries powered by the zotero-better-bibtex (BBT) plugin. Requires Better BibTeX to be installed and running in Zotero.
+- `itemKeys` (required), `format` (biblatex/bibtex/csljson/cslyaml), `libraryID`, `exportNotes`, `useJournalAbbreviation`
+
+#### `get_citation`
+Generate a formatted reference (bibliography entry) or in-text citation for one or more items using a CSL citation style. If no style is specified, uses the Zotero default Quick Copy style. Works without Better BibTeX.
+- `itemKeys` (required), `style`, `contentType` (html/text), `mode` (bibliography/citation), `libraryID`
+
+#### `list_citation_styles`
+List CSL citation styles available in Zotero (for use with `get_citation`).
+- `filter`
 
 ---
 
