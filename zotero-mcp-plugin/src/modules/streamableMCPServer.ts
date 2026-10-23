@@ -17,6 +17,11 @@ import {
   handleAddItemsToCollection,
   handleRemoveItemsFromCollection,
 } from './apiHandlers';
+import {
+  ERASE_ENABLED_PREF,
+  MAX_ERASE_KEYS,
+  handleEraseItems,
+} from './eraseService';
 import { UnifiedContentExtractor } from './unifiedContentExtractor';
 import { SmartAnnotationExtractor } from './smartAnnotationExtractor';
 import { MCPSettingsService } from './mcpSettingsService';
@@ -723,7 +728,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'trash_item',
-        description: 'Move one or more items to Zotero Trash. Items remain recoverable until the user empties Trash; permanent deletion is not supported.',
+        description: 'Move one or more items to Zotero Trash. Items remain recoverable until the user empties Trash; permanent deletion is not supported. This is also the cleanup step of an attachment conversion: after linking a file with linkMode=linked_file, the old stored copy belongs in Trash — write_item with trashExisting=true performs both steps in one call.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -739,6 +744,32 @@ export class StreamableMCPServer {
             },
           },
           required: ['itemKeys'],
+        },
+      },
+      {
+        name: 'erase_item',
+        description:
+          'PERMANENTLY erase attachments/notes that are already in the Zotero Trash, releasing the files held in Zotero storage. This cannot be undone — calling it on the wrong key destroys data. Guards, all enforced server-side: the "Allow permanent erase" preference must be enabled (default off); args.confirm must be exactly true; only attachment and note items are accepted (regular items are always refused); every item must already be trashed (call trash_item first); at most 20 keys per call. Returns the storage bytes freed per key so the caller can reconcile against the expected saving. This is a storage-reclamation tool, not a step of an attachment conversion — a conversion ends when the old copy reaches the Trash. Default policy: leave the Trash alone and let the user empty it themselves. Only when the preference is ALREADY enabled may you call this to reclaim space for the user (confirm: true still required); if it is disabled, do not ask the user to turn it on — just report that the copies are sitting in the Trash and the user can empty it whenever they want.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            libraryID: {
+              type: 'number',
+              description: 'Optional target Zotero library ID. Defaults to the user library when omitted.'
+            },
+            itemKeys: {
+              type: 'array',
+              items: { type: 'string' },
+              minItems: 1,
+              maxItems: 20,
+              description: 'Keys of items already in Trash (attachments or notes only), e.g. ["ABCD1234"]. Max 20 per call.'
+            },
+            confirm: {
+              type: 'boolean',
+              description: 'Must be exactly true. Acknowledge that erasure is permanent and unrecoverable.'
+            },
+          },
+          required: ['itemKeys', 'confirm'],
         },
       },
       {
@@ -1027,7 +1058,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'write_item',
-        description: 'Create a new Zotero item, re-parent existing attachments, or import a local file as an attachment. Common workflows: (1) read PDF → extract metadata → create item → attach PDF via attachmentKeys; (2) convert PDF to Markdown → import the .md file as attachment via import action. Confirm with user before executing.',
+        description: 'Create a new Zotero item, re-parent existing attachments, or import a local file as an attachment. Common workflows: (1) read PDF → extract metadata → create item → attach PDF via attachmentKeys; (2) convert PDF to Markdown → import the .md file as attachment via import action; (3) convert an already-stored attachment into a linked one: call import with linkMode=linked_file and trashExisting=true — this links the original file in place AND moves the old stored copy to the Zotero Trash in the same call, which is the complete conversion (no follow-up erase, no emptying the Trash). Confirm with user before executing.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1093,6 +1124,18 @@ export class StreamableMCPServer {
               type: 'string',
               enum: ['imported_file', 'linked_file'],
               description: 'For import action: imported_file (default) copies the file into Zotero storage; linked_file links to the file in place without copying (personal library only; if a Linked Attachment Base Directory is configured, the path is stored relative to it)'
+            },
+            contentType: {
+              type: 'string',
+              description: 'For import action: explicit MIME type for the attachment (e.g. application/pdf, application/epub+zip, text/markdown, text/plain). Omit to let Zotero infer it from the file extension.'
+            },
+            skipIfLinked: {
+              type: 'boolean',
+              description: 'For import action: when true, return the existing attachment instead of creating a duplicate if the parent already has a linked_file attachment pointing at the same path. Default false (always create). Implied by trashExisting=true.'
+            },
+            trashExisting: {
+              type: 'boolean',
+              description: 'For import action with linkMode=linked_file: when true, also move the stored (imported_file) copy of the same file name under this parent to the Zotero Trash, completing the "stored copy → linked file" conversion in one call. The copy stays recoverable in Trash and disk space is NOT freed here — that is the default and it is enough. Only if the "Allow permanent erase" preference is already enabled AND the user wants the space back, follow up with erase_item on the returned trashedCopies keys. Never ask the user to enable that preference; without it the old copies simply wait in the Trash for the user to empty it. Default false.'
             }
           },
           required: ['action']
@@ -1166,7 +1209,7 @@ export class StreamableMCPServer {
     const writeEnabled = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
     const writeToolNames = new Set([
       'write_note', 'write_tag', 'write_metadata', 'write_item', 'add_by_identifier',
-      'trash_item',
+      'trash_item', 'erase_item',
     ]);
     const finalTools = writeEnabled === true
       ? filteredTools
@@ -1293,6 +1336,34 @@ export class StreamableMCPServer {
           }
           result = await runSerializedWrite(() =>
             this.callTrashItems({ ...args, itemKeys }),
+          );
+          break;
+        }
+
+        case 'erase_item': {
+          const writeEnabledEI = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
+          if (writeEnabledEI !== true) {
+            throw new Error('Write operations are currently disabled. Please go to Zotero → Tools → Add-ons → Zotero MCP Plugin → Preferences, and enable "Write Operations" to use this feature.');
+          }
+          const eraseAllowed = Zotero.Prefs.get(ERASE_ENABLED_PREF, true);
+          if (eraseAllowed !== true) {
+            throw new Error('Permanent erase is disabled. erase_item only reclaims storage held by already-trashed attachments — it is not part of an attachment conversion, which ends at the Trash. Default policy: leave the Trash alone, the user empties it when they want. Do not ask the user to enable "Allow Permanent Erase (irreversible)"; just report which copies are waiting in the Trash.');
+          }
+          if (args?.confirm !== true) {
+            throw new Error('erase_item permanently destroys data and cannot be undone. Pass confirm: true to proceed.');
+          }
+          if (args && Object.prototype.hasOwnProperty.call(args, 'permanent')) {
+            throw new Error('Use erase_item with confirm: true instead of a "permanent" flag.');
+          }
+          const eraseKeys = this.coerceStringArray(args?.itemKeys);
+          if (!eraseKeys || eraseKeys.length === 0) {
+            throw new Error(`itemKeys array is required, e.g. ["ABCD1234"]. Received: ${JSON.stringify(args?.itemKeys)}`);
+          }
+          if (eraseKeys.length > MAX_ERASE_KEYS) {
+            throw new Error(`At most ${MAX_ERASE_KEYS} item keys can be erased per call, received ${eraseKeys.length}. Split the batch.`);
+          }
+          result = await runSerializedWrite(() =>
+            this.callEraseItems({ ...args, itemKeys: eraseKeys }),
           );
           break;
         }
@@ -1747,6 +1818,147 @@ export class StreamableMCPServer {
   private async callTrashItems(args: any): Promise<any> {
     const response = await handleTrashItems({}, args);
     return response.body ? JSON.parse(response.body) : response;
+  }
+
+  private async callEraseItems(args: any): Promise<any> {
+    const response = await handleEraseItems({}, args);
+    return response.body ? JSON.parse(response.body) : response;
+  }
+
+  /**
+   * Find an existing child attachment of `parentItem` that already points at
+   * `filePath` with the requested link mode. Used only when the caller opts in
+   * with skipIfLinked=true, so imports stay idempotent without changing the
+   * default behaviour.
+   */
+  private async findExistingAttachment(
+    parentItem: Zotero.Item,
+    linkMode: string,
+    filePath: string,
+  ): Promise<Zotero.Item | null> {
+    const expectedMode = linkMode === 'linked_file'
+      ? Zotero.Attachments.LINK_MODE_LINKED_FILE
+      : Zotero.Attachments.LINK_MODE_IMPORTED_FILE;
+    const normalize = (p: string) => p.replace(/\//g, '\\').toLowerCase();
+    const target = normalize(Zotero.File.pathToFile(filePath).path);
+
+    const children = Zotero.Items.get(parentItem.getAttachments()) || [];
+    for (const child of children) {
+      if (!child.isAttachment() || child.attachmentLinkMode !== expectedMode) {
+        continue;
+      }
+      let resolved: string | false = false;
+      try {
+        resolved = await child.getFilePathAsync();
+      } catch {
+        resolved = false;
+      }
+      if (resolved && normalize(resolved) === target) {
+        return child;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Stored copies of the same file name under `parentItem`, used by
+   * trashExisting. Matching is by base name only — against the resolved path,
+   * the attachment filename and the title — so a storage-side rename still
+   * matches while an unrelated attachment does not.
+   */
+  private async findImportedCopies(
+    parentItem: Zotero.Item,
+    filePath: string,
+  ): Promise<Zotero.Item[]> {
+    const targetName = (filePath.split(/[\\/]/).pop() || '').toLowerCase();
+    if (!targetName) return [];
+    const children = Zotero.Items.get(parentItem.getAttachments()) || [];
+    const matches: Zotero.Item[] = [];
+    for (const child of children) {
+      if (!child.isAttachment()) continue;
+      if (child.attachmentLinkMode !== Zotero.Attachments.LINK_MODE_IMPORTED_FILE) continue;
+      if (child.deleted) continue;
+      const candidates = new Set<string>();
+      try {
+        const resolved = await child.getFilePathAsync();
+        if (resolved) candidates.add((resolved.split(/[\\/]/).pop() || '').toLowerCase());
+      } catch {
+        // fall back to the recorded filename below
+      }
+      if (child.attachmentFilename) candidates.add(child.attachmentFilename.toLowerCase());
+      const title = child.getField("title");
+      if (typeof title === "string" && title) candidates.add(title.toLowerCase());
+      if (candidates.has(targetName)) matches.push(child);
+    }
+    return matches;
+  }
+
+  /**
+   * Move the copies retired by a linked_file conversion to the Trash. Reuses
+   * handleTrashItems, so items stay recoverable; nothing is erased here.
+   */
+  private async trashRetiredCopies(
+    parentItem: Zotero.Item,
+    filePath: string,
+    trashExisting: boolean | undefined,
+  ): Promise<{ trashed: Array<{ key: string; title: string }>; error?: string }> {
+    if (trashExisting !== true) return { trashed: [] };
+    const copies = await this.findImportedCopies(parentItem, filePath);
+    if (copies.length === 0) return { trashed: [] };
+    try {
+      const response = await this.callTrashItems({
+        itemKeys: copies.map((copy) => copy.key),
+        libraryID: copies[0].libraryID,
+      });
+      const payload = response?.body ? JSON.parse(response.body) : response;
+      if (payload?.error) {
+        return { trashed: [], error: String(payload.error) };
+      }
+      const trashed = Array.isArray(payload?.trashed)
+        ? payload.trashed.map((entry: any) => ({ key: entry.key, title: entry.title }))
+        : [];
+      ztoolkit.log(
+        `[StreamableMCP] Trashed ${trashed.length} stored copy/copies of ${filePath} under ${parentItem.key}`,
+      );
+      return { trashed };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      ztoolkit.log(`[StreamableMCP] Failed to trash stored copies: ${message}`, "warn");
+      return { trashed: [], error: message };
+    }
+  }
+
+  /**
+   * Zotero's file APIs reject forward-slash drive paths on Windows
+   * (NS_ERROR_FILE_UNRECOGNIZED_PATH), and MCP clients send them routinely.
+   */
+  private normalizeFsPath(filePath: string): string {
+    if (Zotero.isWin && /^[a-zA-Z]:[\\/]/.test(filePath) && filePath.includes("/")) {
+      return filePath.replace(/\//g, "\\");
+    }
+    return filePath;
+  }
+
+  /**
+   * IOUtils.exists throws for some Windows drives, so fall back to nsIFile —
+   * the same primitive Zotero core uses to resolve paths. A false negative
+   * here would block an import that linkFromFile handles fine.
+   */
+  private async sourceFileExists(filePath: string): Promise<boolean> {
+    try {
+      if (await IOUtils.exists(filePath)) return true;
+    } catch (e) {
+      ztoolkit.log(
+        `[StreamableMCP] IOUtils.exists failed for ${filePath}: ${e}; falling back to nsIFile`,
+        "warn",
+      );
+    }
+    try {
+      return Zotero.File.pathToFile(filePath).exists();
+    } catch (e) {
+      ztoolkit.log(`[StreamableMCP] nsIFile probe failed for ${filePath}: ${e}`, "warn");
+      return false;
+    }
   }
 
   private async callDeleteCollection(args: any): Promise<any> {
@@ -2494,7 +2706,7 @@ export class StreamableMCPServer {
    * Handle write_item tool calls: create items, reparent attachments, and import files
    */
   private async callWriteItem(args: any): Promise<any> {
-    const { action, itemType, fields, creators, tags, attachmentKeys, parentKey, filePath, parentItemKey, title, linkMode, libraryID = Zotero.Libraries.userLibraryID } = args;
+    const { action, itemType, fields, creators, tags, attachmentKeys, parentKey, filePath, parentItemKey, title, linkMode, contentType, skipIfLinked, trashExisting, libraryID = Zotero.Libraries.userLibraryID } = args;
 
     try {
       switch (action) {
@@ -2667,8 +2879,11 @@ export class StreamableMCPServer {
           if (!importParentKey) {
             throw new Error('parentItemKey is required for import action');
           }
-          if (!(await IOUtils.exists(filePath))) {
-            throw new Error(`File not found: ${filePath}`);
+          // Normalise once: every downstream call (exists, linkFromFile,
+          // dedupe) must see the same path form.
+          const sourcePath = this.normalizeFsPath(filePath);
+          if (!(await this.sourceFileExists(sourcePath))) {
+            throw new Error(`File not found: ${sourcePath}`);
           }
 
           // Verify parent exists
@@ -2694,11 +2909,54 @@ export class StreamableMCPServer {
 
           // Import or link file as attachment (#93: linked_file keeps the
           // file in place instead of copying it into Zotero storage)
+          // Optional idempotency: with skipIfLinked=true, an attachment that
+          // already points at this exact file is returned instead of creating
+          // a duplicate. Off by default so existing callers are unaffected.
+          // Optionally retire the stored copy in the same call. A linked_file
+          // conversion with trashExisting=true implies the dedupe check, so a
+          // re-run cannot pile up a second link; plain imports are unaffected.
+          if (skipIfLinked === true || (trashExisting === true && effectiveLinkMode === 'linked_file')) {
+            const existing = await this.findExistingAttachment(parentItem, effectiveLinkMode, sourcePath);
+            if (existing) {
+              ztoolkit.log(`[StreamableMCP] Skipped import: ${existing.key} already links ${sourcePath} under ${importParentKey}`);
+              // Re-running a half-finished conversion should clean up too, so
+              // honour trashExisting on the deduped path as well.
+              const retiredOnDedupe = await this.trashRetiredCopies(
+                parentItem, sourcePath, trashExisting,
+              );
+              return {
+                action: 'import',
+                success: true,
+                data: {
+                  attachmentKey: existing.key,
+                  parentItemKey: importParentKey,
+                  filePath: sourcePath,
+                  linkMode: effectiveLinkMode,
+                  contentType: existing.attachmentContentType,
+                  title: existing.getField('title'),
+                  deduped: true,
+                  trashedCopies: retiredOnDedupe.trashed,
+                  ...(retiredOnDedupe.error ? { trashError: retiredOnDedupe.error } : {})
+                },
+                metadata: {
+                  extractedAt: new Date().toISOString(),
+                  message: `Attachment already exists (key: ${existing.key}); nothing created`
+                    + (retiredOnDedupe.trashed.length
+                      ? `, ${retiredOnDedupe.trashed.length} old stored copy/copies moved to Trash`
+                      : '')
+                }
+              };
+            }
+          }
+
           const notifierQueue = createNotifierQueue();
           const attachmentOptions = {
-            file: filePath,
+            file: sourcePath,
             parentItemID: parentItem.id,
-            title: title || filePath.split(/[\\/]/).pop() || 'Imported Attachment',
+            title: title || sourcePath.split(/[\\/]/).pop() || 'Imported Attachment',
+            // contentType is optional: Zotero falls back to
+            // Zotero.MIME.getMIMETypeFromFile when it is omitted.
+            ...(contentType ? { contentType } : {}),
             saveOptions: notifierSaveOptions(notifierQueue)
           };
           const attachment = effectiveLinkMode === 'linked_file'
@@ -2708,20 +2966,32 @@ export class StreamableMCPServer {
 
           ztoolkit.log(`[StreamableMCP] ${effectiveLinkMode === 'linked_file' ? 'Linked' : 'Imported'} file as attachment ${attachment.key} under ${importParentKey}`);
 
+          // Retire the stored copy this link replaces, only when asked. Moves
+          // to Trash; the bytes are released when the user empties it.
+          const retired = effectiveLinkMode === 'linked_file'
+            ? await this.trashRetiredCopies(parentItem, sourcePath, trashExisting)
+            : { trashed: [] as Array<{ key: string; title: string }>, error: undefined };
+
           return {
             action: 'import',
             success: true,
             data: {
               attachmentKey: attachment.key,
               parentItemKey: importParentKey,
-              filePath,
+              filePath: sourcePath,
               linkMode: effectiveLinkMode,
-              title: attachment.getField('title')
+              contentType: attachment.attachmentContentType,
+              title: attachment.getField('title'),
+              trashedCopies: retired.trashed,
+              ...(retired.error ? { trashError: retired.error } : {})
             },
             metadata: {
               extractedAt: new Date().toISOString(),
               notificationStatus: notification.status,
               message: `File ${effectiveLinkMode === 'linked_file' ? 'linked' : 'imported'} as attachment (key: ${attachment.key}) under parent ${importParentKey}`
+                + (retired.trashed.length
+                  ? `; ${retired.trashed.length} old stored copy/copies moved to Trash (recoverable)`
+                  : '')
             }
           };
         }
@@ -3292,6 +3562,29 @@ export class StreamableMCPServer {
   /**
    * Get server status and capabilities
    */
+  /**
+   * Tool names that `tools/list` would return right now, with the same
+   * preference filters applied (semantic / write switches).
+   *
+   * `/mcp/status` used to carry a hand-maintained copy of this list, which had
+   * silently fallen six tools behind the real registry. Deriving it here keeps
+   * the diagnostic endpoint honest by construction.
+   */
+  private getAvailableToolNames(): string[] {
+    try {
+      const response = this.handleToolsList({
+        jsonrpc: '2.0',
+        id: null,
+        method: 'tools/list',
+      });
+      const tools = (response as any)?.result?.tools;
+      return Array.isArray(tools) ? tools.map((tool: any) => tool.name) : [];
+    } catch (e) {
+      ztoolkit.log(`[StreamableMCP] Failed to derive tool list for status: ${e}`, 'error');
+      return [];
+    }
+  }
+
   getStatus() {
     return {
       isInitialized: this.isInitialized,
@@ -3307,34 +3600,11 @@ export class StreamableMCPServer {
         'prompts/list',
         'ping'
       ],
-      availableTools: [
-        'get_libraries',
-        'search_libraries',
-        'search_library',
-        'search_annotations',
-        'get_item_details',
-        'get_annotations',
-        'get_content',
-        'get_collections',
-        'search_collections',
-        'get_collection_details',
-        'get_collection_items',
-        'search_fulltext',
-        'get_item_abstract',
-        // Semantic Search Tools (read-only)
-        'semantic_search',
-        'find_similar',
-        'semantic_status',
-        // Full-text Database Tool (read-only)
-        'fulltext_database',
-        // Write Tools
-        'write_note',
-        'write_tag',
-        'write_metadata',
-        'write_item',
-        'add_by_identifier',
-        'trash_item'
-      ],
+      // Single source of truth: derive from the very same list that
+      // tools/list serves, so /mcp/status can never drift from the real
+      // capabilities again. The hand-maintained copy that used to live here
+      // had already missed six callable tools.
+      availableTools: this.getAvailableToolNames(),
       transport: {
         type: "streamable-http",
         keepAliveSupported: false,

@@ -225,6 +225,8 @@ first-install-later = Configurer plus tard
 
 pref-write-enable-text = Activer les operations d'ecriture
 pref-write-enable-sub = Permettre aux clients IA de creer et modifier des notes (desactive par defaut par securite)
+pref-write-erase-text = Autoriser la suppression definitive (irreversible)
+pref-write-erase-sub = Permet a erase_item de supprimer definitivement des pieces jointes deja dans la corbeille et de liberer le stockage. Irreversible ; desactive par defaut.
 
 pref-contact-title = Informations de contact
 pref-contact-email = Email : fransjone@mail.com

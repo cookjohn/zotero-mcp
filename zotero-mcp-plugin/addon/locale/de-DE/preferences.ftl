@@ -225,6 +225,8 @@ first-install-later = Später konfigurieren
 
 pref-write-enable-text = Schreiboperationen aktivieren
 pref-write-enable-sub = KI-Clients dürfen Notizen erstellen und bearbeiten (aus Sicherheitsgründen standardmäßig deaktiviert)
+pref-write-erase-text = Permanentes Loeschen erlauben (nicht umkehrbar)
+pref-write-erase-sub = Erlaubt erase_item, bereits im Papierkorb liegende Anhaenge endgueltig zu loeschen und Speicher freizugeben. Nicht rueckgaengig zu machen - standardmaessig deaktiviert.
 
 pref-contact-title = Kontaktinformationen
 pref-contact-email = E-Mail: fransjone@mail.com

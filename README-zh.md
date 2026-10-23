@@ -312,7 +312,7 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 
 ## 🔧 API 参考（MCP 工具列表）
 
-插件集成的 MCP 服务器提供以下 **29 个工具**，分为 5 大类：
+插件集成的 MCP 服务器共注册 **30 个工具**，默认对外暴露 **27 个**（差的 3 个是语义搜索工具，需在偏好设置中开启），分为 5 大类：
 
 ### 一、搜索与查询（7 个）
 
@@ -420,7 +420,7 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 | `itemKeys` | string[] | 指定条目（get 操作） |
 | `limit` | number | 最大结果数 |
 
-### 五、写入操作（6 个，可在偏好设置中禁用）
+### 五、写入操作（7 个，可在偏好设置中禁用）
 
 #### `write_note`
 创建或修改 Zotero 笔记，支持 Markdown 自动转换为 HTML。
@@ -467,6 +467,9 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 | `parentItemKey` | string | import 操作：目标父条目 Key |
 | `title` | string | import 操作：附件显示标题（默认为文件名） |
 | `linkMode` | string | import 操作：`imported_file`（默认，复制进 Zotero 存储）或 `linked_file`（链接原文件不复制；仅限个人文库，若设置了链接附件根目录则按相对路径存储） |
+| `contentType` | string | import 操作：显式指定 MIME 类型（application/pdf、text/markdown 等），省略则由扩展名推断 |
+| `skipIfLinked` | boolean | import 操作：父条目已有指向同一路径的附件时复用而不新建（默认 false） |
+| `trashExisting` | boolean | import + `linked_file` 操作：把同父条目下同名的旧存储副本一并移入回收站，一次调用完成「副本 → 链接」改制。副本可恢复，释放空间仍需另行清空回收站 |
 
 #### `add_by_identifier`
 通过标识符导入文献（DOI、arXiv、ISBN、PMID、ADS bibcode），走 Zotero 原生解析管线（与桌面端"魔杖"相同），自动获取 translator 元数据和附件。
@@ -488,6 +491,19 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 |---|---|---|
 | `itemKeys` | string[] | **必需**，要移入回收站的条目 Key 列表（自动去重） |
 | `libraryID` | number | 目标文库（默认个人文库） |
+
+#### `erase_item`
+永久擦除已进入回收站的附件/笔记，释放它们在 Zotero 存储中占用的文件。**不可撤销。**
+
+| 参数 | 类型 | 描述 |
+|---|---|---|
+| `itemKeys` | string[] | **必需**，已进入回收站的附件/笔记 Key，单次最多 20 个 |
+| `confirm` | boolean | **必需**，必须为 `true`，表示已知晓操作不可撤销 |
+| `libraryID` | number | 目标文库（默认个人文库） |
+
+服务端强制校验：需先在偏好中打开「允许永久擦除（不可恢复）」（默认关闭）；只接受附件与笔记，常规条目一律拒绝；每个条目必须已在回收站中。返回每个 Key 释放的字节数。
+
+该工具不属于附件改制流程——改制到「旧副本进回收站」即为完成，它只用于回收空间。默认策略是让用户自行清空回收站。
 
 ---
 
