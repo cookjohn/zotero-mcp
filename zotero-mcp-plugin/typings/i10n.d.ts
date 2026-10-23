@@ -242,6 +242,8 @@ export type FluentMessageId =
   | 'pref-truncate-length-label'
   | 'pref-write-enable-sub'
   | 'pref-write-enable-text'
+  | 'pref-write-erase-sub'
+  | 'pref-write-erase-text'
   | 'prefs-table-detail'
   | 'prefs-table-title'
   | 'prefs-title'

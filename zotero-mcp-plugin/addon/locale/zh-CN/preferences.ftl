@@ -225,6 +225,8 @@ first-install-later = 稍后配置
 
 pref-write-enable-text = 启用写入操作
 pref-write-enable-sub = 允许 AI 客户端创建和修改笔记（默认关闭以确保安全）
+pref-write-erase-text = 允许永久擦除（不可恢复）
+pref-write-erase-sub = 允许 erase_item 彻底删除已进入回收站的附件、释放 Zotero 存储空间。该操作不可撤销，默认关闭。
 
 pref-contact-title = 联系方式
 pref-contact-email = 邮箱：fransjone@mail.com

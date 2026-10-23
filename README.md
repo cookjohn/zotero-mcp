@@ -196,7 +196,7 @@ Here are some screenshots demonstrating the functionality of Zotero MCP:
 
 ## 🔧 API Reference (MCP Tools)
 
-The integrated MCP server provides **29 tools** in 5 categories:
+The integrated MCP server registers **30 tools**, **27** of which are exposed by default (the 3 semantic-search tools must be enabled in preferences). They fall into 5 categories:
 
 ### 1. Search & Query (7 tools)
 
@@ -258,7 +258,7 @@ Get semantic search service status and index statistics. No parameters required.
 Access cached full-text content database (read-only).
 - `action` (required: list/search/get/stats), `query`, `itemKeys`, `limit`
 
-### 5. Write Operations (6 tools, can be disabled in preferences)
+### 5. Write Operations (7 tools, can be disabled in preferences)
 
 #### `write_note`
 Create or modify Zotero notes. Supports Markdown auto-conversion to HTML.
@@ -274,7 +274,8 @@ Update metadata fields on items (title, abstract, date, DOI, creators, etc.).
 
 #### `write_item`
 Create new items, reparent existing attachments, or import local files as attachments.
-- `action` (required: create/reparent/import), `itemType`, `fields`, `creators`, `tags`, `attachmentKeys`, `parentKey`, `filePath`, `parentItemKey`, `title`, `linkMode` (import: `imported_file` copies into Zotero storage, `linked_file` links in place — personal library only), `libraryID`
+- `action` (required: create/reparent/import), `itemType`, `fields`, `creators`, `tags`, `attachmentKeys`, `parentKey`, `filePath`, `parentItemKey`, `title`, `linkMode` (import: `imported_file` copies into Zotero storage, `linked_file` links in place — personal library only), `contentType`, `skipIfLinked`, `trashExisting`, `libraryID`
+- `trashExisting` (import + `linkMode: linked_file`) moves the same-named stored copy under the parent to Trash in the same call, which completes an imported → linked conversion in one step. The copy stays recoverable; emptying Trash is up to the user.
 
 #### `add_by_identifier`
 Import items by identifier (DOI, arXiv, ISBN, PMID, ADS bibcode) using Zotero's native resolvers — the same pipeline as the desktop "magic wand", including translator metadata and automatic attachment fetching.
@@ -283,6 +284,12 @@ Import items by identifier (DOI, arXiv, ISBN, PMID, ADS bibcode) using Zotero's 
 #### `trash_item`
 Move one or more items to Zotero Trash. Items stay recoverable until the user empties Trash; permanent deletion is not supported (`permanent` is rejected).
 - `itemKeys` (required, array of item keys; deduplicated), `libraryID`
+
+#### `erase_item`
+Permanently erase attachments/notes that are already in Trash and release the files they hold in Zotero storage. Irreversible.
+- `itemKeys` (required, max 20 per call), `confirm` (required, must be exactly `true`), `libraryID`
+- Guarded server-side: requires the "Allow permanent erase (irreversible)" preference (default off), accepts attachments and notes only — regular items are always refused — and every item must already be trashed. Returns the bytes freed per key.
+- Not part of an attachment conversion: a conversion ends at Trash. This tool exists only for reclaiming space.
 
 ---
 
