@@ -7,7 +7,7 @@
  * - get_attachment_content
  */
 
-import { PDFProcessor } from "./pdfProcessor";
+import { extractPdfText } from "./pdfTextExtraction";
 import { MCPSettingsService } from "./mcpSettingsService";
 import { IntelligentContentProcessor, ContentControl, ProcessingResult } from "./intelligentContentProcessor";
 import { TextFormatter } from "./textFormatter";
@@ -436,12 +436,15 @@ export class UnifiedContentExtractor {
 
     let content = '';
     let extractionMethod = 'unknown';
+    let extractionWarnings: string[] = [];
 
     try {
       // Unified extraction logic based on file type
       if (this.isPDF(attachment, contentType)) {
-        content = await this.extractPDFText(filePath, attachment.id);
-        extractionMethod = 'pdf_cached_or_extracted';
+        const pdf = await extractPdfText(attachment, { filePath });
+        content = pdf.text;
+        extractionMethod = pdf.source;
+        extractionWarnings = pdf.warnings;
       } else if (this.isHTML(contentType)) {
         content = await this.extractHTMLText(filePath);
         extractionMethod = 'html_parsing';
@@ -489,6 +492,12 @@ export class UnifiedContentExtractor {
         extractedAt: new Date().toISOString()
       };
 
+      // Surface integrity caveats (e.g. dropped CJK glyphs) instead of letting
+      // a non-empty, non-truncated result look complete (#116).
+      if (extractionWarnings.length > 0) {
+        (result as any).warnings = extractionWarnings;
+      }
+
       // Add intelligent processing metadata if used
       if (processedResult) {
         (result as any).intelligentProcessing = {
@@ -522,55 +531,6 @@ export class UnifiedContentExtractor {
         extractedAt: new Date().toISOString(),
         error: errorMsg
       };
-    }
-  }
-
-  /**
-   * Try to get cached fulltext from Zotero's index (much faster than extraction)
-   */
-  private async getZoteroCachedFulltext(attachmentId: number): Promise<string | null> {
-    try {
-      if (Zotero.Fulltext && Zotero.Fulltext.getItemContent) {
-        const content = await Zotero.Fulltext.getItemContent(attachmentId);
-        if (content && content.content && content.content.trim().length > 0) {
-          ztoolkit.log(`[UnifiedContentExtractor] Using Zotero cached fulltext (${content.content.length} chars)`);
-          return content.content;
-        }
-      }
-      return null;
-    } catch (error) {
-      ztoolkit.log(`[UnifiedContentExtractor] Zotero fulltext cache not available: ${error}`, "warn");
-      return null;
-    }
-  }
-
-  /**
-   * Extract text from PDF - first try Zotero cache, then fallback to PDFProcessor
-   */
-  private async extractPDFText(filePath: string, attachmentId?: number): Promise<string> {
-    // First try Zotero's cached fulltext (much faster)
-    if (attachmentId) {
-      const cachedText = await this.getZoteroCachedFulltext(attachmentId);
-      if (cachedText) {
-        return TextFormatter.formatPDFText(cachedText);
-      }
-    }
-
-    // Fallback to PDFProcessor (slower, but works for new/unindexed PDFs)
-    const processor = new PDFProcessor(ztoolkit);
-    try {
-      ztoolkit.log(`[UnifiedContentExtractor] Fallback to PDFProcessor for: ${filePath}`);
-      const rawText = await processor.extractText(filePath);
-      return TextFormatter.formatPDFText(rawText);
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      ztoolkit.log(`[UnifiedContentExtractor] PDF extraction failed: ${errorMsg}`, "warn");
-      if (errorMsg.includes('timed out')) {
-        return `[PDF extraction timed out - file may be too large. Try indexing the PDF in Zotero first.]`;
-      }
-      throw error;
-    } finally {
-      processor.terminate();
     }
   }
 
