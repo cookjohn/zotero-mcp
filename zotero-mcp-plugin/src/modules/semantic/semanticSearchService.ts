@@ -9,8 +9,9 @@
  */
 
 import { getEmbeddingService, EmbeddingService, EmbeddingAPIError, EmbeddingErrorType } from './embeddingService';
-import { getVectorStore, VectorStore } from './vectorStore';
+import { getVectorStore, VectorStore, SearchResult } from './vectorStore';
 import { getTextChunker, TextChunker } from './textChunker';
+import { bestHitPerItem } from './similarResults';
 import { TextFormatter } from '../textFormatter';
 import { PDFProcessor } from '../pdfProcessor';
 
@@ -320,26 +321,42 @@ export class SemanticSearchService {
       // Use first chunk vector as query (or could average all)
       const queryVector = itemVectors[0].vector;
 
-      // Search for similar
-      const results = await this.vectorStore.search(queryVector, {
-        topK: topK + 1,
-        minScore
-      });
+      // Search returns chunk-level hits and the source item's own chunks lead
+      // the ranking, so `topK + 1` candidates got filtered down to nothing
+      // (#108). Over-fetch, then keep the best chunk per item.
+      const maxCandidates = Math.max(topK * 8, (topK + itemVectors.length) * 2);
+      let candidateLimit = Math.min(
+        maxCandidates,
+        Math.max(topK * 2, topK + itemVectors.length + 1)
+      );
+      let matches: SearchResult[] = [];
+      for (;;) {
+        const results = await this.vectorStore.search(queryVector, {
+          topK: candidateLimit,
+          minScore
+        });
+        matches = bestHitPerItem(results, itemKey).slice(0, topK);
+        if (
+          matches.length >= topK ||
+          results.length < candidateLimit ||
+          candidateLimit >= maxCandidates
+        ) {
+          break;
+        }
+        candidateLimit = Math.min(candidateLimit * 2, maxCandidates);
+      }
 
-      // Filter out the source item and map results
-      const filteredResults = results
-        .filter(r => r.itemKey !== itemKey)
-        .slice(0, topK)
-        .map(r => ({
-          itemKey: r.itemKey,
-          title: '',
-          score: r.score,
-          matchedChunks: [{
-            chunkId: r.chunkId,
-            text: r.chunkText,
-            score: r.score
-          }]
-        }));
+      // Map results
+      const filteredResults = matches.map(r => ({
+        itemKey: r.itemKey,
+        title: '',
+        score: r.score,
+        matchedChunks: [{
+          chunkId: r.chunkId,
+          text: r.chunkText,
+          score: r.score
+        }]
+      }));
 
       // Fill metadata
       await this.fillItemMetadata(filteredResults);
