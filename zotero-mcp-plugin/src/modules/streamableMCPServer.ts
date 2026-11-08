@@ -297,8 +297,8 @@ export class StreamableMCPServer {
   }
 
 
-  private handleToolsList(request: MCPRequest): MCPResponse {
-    const tools = [
+  private buildToolDefinitions(): any[] {
+    return [
       {
         name: 'get_libraries',
         description: 'List all Zotero libraries available in the current client. Returns minimal library metadata for each library as a paginated array.',
@@ -1154,25 +1154,46 @@ export class StreamableMCPServer {
         }
       }
     ];
+  }
+
+  /**
+   * Tools currently exposed to clients: semantic tools only when semantic
+   * search is enabled, write tools only when writes are enabled.
+   *
+   * Single source of truth — `tools/list` and the `/mcp/status` diagnostics
+   * both read it, so the advertised list cannot drift from reality (#119).
+   */
+  private getRuntimeTools(): any[] {
+    const tools = this.buildToolDefinitions();
 
     // Filter out semantic tools if semantic search is disabled
     const semanticEnabled = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.semantic.enabled', true);
-    const semanticToolNames = new Set(['semantic_search', 'find_similar', 'semantic_status']);
+    const semanticTools: Record<string, true> = {
+      semantic_search: true,
+      find_similar: true,
+      semantic_status: true,
+    };
     const filteredTools = semanticEnabled === false
-      ? tools.filter((t: any) => !semanticToolNames.has(t.name))
+      ? tools.filter((t: any) => semanticTools[t.name] !== true)
       : tools;
 
     // Filter out write tools if write operations are disabled (default: disabled)
     const writeEnabled = Zotero.Prefs.get('extensions.zotero.zotero-mcp-plugin.write.enabled', true);
-    const writeToolNames = new Set([
-      'write_note', 'write_tag', 'write_metadata', 'write_item', 'add_by_identifier',
-      'trash_item',
-    ]);
-    const finalTools = writeEnabled === true
+    const writeTools: Record<string, true> = {
+      write_note: true,
+      write_tag: true,
+      write_metadata: true,
+      write_item: true,
+      add_by_identifier: true,
+      trash_item: true,
+    };
+    return writeEnabled === true
       ? filteredTools
-      : filteredTools.filter((t: any) => !writeToolNames.has(t.name));
+      : filteredTools.filter((t: any) => writeTools[t.name] !== true);
+  }
 
-    return this.createResponse(request.id ?? null, { tools: finalTools });
+  private handleToolsList(request: MCPRequest): MCPResponse {
+    return this.createResponse(request.id ?? null, { tools: this.getRuntimeTools() });
   }
 
   private async handleToolCall(request: MCPRequest): Promise<MCPResponse> {
@@ -3307,34 +3328,9 @@ export class StreamableMCPServer {
         'prompts/list',
         'ping'
       ],
-      availableTools: [
-        'get_libraries',
-        'search_libraries',
-        'search_library',
-        'search_annotations',
-        'get_item_details',
-        'get_annotations',
-        'get_content',
-        'get_collections',
-        'search_collections',
-        'get_collection_details',
-        'get_collection_items',
-        'search_fulltext',
-        'get_item_abstract',
-        // Semantic Search Tools (read-only)
-        'semantic_search',
-        'find_similar',
-        'semantic_status',
-        // Full-text Database Tool (read-only)
-        'fulltext_database',
-        // Write Tools
-        'write_note',
-        'write_tag',
-        'write_metadata',
-        'write_item',
-        'add_by_identifier',
-        'trash_item'
-      ],
+      // Derived from tools/list so the diagnostics endpoint cannot advertise a
+      // stale hand-maintained list (#119).
+      availableTools: this.getRuntimeTools().map((tool: any) => tool.name),
       transport: {
         type: "streamable-http",
         keepAliveSupported: false,
