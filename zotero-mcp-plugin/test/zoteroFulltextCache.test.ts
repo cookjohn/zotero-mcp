@@ -9,6 +9,29 @@ function stubGlobals(zotero: unknown): void {
 }
 
 describe("readZoteroCachedFulltext", function () {
+  // These stubs replace real globals. Under `zotero-plugin test` they are the
+  // live Zotero/IOUtils objects the test runner itself depends on, so they
+  // must be put back after every test or the run hangs.
+  const STUBBED = ["ztoolkit", "Zotero", "IOUtils"] as const;
+  let saved: Array<PropertyDescriptor | undefined> = [];
+
+  beforeEach(function () {
+    saved = STUBBED.map((name) =>
+      Object.getOwnPropertyDescriptor(globalThis, name),
+    );
+  });
+
+  afterEach(function () {
+    STUBBED.forEach((name, i) => {
+      const descriptor = saved[i];
+      if (descriptor) {
+        Object.defineProperty(globalThis, name, descriptor);
+      } else {
+        delete (globalThis as Record<string, unknown>)[name];
+      }
+    });
+  });
+
   it("reads the .zotero-ft-cache file used by Zotero 9/10", async function () {
     const calls: string[] = [];
     stubGlobals({
