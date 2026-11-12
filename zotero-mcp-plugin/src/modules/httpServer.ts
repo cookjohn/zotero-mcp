@@ -1,8 +1,25 @@
 import { StreamableMCPServer } from "./streamableMCPServer";
 import { serverPreferences } from "./serverPreferences";
 import { testMCPIntegration } from "./mcpTest";
+import {
+  UPLOAD_HEADER_ALLOWANCE,
+  UPLOAD_MAX_WAIT_ATTEMPTS,
+  UPLOAD_PATH,
+  checkUploadAccess,
+  isUploadRequestLine,
+  validateUploadRequest,
+} from "./attachmentUploadRequest";
+import { UploadError, getUploadMaxBytes, importUploadedAttachment } from "./attachmentUpload";
+
+function isWriteEnabled(): boolean {
+  return (
+    Zotero.Prefs.get("extensions.zotero.zotero-mcp-plugin.write.enabled", true) === true
+  );
+}
+
 import { version as pluginVersion } from "../../package.json";
 import {
+  drainRequestBody,
   readHttpRequest,
   getByteLength,
   type ByteReader,
@@ -244,6 +261,53 @@ export class HttpServer {
     return headers;
   }
 
+  /**
+   * POST /mcp/attachments (#115): store the request body as a file
+   * attachment under parentKey and return the new attachment key.
+   */
+  private async handleAttachmentUpload(
+    method: string,
+    query: URLSearchParams,
+    headerText: string,
+    bodyBytes: Uint8Array,
+    peerHost: string | undefined,
+  ): Promise<any> {
+    const json = (status: number, statusText: string, body: unknown) => ({
+      status,
+      statusText,
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify(body),
+    });
+
+    const validation = validateUploadRequest({
+      method,
+      query,
+      headerText,
+      contentLength: bodyBytes.length,
+      peerHost,
+      writeEnabled: isWriteEnabled(),
+      maxBytes: getUploadMaxBytes(),
+    });
+    if (!validation.ok) {
+      ztoolkit.log(`[HttpServer] Upload refused (${validation.status}): ${validation.error}`, "warn");
+      return json(validation.status, validation.statusText, { error: validation.error });
+    }
+
+    try {
+      const uploaded = await importUploadedAttachment(validation.params, bodyBytes);
+      ztoolkit.log(
+        `[HttpServer] Uploaded ${uploaded.size} bytes as attachment ${uploaded.attachmentKey} under ${uploaded.parentItemKey}`,
+      );
+      return json(201, "Created", uploaded);
+    } catch (error) {
+      if (error instanceof UploadError) {
+        return json(error.status, error.statusText, { error: error.message });
+      }
+      ztoolkit.log(`[HttpServer] Upload failed: ${error}`, "error");
+      return json(500, "Internal Server Error", { error: String(error) });
+    }
+  }
+
   private listener = {
     onSocketAccepted: async (_socket: any, transport: any) => {
       let input: any = null;
@@ -275,8 +339,24 @@ export class HttpServer {
         };
 
         // Read the full request as bytes; decode once when complete.
+        // The upload route (#115) carries a binary file, so it gets its own
+        // size cap and an undecoded body, but only once the header-only
+        // access checks pass; everything else keeps 1 MiB.
+        let uploadAllowed = false;
         const read = await readHttpRequest(reader, {
           maxRequestSize: 1024 * 1024,
+          limitsForHeaders: (headers) => {
+            uploadAllowed =
+              isUploadRequestLine(headers) &&
+              !checkUploadAccess(headers, transport.host, isWriteEnabled());
+            return uploadAllowed
+              ? {
+                  maxRequestSize: getUploadMaxBytes() + UPLOAD_HEADER_ALLOWANCE,
+                  maxWaitAttempts: UPLOAD_MAX_WAIT_ATTEMPTS,
+                  rawBody: true,
+                }
+              : undefined;
+          },
         });
 
         const headerText = read.headerText;
@@ -338,6 +418,52 @@ export class HttpServer {
             output.flush();
           } catch (e) {
             ztoolkit.log(`[HttpServer] Error sending 400 for truncated body: ${e}`, "error");
+          }
+          return;
+        }
+
+        if (!read.complete && read.incompleteReason === "too-large") {
+          ztoolkit.log(
+            `[HttpServer] Request too large (Content-Length ${contentLength}) - returning 413`,
+            "warn",
+          );
+          try {
+            const tooLargeBody = JSON.stringify({
+              error: "Request too large",
+              contentLength,
+            });
+            const tooLargeHeaders = this.buildHttpHeaders(
+              {
+                status: 413,
+                statusText: "Payload Too Large",
+                headers: { "Content-Type": "application/json; charset=utf-8" },
+              },
+              false,
+            ) + `Content-Length: ${getByteLength(tooLargeBody)}\r\n\r\n`;
+            output.write(tooLargeHeaders, tooLargeHeaders.length);
+            writeStringToStream(output, tooLargeBody);
+            output.flush();
+            // Lingering close: a client that is still sending its body gets a
+            // TCP reset instead of this response if we close with unread
+            // input. Discard what arrives first. An upload that passed the
+            // access checks may be read up to its announced length (capped)
+            // for up to 60 s, so slow links still see the 413; everything
+            // else only gets the short window.
+            await drainRequestBody(
+              reader,
+              uploadAllowed
+                ? {
+                    remainingBytes: Math.min(
+                      Math.max(0, contentLength - read.bodyBytesRead),
+                      2 * getUploadMaxBytes(),
+                    ),
+                    quietMs: 2000,
+                    maxMs: 60000,
+                  }
+                : {},
+            );
+          } catch (e) {
+            ztoolkit.log(`[HttpServer] Error sending 413: ${e}`, "error");
           }
           return;
         }
@@ -463,6 +589,14 @@ export class HttpServer {
                 }),
               };
             }
+          } else if (path === UPLOAD_PATH) {
+            result = await this.handleAttachmentUpload(
+              method,
+              query,
+              headerText,
+              read.bodyBytes,
+              transport.host,
+            );
           } else if (path === "/mcp/status") {
             // MCP server status endpoint
             if (this.mcpServer) {

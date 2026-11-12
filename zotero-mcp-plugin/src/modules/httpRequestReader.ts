@@ -32,6 +32,20 @@ export interface HttpRequestReadOptions {
   waitMs?: number;
   /** Injectable for tests. */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Called once, as soon as the header block is complete, to adjust limits
+   * for this particular request (e.g. a larger cap for a binary upload
+   * route). A declared Content-Length above the resulting cap stops the read
+   * before any body byte is consumed, with `incompleteReason: "too-large"`.
+   */
+  limitsForHeaders?: (headerText: string) => RequestLimits | undefined;
+}
+
+export interface RequestLimits {
+  maxRequestSize?: number;
+  maxWaitAttempts?: number;
+  /** Skip UTF-8 decoding; `body` stays empty and only `bodyBytes` is set. */
+  rawBody?: boolean;
 }
 
 export interface HttpRequestRead {
@@ -39,6 +53,8 @@ export interface HttpRequestRead {
   headerText: string;
   /** Decoded body, exactly `contentLength` bytes worth. */
   body: string;
+  /** Raw body bytes, exactly `contentLength` bytes worth when complete. */
+  bodyBytes: Uint8Array;
   /** Declared Content-Length in bytes (0 when absent). */
   contentLength: number;
   /** Body bytes actually received; less than contentLength when truncated. */
@@ -144,8 +160,9 @@ export async function readHttpRequest(
   reader: ByteReader,
   options: HttpRequestReadOptions = {},
 ): Promise<HttpRequestRead> {
-  const maxRequestSize = options.maxRequestSize ?? DEFAULTS.maxRequestSize;
-  const maxWaitAttempts = options.maxWaitAttempts ?? DEFAULTS.maxWaitAttempts;
+  let maxRequestSize = options.maxRequestSize ?? DEFAULTS.maxRequestSize;
+  let maxWaitAttempts = options.maxWaitAttempts ?? DEFAULTS.maxWaitAttempts;
+  let rawBody = false;
   const waitMs = options.waitMs ?? DEFAULTS.waitMs;
   const sleep = options.sleep ?? defaultSleep;
 
@@ -229,6 +246,18 @@ export async function readHttpRequest(
         headerText = decodeUtf8(buffer.slice(0, headerEnd));
         contentLength = parseContentLength(headerText);
         bodyEnd = headerEnd + 4 + contentLength;
+        const limits = options.limitsForHeaders?.(headerText);
+        if (limits) {
+          maxRequestSize = limits.maxRequestSize ?? maxRequestSize;
+          maxWaitAttempts = limits.maxWaitAttempts ?? maxWaitAttempts;
+          rawBody = limits.rawBody === true;
+        }
+        // Refuse an oversized declared body up front instead of reading
+        // (and buffering) up to the cap first.
+        if (bodyEnd > maxRequestSize) {
+          incompleteReason = "too-large";
+          break;
+        }
       }
     }
   }
@@ -237,6 +266,7 @@ export async function readHttpRequest(
     return {
       headerText: buffer.length > 0 ? decodeUtf8(buffer.slice(0, buffer.length)) : "",
       body: "",
+      bodyBytes: new Uint8Array(0),
       contentLength: 0,
       bodyBytesRead: 0,
       totalBytesRead: buffer.length,
@@ -250,10 +280,13 @@ export async function readHttpRequest(
   const bodyBytesRead = Math.max(0, buffer.length - bodyStart);
   const complete = bodyBytesRead >= contentLength && !incompleteReason;
 
+  const bodyBytes = buffer.slice(bodyStart, bodyStart + contentLength);
+
   return {
     headerText,
     // Decode exactly Content-Length bytes, once, from a complete buffer.
-    body: decodeUtf8(buffer.slice(bodyStart, bodyStart + contentLength)),
+    body: rawBody ? "" : decodeUtf8(bodyBytes),
+    bodyBytes,
     contentLength,
     bodyBytesRead: Math.min(bodyBytesRead, contentLength),
     totalBytesRead: buffer.length,
@@ -272,4 +305,67 @@ export function decodeUtf8(bytes: Uint8Array): string {
 /** UTF-8 byte length of a string. */
 export function getByteLength(str: string): number {
   return new TextEncoder().encode(str).length;
+}
+
+export interface DrainOptions {
+  /** Stop once this many bytes were discarded (the rest of the announced body). */
+  remainingBytes?: number;
+  /** Stop when nothing arrived for this long. Default 500 ms. */
+  quietMs?: number;
+  /** Hard cap on the whole drain. Default 5 s. */
+  maxMs?: number;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Read and discard pending request bytes after an early error response, so
+ * closing the socket does not turn into a reset that swallows the response
+ * (lingering close). Clients that send the whole body before reading, such
+ * as Python's urllib, otherwise never see the status code.
+ *
+ * Returns the number of bytes discarded.
+ */
+export async function drainRequestBody(
+  reader: ByteReader,
+  options: DrainOptions = {},
+): Promise<number> {
+  const remaining = options.remainingBytes ?? Infinity;
+  const quietMs = options.quietMs ?? 500;
+  const maxMs = options.maxMs ?? 5000;
+  const now = options.now ?? Date.now;
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+
+  const started = now();
+  let lastData = started;
+  let discarded = 0;
+  while (
+    discarded < remaining &&
+    now() - started < maxMs &&
+    now() - lastData < quietMs
+  ) {
+    let available = 0;
+    try {
+      available = reader.available();
+    } catch {
+      break;
+    }
+    if (available > 0) {
+      try {
+        discarded += reader.readBytes(
+          Math.min(available, 65536, remaining - discarded),
+        ).length;
+      } catch {
+        break;
+      }
+      lastData = now();
+      // Yield after every chunk: a peer that keeps sending must not hold
+      // the main thread for the whole drain window.
+      await sleep(0);
+    } else {
+      await sleep(10);
+    }
+  }
+  return discarded;
 }
