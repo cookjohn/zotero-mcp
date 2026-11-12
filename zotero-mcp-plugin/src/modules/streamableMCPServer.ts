@@ -22,6 +22,7 @@ import { SmartAnnotationExtractor } from './smartAnnotationExtractor';
 import { MCPSettingsService } from './mcpSettingsService';
 import { getSemanticSearchService, SemanticSearchService } from './semantic';
 import { getToolRegistry } from './toolRegistry';
+import { version as pluginVersion } from '../../package.json';
 import {
   commitNotifierQueue,
   createNotifierQueue,
@@ -70,7 +71,8 @@ export class StreamableMCPServer {
   private isInitialized: boolean = false;
   private serverInfo = {
     name: 'zotero-integrated-mcp',
-    version: '1.1.0',
+    // Follows the release version instead of a hard-coded string (#114, #118).
+    version: pluginVersion,
   };
   private clientSessions: Map<string, { initTime: Date; lastActivity: Date; clientInfo?: any }> = new Map();
 

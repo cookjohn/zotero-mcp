@@ -1,6 +1,7 @@
 import { StreamableMCPServer } from "./streamableMCPServer";
 import { serverPreferences } from "./serverPreferences";
 import { testMCPIntegration } from "./mcpTest";
+import { version as pluginVersion } from "../../package.json";
 import {
   readHttpRequest,
   getByteLength,
@@ -640,11 +641,11 @@ private getCapabilities() {
   return {
     serverInfo: {
       name: "Zotero MCP Plugin",
-      version: "1.1.0",
+      version: pluginVersion,
       description: "Model Context Protocol integration for Zotero research management",
       author: "Zotero MCP Team",
-      repository: "https://github.com/zotero/zotero-mcp",
-      documentation: "https://github.com/zotero/zotero-mcp/blob/main/README.md"
+      repository: "https://github.com/cookjohn/zotero-mcp",
+      documentation: "https://github.com/cookjohn/zotero-mcp/blob/main/README.md"
     },
     protocols: {
       mcp: {
