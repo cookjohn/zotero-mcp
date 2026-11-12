@@ -9,10 +9,12 @@
  */
 
 import { getEmbeddingService, EmbeddingService, EmbeddingAPIError, EmbeddingErrorType } from './embeddingService';
-import { getVectorStore, VectorStore } from './vectorStore';
+import { getVectorStore, VectorStore, SearchResult } from './vectorStore';
 import { getTextChunker, TextChunker } from './textChunker';
+import { bestHitPerItem } from './similarResults';
 import { TextFormatter } from '../textFormatter';
 import { PDFProcessor } from '../pdfProcessor';
+import { extractPdfText } from '../pdfTextExtraction';
 
 declare let Zotero: any;
 declare let ztoolkit: ZToolkit;
@@ -320,26 +322,42 @@ export class SemanticSearchService {
       // Use first chunk vector as query (or could average all)
       const queryVector = itemVectors[0].vector;
 
-      // Search for similar
-      const results = await this.vectorStore.search(queryVector, {
-        topK: topK + 1,
-        minScore
-      });
+      // Search returns chunk-level hits and the source item's own chunks lead
+      // the ranking, so `topK + 1` candidates got filtered down to nothing
+      // (#108). Over-fetch, then keep the best chunk per item.
+      const maxCandidates = Math.max(topK * 8, (topK + itemVectors.length) * 2);
+      let candidateLimit = Math.min(
+        maxCandidates,
+        Math.max(topK * 2, topK + itemVectors.length + 1)
+      );
+      let matches: SearchResult[] = [];
+      for (;;) {
+        const results = await this.vectorStore.search(queryVector, {
+          topK: candidateLimit,
+          minScore
+        });
+        matches = bestHitPerItem(results, itemKey).slice(0, topK);
+        if (
+          matches.length >= topK ||
+          results.length < candidateLimit ||
+          candidateLimit >= maxCandidates
+        ) {
+          break;
+        }
+        candidateLimit = Math.min(candidateLimit * 2, maxCandidates);
+      }
 
-      // Filter out the source item and map results
-      const filteredResults = results
-        .filter(r => r.itemKey !== itemKey)
-        .slice(0, topK)
-        .map(r => ({
-          itemKey: r.itemKey,
-          title: '',
-          score: r.score,
-          matchedChunks: [{
-            chunkId: r.chunkId,
-            text: r.chunkText,
-            score: r.score
-          }]
-        }));
+      // Map results
+      const filteredResults = matches.map(r => ({
+        itemKey: r.itemKey,
+        title: '',
+        score: r.score,
+        matchedChunks: [{
+          chunkId: r.chunkId,
+          text: r.chunkText,
+          score: r.score
+        }]
+      }));
 
       // Fill metadata
       await this.fillItemMetadata(filteredResults);
@@ -1164,38 +1182,33 @@ export class SemanticSearchService {
             const attachment = await Zotero.Items.getAsync(attachmentId);
             if (!attachment) continue;
 
-            // Extract full text from PDF attachments using PDFProcessor
+            // Extract full text from PDF attachments through the shared
+            // cache/worker selector (CJK fidelity + partial-index handling).
             if (attachment.isPDFAttachment?.()) {
               try {
                 const filePath = await attachment.getFilePathAsync?.();
-                if (filePath) {
-                  ztoolkit.log(`[SemanticSearch] extractItemContent() extracting PDF: ${filePath}`);
-                  // Use shared processor if provided (much faster for batch processing)
-                  const processor = sharedProcessor || new PDFProcessor(ztoolkit);
-                  const shouldTerminate = !sharedProcessor;  // Only terminate if we created it
-                  try {
-                    const textContent = await processor.extractText(filePath);
-                    if (textContent && textContent.length > 0) {
-                      const maxFullTextLength = this.getMaxFullTextLength();
-                      const finalContent = textContent.length > maxFullTextLength
-                        ? textContent.substring(0, maxFullTextLength)
-                        : textContent;
-                      if (textContent.length > maxFullTextLength) {
-                        ztoolkit.log(`[SemanticSearch] extractItemContent() truncated to ${maxFullTextLength} chars`);
-                      }
-                      parts.push(finalContent);
-                      fullTextCount++;
-                      ztoolkit.log(`[SemanticSearch] extractItemContent() got PDF text: ${finalContent.length} chars`);
-                    } else {
-                      ztoolkit.log(`[SemanticSearch] extractItemContent() PDF extraction returned empty`);
-                    }
-                  } finally {
-                    if (shouldTerminate) {
-                      processor.terminate();
-                    }
+                const pdf = await extractPdfText(attachment, {
+                  filePath,
+                  processor: sharedProcessor,
+                });
+                const textContent = pdf.text;
+                if (pdf.warnings.length > 0) {
+                  ztoolkit.log(`[SemanticSearch] extractItemContent() ${pdf.warnings.join(' ')}`, 'warn');
+                }
+
+                if (textContent && textContent.length > 0) {
+                  const maxFullTextLength = this.getMaxFullTextLength();
+                  const finalContent = textContent.length > maxFullTextLength
+                    ? textContent.substring(0, maxFullTextLength)
+                    : textContent;
+                  if (textContent.length > maxFullTextLength) {
+                    ztoolkit.log(`[SemanticSearch] extractItemContent() truncated to ${maxFullTextLength} chars`);
                   }
+                  parts.push(finalContent);
+                  fullTextCount++;
+                  ztoolkit.log(`[SemanticSearch] extractItemContent() got PDF text: ${finalContent.length} chars`);
                 } else {
-                  ztoolkit.log(`[SemanticSearch] extractItemContent() no file path for attachment ${attachmentId}`);
+                  ztoolkit.log(`[SemanticSearch] extractItemContent() PDF extraction returned empty`);
                 }
               } catch (e) {
                 pdfExtractionFailed = true;
