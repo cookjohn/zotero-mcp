@@ -32,7 +32,7 @@ const BBT_TRANSLATORS: Record<string, string> = {
   yml: "Better CSL YAML",
 };
 
-/** BBT 默认端口（Juris-M 为 24119） */
+/** Zotero 连接器服务器默认端口（BBT 的 JSON-RPC 挂在其上；Juris-M 为 24119） */
 const BBT_DEFAULT_PORT = 23119;
 
 /** 未知 BBT 版本时的占位符 */
@@ -41,7 +41,41 @@ const UNKNOWN = "unknown";
 export class CitationExportService {
   /** BBT JSON-RPC 基地址 */
   private get bbtRpcUrl(): string {
-    return `http://localhost:${BBT_DEFAULT_PORT}/better-bibtex/json-rpc`;
+    // BBT is served by Zotero's own connector server, whose port is
+    // configurable (extensions.zotero.httpServer.port).
+    const configured = Number(Zotero.Prefs.get("httpServer.port"));
+    const port =
+      Number.isInteger(configured) && configured > 0
+        ? configured
+        : BBT_DEFAULT_PORT;
+    return `http://127.0.0.1:${port}/better-bibtex/json-rpc`;
+  }
+
+  /**
+   * Normalize an MCP-supplied libraryID the same way the REST handlers do
+   * (apiHandlers.resolveLibraryID): omitted / empty / 0 mean the user
+   * library, anything that is not an integer is rejected instead of being
+   * silently treated as the user library.
+   */
+  private normalizeLibraryID(raw: unknown): number | undefined {
+    if (raw === undefined || raw === null) return undefined;
+    if (typeof raw === "string" && !raw.trim()) return undefined;
+    const libraryID = Number(raw);
+    if (!Number.isInteger(libraryID)) {
+      throw new Error("Invalid libraryID: must be an integer");
+    }
+    return libraryID === 0 ? undefined : libraryID;
+  }
+
+  /**
+   * Zotero.Styles.get()/getVisible() throw "Styles not yet loaded" until
+   * Zotero.Styles.init() has run.
+   */
+  private async ensureStylesLoaded(): Promise<void> {
+    const styles = Zotero.Styles as any;
+    if (typeof styles.initialized === "function" && !styles.initialized()) {
+      await styles.init();
+    }
   }
 
   /**
@@ -162,31 +196,26 @@ export class CitationExportService {
    * @param params.itemKeys 要导出的条目 key 数组
    * @param params.format   导出格式：biblatex(默认) | bibtex | csljson | cslyaml
    * @param params.libraryID 可选库 ID
-   * @param params.exportNotes 是否导出笔记（BBT displayOptions）
-   * @param params.useJournalAbbreviation 是否使用期刊缩写（BBT displayOptions）
    */
   async exportBibliography(params: {
     itemKeys: string[];
     format?: string;
-    libraryID?: number;
-    exportNotes?: boolean;
-    useJournalAbbreviation?: boolean;
+    libraryID?: number | string;
   }): Promise<any> {
-    const {
-      itemKeys,
-      format = "biblatex",
-      libraryID,
-      exportNotes = false,
-      useJournalAbbreviation = false,
-    } = params;
+    const { itemKeys, format = "biblatex" } = params;
+    const libraryID = this.normalizeLibraryID(params.libraryID);
 
     if (!itemKeys || itemKeys.length === 0) {
       throw new Error("itemKeys 不能为空");
     }
 
     const normalizedFormat = (format || "biblatex").toLowerCase();
-    const translator =
-      BBT_TRANSLATORS[normalizedFormat] ?? BBT_TRANSLATORS.biblatex;
+    const translator = BBT_TRANSLATORS[normalizedFormat];
+    if (!translator) {
+      throw new Error(
+        `Unsupported format "${format}". Use one of: biblatex, bibtex, csljson, cslyaml.`,
+      );
+    }
 
     // 1) 先校验 BBT 可用性，给出友好错误
     const bbtStatus = await this.checkBBT();
@@ -218,7 +247,6 @@ export class CitationExportService {
     try {
       exportString = await this.bbtRpc("item.export", rpcParams);
     } catch (e) {
-      // BBT item.export 可能不支持 displayOptions，作为独立提示
       throw new Error(
         `调用 BBT item.export 失败: ${e instanceof Error ? e.message : String(e)}`,
       );
@@ -246,18 +274,24 @@ export class CitationExportService {
     title: string;
     hasBibliography: boolean;
   } | null {
-    // 1) 按 styleID 精确匹配
-    try {
-      const s = Zotero.Styles.get(style);
-      if (s) {
-        return {
-          styleID: s.styleID,
-          title: s.title,
-          hasBibliography: s.hasBibliography,
-        };
+    // 1) 按 styleID 精确匹配；短名（如 "apa"、"ieee"）补全为
+    //    http://www.zotero.org/styles/<短名>，Zotero.Styles.get 不会自动补全
+    const candidates = style.includes("://")
+      ? [style]
+      : [style, `http://www.zotero.org/styles/${style.trim().toLowerCase()}`];
+    for (const candidate of candidates) {
+      try {
+        const s = Zotero.Styles.get(candidate);
+        if (s) {
+          return {
+            styleID: s.styleID,
+            title: s.title,
+            hasBibliography: s.hasBibliography,
+          };
+        }
+      } catch {
+        // 忽略，继续按标题匹配
       }
-    } catch {
-      // 忽略，继续按标题匹配
     }
 
     // 2) 按标题精确匹配（大小写不敏感）
@@ -301,15 +335,15 @@ export class CitationExportService {
     style?: string;
     contentType?: "html" | "text";
     mode?: "bibliography" | "citation";
-    libraryID?: number;
+    libraryID?: number | string;
   }): Promise<any> {
     const {
       itemKeys,
       style,
       contentType = "html",
       mode = "bibliography",
-      libraryID,
     } = params;
+    const libraryID = this.normalizeLibraryID(params.libraryID);
 
     if (!itemKeys || itemKeys.length === 0) {
       throw new Error("itemKeys 不能为空");
@@ -323,20 +357,27 @@ export class CitationExportService {
 
     const items: Zotero.Item[] = [];
     const missing: string[] = [];
+    // Attachments and notes have no citation of their own.
+    const skipped: string[] = [];
     for (const key of itemKeys) {
       const item = await Zotero.Items.getByLibraryAndKeyAsync(lib, key);
-      if (item && !item.isAttachment() && !item.isNote()) {
-        items.push(item);
-      } else if (!item) {
+      if (!item) {
         missing.push(key);
+      } else if (item.isAttachment() || item.isNote()) {
+        skipped.push(key);
+      } else {
+        items.push(item);
       }
     }
 
     if (items.length === 0) {
       throw new Error(
-        `未找到可用条目。请确认 itemKey 正确。缺失: ${missing.join(", ")}`,
+        `未找到可用条目。请确认 itemKey 正确。缺失: ${missing.join(", ") || "无"}；` +
+          `附件/笔记（无法生成引文）: ${skipped.join(", ") || "无"}`,
       );
     }
+
+    await this.ensureStylesLoaded();
 
     // 2) 确定格式字符串与样式信息
     let format: string;
@@ -400,6 +441,14 @@ export class CitationExportService {
         `生成引文失败: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
+    if (result === false) {
+      // QuickCopy refuses batches above export.quickCopy.dragLimit and
+      // returns false instead of throwing.
+      const limit = Zotero.Prefs.get("export.quickCopy.dragLimit");
+      throw new Error(
+        `一次最多可为 ${limit} 个条目生成引文（Zotero export.quickCopy.dragLimit），当前 ${items.length} 个，请分批调用。`,
+      );
+    }
 
     const html = result?.html ?? "";
     const text = result?.text ?? "";
@@ -415,6 +464,7 @@ export class CitationExportService {
       content: contentType === "text" ? text : html,
       itemCount: items.length,
       missingKeys: missing.length > 0 ? missing : undefined,
+      skippedKeys: skipped.length > 0 ? skipped : undefined,
     };
   }
 
@@ -423,12 +473,7 @@ export class CitationExportService {
    * @param filter 可选关键字过滤（按标题或 ID）
    */
   async listStyles(filter?: string): Promise<any> {
-    // 确保样式 schema 已加载
-    try {
-      await Zotero.Schema.schemeUpdatePromise;
-    } catch {
-      // 忽略 schema 加载错误
-    }
+    await this.ensureStylesLoaded();
 
     const styles = Zotero.Styles.getVisible();
     let mapped = styles.map((s: any) => ({

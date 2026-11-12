@@ -288,7 +288,7 @@ Move one or more items to Zotero Trash. Items stay recoverable until the user em
 
 #### `export_bibliography`
 Export one or more Zotero items as BibLaTeX/BibTeX (or CSL-JSON/CSL-YAML) entries powered by the zotero-better-bibtex (BBT) plugin. Requires Better BibTeX to be installed and running in Zotero.
-- `itemKeys` (required), `format` (biblatex/bibtex/csljson/cslyaml), `libraryID`, `exportNotes`, `useJournalAbbreviation`
+- `itemKeys` (required), `format` (biblatex/bibtex/csljson/cslyaml), `libraryID`
 
 #### `get_citation`
 Generate a formatted reference (bibliography entry) or in-text citation for one or more items using a CSL citation style. If no style is specified, uses the Zotero default Quick Copy style. Works without Better BibTeX.

@@ -1178,6 +1178,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'export_bibliography',
+        ...readOnly,
         description: 'Export one or more Zotero items as BibLaTeX/BibTeX (or CSL-JSON/CSL-YAML) entries powered by the zotero-better-bibtex (BBT) plugin. Requires Better BibTeX to be installed and running in Zotero. Use search_library first to find itemKeys, then pass them here. Returns the exported bibliography text (e.g. @article{...} entries).',
         inputSchema: {
           type: 'object',
@@ -1195,14 +1196,6 @@ export class StreamableMCPServer {
               type: 'string',
               enum: ['biblatex', 'bibtex', 'csljson', 'cslyaml'],
               description: 'Export format. biblatex = Better BibLaTeX (default), bibtex = Better BibTeX, csljson = Better CSL JSON, cslyaml = Better CSL YAML.'
-            },
-            exportNotes: {
-              type: 'boolean',
-              description: 'Include item notes in the export (default: false)'
-            },
-            useJournalAbbreviation: {
-              type: 'boolean',
-              description: 'Use journal abbreviation instead of full name (default: false)'
             }
           },
           required: ['itemKeys']
@@ -1210,6 +1203,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_citation',
+        ...readOnly,
         description: 'Generate a formatted reference (bibliography entry) or in-text citation for one or more items using a CSL citation style. If no style is specified, uses the Zotero default Quick Copy style. Use list_citation_styles to discover available styles. Works without Better BibTeX (uses Zotero native citeproc).',
         inputSchema: {
           type: 'object',
@@ -1243,6 +1237,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'list_citation_styles',
+        ...readOnly,
         description: 'List CSL citation styles available in Zotero (for use with get_citation). Each entry includes an id (styleID) and a human-readable title. Supports optional keyword filtering.',
         inputSchema: {
           type: 'object',
@@ -2022,8 +2017,6 @@ export class StreamableMCPServer {
       itemKeys: args.itemKeys,
       format: args.format,
       libraryID: args.libraryID,
-      exportNotes: args.exportNotes,
-      useJournalAbbreviation: args.useJournalAbbreviation,
     });
   }
 
