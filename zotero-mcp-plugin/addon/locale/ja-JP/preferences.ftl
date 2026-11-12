@@ -215,3 +215,13 @@ pref-contact-title = お問い合わせ情報
 pref-contact-email = Email: fransjone@mail.com
 pref-contact-github = GitHub: https://github.com/cookjohn/zotero-mcp
 pref-contact-wechat = WeChat: 未来論文実験室
+
+pref-oauth-enable-text = OAuth 認可を有効にする
+pref-oauth-enable-sub = リモート MCP クライアント向けの Authorization Code + PKCE（既定では無効）
+pref-oauth-url-label = 公開 HTTPS オリジン
+pref-oauth-url-hint = Cloudflare Tunnel のホスト名（/mcp を含めない）。トンネルの origin は安全なポート（MCP ポート + 1、既定 23121）を指定します。通常の MCP ポートはローカルクライアント用に認可不要のままです。
+pref-oauth-generate = 認可パスワードを生成・変更
+pref-oauth-show = パスワードを表示
+pref-oauth-hide = パスワードを隠す
+pref-oauth-copy = パスワードをコピー
+pref-oauth-password-hint = 認証パスワードは Zotero のローカルパスワード管理機能に保存され、いつでも表示・コピーできます。再生成すると既存の認証は無効になります。

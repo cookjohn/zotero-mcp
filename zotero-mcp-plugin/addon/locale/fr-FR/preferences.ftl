@@ -230,3 +230,13 @@ pref-contact-title = Informations de contact
 pref-contact-email = Email : fransjone@mail.com
 pref-contact-github = GitHub : https://github.com/cookjohn/zotero-mcp
 pref-contact-wechat = WeChat : 未来论文实验室
+
+pref-oauth-enable-text = Activer l'autorisation OAuth
+pref-oauth-enable-sub = Authorization Code + PKCE pour les clients MCP distants (désactivé par défaut)
+pref-oauth-url-label = Origine HTTPS publique
+pref-oauth-url-hint = Nom d'hôte Cloudflare Tunnel sans /mcp ; l'origine du tunnel vise le port sécurisé (port MCP + 1, par défaut 23121). Le port MCP simple reste sans autorisation pour les clients locaux.
+pref-oauth-generate = Générer ou renouveler le mot de passe d'autorisation
+pref-oauth-show = Afficher le mot de passe
+pref-oauth-hide = Masquer le mot de passe
+pref-oauth-copy = Copier le mot de passe
+pref-oauth-password-hint = Le mot de passe est conservé dans le gestionnaire local de Zotero. Vous pouvez le voir ou le copier. Le renouveler révoque les autorisations.

@@ -6,6 +6,7 @@ import {
   getByteLength,
   type ByteReader,
 } from "./httpRequestReader";
+import { oauthServer } from "./oauthServer";
 
 declare let ztoolkit: ZToolkit;
 
@@ -25,6 +26,7 @@ export class HttpServer {
     Zotero.debug("Static testServer method called.");
   }
   private serverSocket: any;
+  private oauthSocket: any = null;
   private isRunning: boolean = false;
   private mcpServer: StreamableMCPServer | null = null;
   private port: number = 8080;
@@ -53,7 +55,8 @@ export class HttpServer {
       return;
     }
 
-    if (!port || isNaN(port) || port < 1 || port > 65535) {
+    if (!port || isNaN(port) || port < 1 || port > 65535 ||
+        (oauthServer.isEnabled() && port === 65535)) {
       const errorMsg = `[HttpServer] Invalid port number: ${port}. Port must be between 1 and 65535.`;
       ztoolkit.log(errorMsg, 'error');
       throw new Error(errorMsg);
@@ -70,11 +73,30 @@ export class HttpServer {
       // init方法参数：端口，是否仅允许回环地址，backlog队列大小
       // loopbackOnly=true: 仅监听 127.0.0.1
       // loopbackOnly=false: 监听 0.0.0.0 (所有接口)
-      const loopbackOnly = !serverPreferences.isRemoteAccessAllowed();
+      // The unauthenticated listener must be loopback-only when OAuth is enabled.
+      const loopbackOnly = oauthServer.isEnabled() || !serverPreferences.isRemoteAccessAllowed();
       Zotero.debug(`[HttpServer] Binding to ${loopbackOnly ? '127.0.0.1' : '0.0.0.0'}:${port}`);
       this.serverSocket.init(port, loopbackOnly, -1);
       this.serverSocket.asyncListen(this.listener);
       this.isRunning = true;
+
+      // Separate AUTHENTICATED loopback listener for Cloudflare Tunnel.
+      // Its security is determined by the socket that accepted the request,
+      // never by peer IP, Host, Origin, or X-Forwarded-* headers.
+      if (oauthServer.isEnabled()) {
+        this.oauthSocket = Cc[
+          "@mozilla.org/network/server-socket;1"
+        ].createInstance(Ci.nsIServerSocket);
+        this.oauthSocket.init(port + 1, true, -1);
+        this.oauthSocket.asyncListen({
+          onSocketAccepted: (socket: any, transport: any) =>
+            this.listener.onSocketAccepted(socket, transport, true),
+          onStopListening: (_socket: any, status: any) => {
+            ztoolkit.log(`[HttpServer] OAuth listener stopped (status: ${status})`);
+          },
+        });
+        ztoolkit.log(`[HttpServer] OAuth-only endpoint: 127.0.0.1:${port + 1}/mcp`);
+      }
 
       Zotero.debug(
         `[HttpServer] Successfully started HTTP server on port ${port}`,
@@ -109,6 +131,17 @@ export class HttpServer {
     if (!this.isRunning || !this.serverSocket) {
       ztoolkit.log("[HttpServer] Server is not running, nothing to stop");
       return;
+    }
+
+    // Close the Cloudflare/OAuth socket independently of the local socket.
+    if (this.oauthSocket) {
+      try {
+        this.oauthSocket.close();
+      } catch (error) {
+        ztoolkit.log(`[HttpServer] Failed to close OAuth socket: ${error}`, "warn");
+      } finally {
+        this.oauthSocket = null;
+      }
     }
 
     // Stop session cleanup timer FIRST to prevent new cleanup cycles
@@ -226,6 +259,13 @@ export class HttpServer {
       `Content-Type: ${result.headers?.["Content-Type"] || "application/json; charset=utf-8"}\r\n`;
     
     let headers = baseHeaders;
+    // The OAuth redirects/challenge need these real HTTP headers.
+    for (const name of ["Location", "WWW-Authenticate", "Cache-Control", "Allow"]) {
+      const value = result.headers?.[name];
+      if (typeof value === "string" && !/[\r\n]/.test(value)) {
+        headers += `${name}: ${value}\r\n`;
+      }
+    }
     
     // Add session ID for MCP requests
     if (sessionId) {
@@ -244,7 +284,7 @@ export class HttpServer {
   }
 
   private listener = {
-    onSocketAccepted: async (_socket: any, transport: any) => {
+    onSocketAccepted: async (_socket: any, transport: any, requiresOAuth = false) => {
       let input: any = null;
       let output: any = null;
       let binaryStream: any = null;
@@ -387,6 +427,28 @@ export class HttpServer {
           // The body was already framed at exactly Content-Length bytes and
           // UTF-8 decoded once, on a complete buffer.
           const requestBody = method === "POST" ? read.body : "";
+
+          // Authenticate before allocating MCP sessions or dispatching tools.
+          // Only the OAuth discovery, registration, login, and token endpoints
+          // bypass Bearer validation. /ping remains a public health check.
+          // Authentication boundary: local MCP (port) is unauthenticated;
+          // the dedicated OAuth socket (port + 1) enforces OAuth. The second
+          // socket is opened only while OAuth is enabled. No IP/Host bypass.
+          const oauthResult = requiresOAuth
+            ? await oauthServer.handleRequest(method, path, query, requestBody, headerText)
+            : null;
+          const authResult = requiresOAuth
+            ? (oauthResult || (!path.startsWith("/ping") && !(await oauthServer.isAuthorized(headerText))
+                ? oauthServer.unauthorized() : null))
+            : null;
+          if (authResult) {
+            const authBody = authResult.body || "";
+            const authHeaders = this.buildHttpHeaders(authResult, false) +
+              `Content-Length: ${getByteLength(authBody)}\r\n\r\n`;
+            output.write(authHeaders, authHeaders.length);
+            if (authBody) writeStringToStream(output, authBody);
+            return;
+          }
 
           // Extract existing session ID or create new one for MCP requests.
           // Matched against headers only - a body must never be able to
@@ -629,7 +691,7 @@ export class HttpServer {
     },
     onStopListening: (socket: any, status: any) => {
       ztoolkit.log(`[HttpServer] onStopListening called, status: ${status}`);
-      this.isRunning = false;
+      if (socket === this.serverSocket) this.isRunning = false;
     },
   };
 

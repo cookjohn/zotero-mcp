@@ -45,6 +45,9 @@ logs/
 
 # Documentation (local only)
 docs/
+!zotero-mcp-plugin/docs/
+zotero-mcp-plugin/docs/*
+!zotero-mcp-plugin/docs/*.md
 
 # Zotero plugin specific
 zotero-mcp-plugin/build/

@@ -230,3 +230,13 @@ pref-contact-title = 联系方式
 pref-contact-email = 邮箱：fransjone@mail.com
 pref-contact-github = GitHub：https://github.com/cookjohn/zotero-mcp
 pref-contact-wechat = 微信公众号：未来论文实验室
+
+pref-oauth-enable-text = 启用 OAuth 授权
+pref-oauth-enable-sub = 远程 MCP 客户端使用授权码 + PKCE（默认关闭）
+pref-oauth-url-label = 公网 HTTPS 地址
+pref-oauth-url-hint = 填写 Cloudflare Tunnel 域名，不包含 /mcp；隧道 origin 指向安全端口 = MCP 端口 + 1（默认 23121），本地 MCP 端口保持免授权。
+pref-oauth-generate = 生成或更换授权密码
+pref-oauth-show = 显示密码
+pref-oauth-hide = 隐藏密码
+pref-oauth-copy = 复制密码
+pref-oauth-password-hint = 授权密码保存在 Zotero 本地密码管理器中。可随时显示或复制；重新生成会撤销已授权的客户端。

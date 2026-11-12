@@ -294,6 +294,32 @@
         </html:label>
       </html:div>
 
+      <html:div id="server-oauth-row" style="margin-top:14px">
+        <html:div class="zmp-sw">
+          <html:div>
+            <html:div class="zmp-sw-text" data-l10n-id="pref-oauth-enable-text"></html:div>
+            <html:div class="zmp-sw-sub" data-l10n-id="pref-oauth-enable-sub"></html:div>
+          </html:div>
+          <html:label class="zmp-tog">
+            <html:input type="checkbox" id="zotero-mcp-oauth-enabled" />
+            <html:span class="zmp-tog-track"></html:span>
+          </html:label>
+        </html:div>
+        <html:div id="zotero-mcp-oauth-settings" style="padding:10px 14px">
+          <html:label class="zmp-fl" data-l10n-id="pref-oauth-url-label"></html:label>
+          <html:input class="zmp-fi" type="url" id="zotero-mcp-oauth-url" placeholder="https://zotero.example.com" />
+          <html:div class="zmp-fh" data-l10n-id="pref-oauth-url-hint"></html:div>
+          <html:button type="button" class="zmp-btn" id="zotero-mcp-oauth-generate" data-l10n-id="pref-oauth-generate"></html:button>
+          <html:input class="zmp-fi" type="password" id="zotero-mcp-oauth-password" readonly="readonly" placeholder="••••••••••" />
+          <html:div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px">
+            <html:button type="button" class="zmp-btn" id="zotero-mcp-oauth-show" data-l10n-id="pref-oauth-show"></html:button>
+            <html:button type="button" class="zmp-btn" id="zotero-mcp-oauth-hide" data-l10n-id="pref-oauth-hide" style="display:none"></html:button>
+            <html:button type="button" class="zmp-btn" id="zotero-mcp-oauth-copy" data-l10n-id="pref-oauth-copy"></html:button>
+          </html:div>
+          <html:div class="zmp-fh" data-l10n-id="pref-oauth-password-hint"></html:div>
+        </html:div>
+      </html:div>
+
       <html:div class="zmp-sw" style="margin-top:14px;margin-bottom:0">
         <html:div>
           <html:div class="zmp-sw-text" data-l10n-id="pref-write-enable-text"></html:div>
