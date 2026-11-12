@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import {
+  drainRequestBody,
   readHttpRequest,
   type ByteReader,
 } from "../src/modules/httpRequestReader.ts";
@@ -313,6 +314,136 @@ describe("readHttpRequest", function () {
       expect(result.totalBytesRead).to.equal(0);
       expect(result.headerText).to.equal("");
       expect(result.complete).to.equal(false);
+    });
+  });
+
+  describe("per-request limits (#115)", function () {
+    function binaryRequest(size: number, path = "/mcp/attachments?parentKey=ABCD2345&fileName=a.pdf"): { raw: Uint8Array; body: Uint8Array } {
+      const body = new Uint8Array(size);
+      // Every byte value, including invalid UTF-8 lead bytes.
+      for (let i = 0; i < size; i++) body[i] = (i * 31 + 7) & 0xff;
+      const head = encoder.encode(
+        `POST ${path} HTTP/1.1\r\nHost: 127.0.0.1:23120\r\n` +
+          `Content-Type: application/pdf\r\nContent-Length: ${size}\r\n\r\n`,
+      );
+      const raw = new Uint8Array(head.length + body.length);
+      raw.set(head, 0);
+      raw.set(body, head.length);
+      return { raw, body };
+    }
+
+    it("raises the cap for a route and returns the body bytes untouched", async function () {
+      const { raw, body } = binaryRequest(3 * 1024 * 1024 + 5);
+      const result = await readHttpRequest(new FakeReader(raw, 65536), {
+        sleep: noSleep,
+        maxRequestSize: 1024 * 1024,
+        limitsForHeaders: () => ({ maxRequestSize: 4 * 1024 * 1024, rawBody: true }),
+      });
+      expect(result.complete).to.equal(true);
+      expect(result.body).to.equal("");
+      expect(result.bodyBytes.length).to.equal(body.length);
+      expect(Buffer.from(result.bodyBytes).equals(Buffer.from(body))).to.equal(true);
+    });
+
+    it("stops before the body when the declared length exceeds the cap", async function () {
+      const { raw } = binaryRequest(2 * 1024 * 1024);
+      const reader = new FakeReader(raw, 4096);
+      const result = await readHttpRequest(reader, {
+        sleep: noSleep,
+        maxRequestSize: 1024 * 1024,
+      });
+      expect(result.complete).to.equal(false);
+      expect(result.incompleteReason).to.equal("too-large");
+      // Only the header chunk was consumed, not a megabyte of body.
+      expect(reader.offset).to.be.lessThan(8192);
+    });
+
+    it("keeps the default cap when the hook returns nothing", async function () {
+      const { raw } = binaryRequest(1024 * 1024 + 1, "/mcp");
+      const result = await readHttpRequest(new FakeReader(raw, 65536), {
+        sleep: noSleep,
+        limitsForHeaders: () => undefined,
+      });
+      expect(result.incompleteReason).to.equal("too-large");
+    });
+
+    it("still decodes and exposes bodyBytes for normal JSON requests", async function () {
+      const raw = buildRequest(ACCENTED_BODY);
+      const result = await readHttpRequest(new FakeReader(raw, 7), { sleep: noSleep });
+      expect(result.body).to.equal(ACCENTED_BODY);
+      expect(result.bodyBytes.length).to.equal(encoder.encode(ACCENTED_BODY).length);
+    });
+
+    it("tolerates longer stalls when the route asks for it", async function () {
+      const { raw, body } = binaryRequest(20000);
+      const head = raw.subarray(0, raw.length - body.length);
+      const reader = new SplitSegmentReader(head, body, 120);
+      const result = await readHttpRequest(reader, {
+        sleep: noSleep,
+        maxWaitAttempts: 50,
+        limitsForHeaders: () => ({ maxWaitAttempts: 1000, rawBody: true }),
+      });
+      expect(result.complete).to.equal(true);
+      expect(result.bodyBytes.length).to.equal(20000);
+    });
+  });
+
+  describe("drainRequestBody", function () {
+    /** Clock that advances by `step` ms on every sleep, like a slow sender. */
+    function fakeClock(step: number) {
+      let t = 0;
+      return {
+        now: () => t,
+        sleep: () => {
+          t += step;
+          return Promise.resolve();
+        },
+      };
+    }
+
+    it("stops at the announced remainder and leaves later bytes unread", async function () {
+      const reader = new FakeReader(new Uint8Array(10000), 4096);
+      const clock = fakeClock(1);
+      const discarded = await drainRequestBody(reader, { remainingBytes: 6000, ...clock });
+      expect(discarded).to.equal(6000);
+      expect(reader.offset).to.equal(6000);
+    });
+
+    it("keeps reading a slow but steady sender past the old 5 s window", async function () {
+      // 20 chunks, one per simulated second: the body arrives over 20 s.
+      const reader = new FakeReader(new Uint8Array(20 * 1000), 1000);
+      const clock = fakeClock(1000);
+      const discarded = await drainRequestBody(reader, {
+        remainingBytes: 20 * 1000,
+        quietMs: 1500,
+        maxMs: 60000,
+        ...clock,
+      });
+      expect(discarded).to.equal(20 * 1000);
+    });
+
+    it("gives up after maxMs even if the peer keeps sending", async function () {
+      const reader = new FakeReader(new Uint8Array(100 * 1000), 1000);
+      const clock = fakeClock(1000);
+      const discarded = await drainRequestBody(reader, {
+        remainingBytes: 100 * 1000,
+        quietMs: 1500,
+        maxMs: 10000,
+        ...clock,
+      });
+      expect(discarded).to.be.below(100 * 1000);
+      expect(discarded).to.be.at.most(11 * 1000);
+    });
+
+    it("stops once the peer goes quiet", async function () {
+      const reader = new FakeReader(new Uint8Array(3000), 1000);
+      const clock = fakeClock(100);
+      const discarded = await drainRequestBody(reader, {
+        remainingBytes: 1024 * 1024,
+        quietMs: 500,
+        ...clock,
+      });
+      expect(discarded).to.equal(3000);
     });
   });
 });

@@ -9,6 +9,7 @@ declare namespace _ZoteroTypes {
     PluginPrefsMap: {
       "mcp.server.enabled": boolean;
       "mcp.server.port": number;
+      "upload.maxBytes": number;
     };
   }
 }
