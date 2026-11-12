@@ -300,6 +300,89 @@ List CSL citation styles available in Zotero (for use with `get_citation`).
 
 ---
 
+## 🔌 External Tool Registration API
+
+Other Zotero plugins can register custom MCP tools that are exposed through this plugin's MCP server. This allows third-party plugins to extend the AI-accessible toolset without running their own HTTP server.
+
+### How It Works
+
+1. Your plugin calls `Zotero.ZoteroMCP.api.registerTool(...)` to register a tool.
+2. The tool appears in `tools/list` alongside built-in tools.
+3. When an AI client calls the tool, the MCP server dispatches the call to your handler.
+4. On disable/uninstall, call `Zotero.ZoteroMCP.api.unregisterTool(...)` or `unregisterAllTools(pluginID)`.
+
+### API Methods
+
+| Method | Description |
+|---|---|
+| `registerTool(def)` | Register a custom MCP tool. Throws on invalid input or name collision. |
+| `unregisterTool(name)` | Unregister a tool by name. Returns `true` if removed. |
+| `unregisterAllTools(pluginID)` | Unregister all tools from a specific plugin. Returns count removed. |
+| `getRegisteredTools()` | List registered tools (readonly, handler excluded). |
+| `isToolRegistered(name)` | Check if a tool name is already registered. |
+| `onToolListChanged(cb)` | Subscribe to tool list changes. Returns an unsubscribe function. |
+
+### Tool Definition
+
+```typescript
+{
+  name: string;           // Unique, matches /^[a-z][a-z0-9_]*$/, must not collide with built-in tools
+  description: string;    // Shown to AI clients
+  inputSchema: object;    // JSON Schema for input parameters
+  handler: (args: any) => Promise<any> | any;  // Called when AI invokes the tool
+  pluginID?: string;      // Optional: your plugin ID (for bulk cleanup)
+  enabled?: boolean;      // Optional: visibility toggle (default: true)
+}
+```
+
+### Example (from another plugin)
+
+```javascript
+// Register a custom MCP tool from your Zotero plugin
+const mcp = Zotero.ZoteroMCP;
+if (mcp && mcp.api && mcp.api.registerTool) {
+  mcp.api.registerTool({
+    name: 'my_plugin_count_items',
+    description: 'Count items in the Zotero library by type',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemType: { type: 'string', description: 'Filter by item type (e.g. journalArticle)' }
+      }
+    },
+    handler: async (args) => {
+      const items = await Zotero.Items.getAll(Zotero.Libraries.userLibraryID);
+      const filtered = args.itemType
+        ? items.filter(i => i.itemType === args.itemType)
+        : items;
+      return { total: filtered.length, itemType: args.itemType || 'all' };
+    },
+    pluginID: 'my-plugin@example.com'
+  });
+}
+```
+
+### Cleanup on Uninstall
+
+```javascript
+// In your plugin's shutdown hook:
+const mcp = Zotero.ZoteroMCP;
+if (mcp && mcp.api && mcp.api.unregisterAllTools) {
+  mcp.api.unregisterAllTools('my-plugin@example.com');
+}
+```
+
+### Notes
+
+- Tool names must not collide with built-in tools (see list above). Use a prefix like `my_plugin_*`.
+- The registry survives MCP server restarts (e.g. port changes). Tools registered before the server starts will appear once it does.
+- Handler errors are caught and returned as MCP error responses — no need to wrap in try/catch.
+- Results are JSON-serialised and wrapped in MCP `text` content automatically.
+- External tools are **not** covered by this plugin's "Enable write operations" switch. If your tool modifies the library, gate it in your own plugin.
+- Registrations live in this plugin's memory. They are dropped when Zotero MCP is disabled, updated or reloaded, so register again whenever `Zotero.ZoteroMCP.api` becomes available.
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit pull requests, report issues, or suggest enhancements.

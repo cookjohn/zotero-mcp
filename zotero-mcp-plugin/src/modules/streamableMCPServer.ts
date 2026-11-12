@@ -21,6 +21,7 @@ import { UnifiedContentExtractor } from './unifiedContentExtractor';
 import { SmartAnnotationExtractor } from './smartAnnotationExtractor';
 import { MCPSettingsService } from './mcpSettingsService';
 import { getSemanticSearchService, SemanticSearchService } from './semantic';
+import { getToolRegistry } from './toolRegistry';
 import {
   commitNotifierQueue,
   createNotifierQueue,
@@ -1283,9 +1284,19 @@ export class StreamableMCPServer {
       add_by_identifier: true,
       trash_item: true,
     };
-    return writeEnabled === true
+    const builtinTools = writeEnabled === true
       ? filteredTools
       : filteredTools.filter((t: any) => writeTools[t.name] !== true);
+
+    // Append tools registered by other Zotero plugins. Names that collide
+    // with any built-in tool (including ones hidden above) are skipped: the
+    // built-in dispatcher always wins, and duplicate names in tools/list
+    // make some MCP clients reject the whole list.
+    const builtinNames = new Set(tools.map((t: any) => t.name));
+    const externalTools = getToolRegistry()
+      .getToolDefinitions()
+      .filter((t) => !builtinNames.has(t.name));
+    return [...builtinTools, ...externalTools];
   }
 
   private handleToolsList(request: MCPRequest): MCPResponse {
@@ -1600,8 +1611,18 @@ export class StreamableMCPServer {
           result = await this.callListCitationStyles(args);
           break;
 
-        default:
+        default: {
+          // Check externally-registered tools from other Zotero plugins
+          const registry = getToolRegistry();
+          const externalTool = registry.getTool(name);
+          // Disabled tools are hidden from tools/list and must not be callable.
+          if (externalTool && externalTool.enabled !== false) {
+            ztoolkit.log(`[StreamableMCP] Calling external tool: ${name}`);
+            result = await externalTool.handler(args);
+            break;
+          }
           throw new Error(`Unknown tool: ${name}`);
+        }
       }
 
       // Wrap result in MCP content format with proper text type.

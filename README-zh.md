@@ -520,6 +520,89 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 
 ---
 
+## 🔌 外部工具注册 API
+
+其他 Zotero 插件可以通过本插件的 MCP 服务器注册自定义 MCP 工具。这样第三方插件无需运行自己的 HTTP 服务器即可扩展 AI 可调用的工具集。
+
+### 工作原理
+
+1. 你的插件调用 `Zotero.ZoteroMCP.api.registerTool(...)` 注册工具。
+2. 该工具会与内置工具一起出现在 `tools/list` 中。
+3. AI 客户端调用该工具时，MCP 服务器将请求转发到你的 handler。
+4. 插件禁用/卸载时，调用 `Zotero.ZoteroMCP.api.unregisterTool(...)` 或 `unregisterAllTools(pluginID)` 清理。
+
+### API 方法
+
+| 方法 | 说明 |
+|---|---|
+| `registerTool(def)` | 注册自定义 MCP 工具，参数非法或名称冲突时抛出异常 |
+| `unregisterTool(name)` | 按名称注销工具，返回是否成功移除 |
+| `unregisterAllTools(pluginID)` | 注销某插件注册的所有工具，返回移除数量 |
+| `getRegisteredTools()` | 列出已注册工具（只读，不含 handler） |
+| `isToolRegistered(name)` | 检查某工具名是否已注册 |
+| `onToolListChanged(cb)` | 订阅工具列表变更，返回取消订阅函数 |
+
+### 工具定义
+
+```typescript
+{
+  name: string;           // 唯一名称，匹配 /^[a-z][a-z0-9_]*$/，不能与内置工具冲突
+  description: string;    // 显示给 AI 客户端的描述
+  inputSchema: object;    // 输入参数的 JSON Schema
+  handler: (args: any) => Promise<any> | any;  // AI 调用工具时执行的函数
+  pluginID?: string;      // 可选：注册方插件 ID（用于批量清理）
+  enabled?: boolean;      // 可选：是否在 tools/list 中可见（默认 true）
+}
+```
+
+### 示例（来自其他插件）
+
+```javascript
+// 从你的 Zotero 插件注册自定义 MCP 工具
+const mcp = Zotero.ZoteroMCP;
+if (mcp && mcp.api && mcp.api.registerTool) {
+  mcp.api.registerTool({
+    name: 'my_plugin_count_items',
+    description: '按类型统计 Zotero 库中的条目数量',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemType: { type: 'string', description: '按条目类型过滤（如 journalArticle）' }
+      }
+    },
+    handler: async (args) => {
+      const items = await Zotero.Items.getAll(Zotero.Libraries.userLibraryID);
+      const filtered = args.itemType
+        ? items.filter(i => i.itemType === args.itemType)
+        : items;
+      return { total: filtered.length, itemType: args.itemType || 'all' };
+    },
+    pluginID: 'my-plugin@example.com'
+  });
+}
+```
+
+### 卸载时清理
+
+```javascript
+// 在你的插件关闭钩子中：
+const mcp = Zotero.ZoteroMCP;
+if (mcp && mcp.api && mcp.api.unregisterAllTools) {
+  mcp.api.unregisterAllTools('my-plugin@example.com');
+}
+```
+
+### 注意事项
+
+- 工具名称不能与内置工具冲突（见上方列表），建议使用前缀如 `my_plugin_*`。
+- 注册中心在 MCP 服务器重启（如端口变更）后仍然保留。服务器启动前注册的工具会在服务器启动后出现。
+- handler 中的异常会被捕获并以 MCP 错误响应返回，无需自行 try/catch。
+- 返回结果会自动 JSON 序列化并包装为 MCP `text` 内容。
+- 外部工具**不受**本插件「启用写入操作」开关约束；如果你的工具会修改文库，请在你自己的插件里加开关。
+- 注册信息只保存在本插件的内存中：Zotero MCP 被禁用、更新或重新加载后会清空，需要在 `Zotero.ZoteroMCP.api` 重新可用时再次注册。
+
+---
+
 ## 🐛 常见问题 (FAQ)
 
 #### 1. 连接被拒绝错误
