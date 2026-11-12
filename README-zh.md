@@ -499,8 +499,6 @@ MCP 服务器已集成在插件内，位于 `src/modules/streamableMCPServer.ts`
 | `itemKeys` | string[] | **必需**，要导出的条目 Key 列表 |
 | `format` | string | 导出格式：biblatex（默认）/bibtex/csljson/cslyaml |
 | `libraryID` | number | 目标文库（默认个人文库） |
-| `exportNotes` | boolean | 是否导出笔记（默认 false） |
-| `useJournalAbbreviation` | boolean | 期刊名使用缩写代替全称（默认 false） |
 
 #### `get_citation`
 用 CSL 引文样式为一个或多个条目生成格式化的参考文献条目或文内引用。未指定样式时使用 Zotero 默认 Quick Copy 样式；不需要 Better BibTeX。

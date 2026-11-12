@@ -3,6 +3,10 @@
  * Handles extraction and retrieval of full-text content from various sources
  */
 
+import { TextFormatter } from './textFormatter';
+import { extractPdfText } from './pdfTextExtraction';
+import { readZoteroCachedFulltext } from './zoteroFulltextCache';
+
 declare let Zotero: any;
 declare let ztoolkit: ZToolkit;
 
@@ -111,29 +115,13 @@ export class FulltextService {
 
       // Handle different attachment types
       if (this.isPDFAttachment(attachment, attachmentType)) {
-        // Use PDFProcessor directly for PDF files
-        try {
-          const { PDFProcessor } = await import('./pdfProcessor');
-          const { TextFormatter } = await import('./textFormatter');
-          const processor = new PDFProcessor(ztoolkit);
-          
-          const filePath = attachment.getFilePath();
-          if (filePath) {
-            try {
-              const rawText = await processor.extractText(filePath);
-              content = TextFormatter.formatPDFText(rawText);
-              extractionMethod = 'pdf_processor';
-            } catch (fileError) {
-              ztoolkit.log(`[FulltextService] PDF file not accessible at path: ${filePath} - ${fileError}`, "warn");
-            } finally {
-              processor.terminate();
-            }
-          } else {
-            ztoolkit.log(`[FulltextService] No file path available for PDF attachment ${attachment.key}`, "warn");
-          }
-        } catch (pdfError) {
-          ztoolkit.log(`[FulltextService] PDF extraction failed for ${attachment.key}: ${pdfError}`, "warn");
-          content = '';
+        const pdf = await extractPdfText(attachment, {
+          filePath: attachment.getFilePath(),
+        });
+        content = pdf.text;
+        extractionMethod = pdf.source;
+        if (pdf.warnings.length > 0) {
+          ztoolkit.log(`[FulltextService] ${attachment.key}: ${pdf.warnings.join(' ')}`, 'warn');
         }
       } else if (attachmentType && (
         attachmentType.includes('html') || 
@@ -149,7 +137,7 @@ export class FulltextService {
         extractionMethod = 'web_extraction';
       } else {
         // Try Zotero's built-in fulltext extraction
-        const fulltextContent = await this.getZoteroFulltext(attachment);
+        const fulltextContent = await readZoteroCachedFulltext(attachment);
         if (fulltextContent) {
           content = fulltextContent;
           extractionMethod = 'zotero_builtin';
@@ -419,25 +407,6 @@ export class FulltextService {
     } catch (error) {
       ztoolkit.log(`[FulltextService] Error extracting web attachment: ${error}`, "error");
       return '';
-    }
-  }
-
-  /**
-   * Use Zotero's built-in fulltext extraction
-   * @param attachment - Attachment item
-   * @returns Fulltext content or null
-   */
-  private async getZoteroFulltext(attachment: any): Promise<string | null> {
-    try {
-      // Use Zotero's fulltext API if available
-      if (Zotero.Fulltext && Zotero.Fulltext.getItemContent) {
-        const content = await Zotero.Fulltext.getItemContent(attachment.id);
-        return content && content.content ? content.content : null;
-      }
-      return null;
-    } catch (error) {
-      ztoolkit.log(`[FulltextService] Error using Zotero fulltext: ${error}`, "warn");
-      return null;
     }
   }
 

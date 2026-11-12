@@ -20,6 +20,13 @@ export class PDFProcessor {
 
   private _useDocumentWorker = false;
 
+  /**
+   * Number of font/CMap assets the worker asked for that could not be loaded.
+   * Non-zero means the extracted text may be missing glyphs (typically CJK)
+   * even though extraction "succeeded" (#116).
+   */
+  fontDataFetchFailures = 0;
+
   constructor(private readonly ztoolkit: any) {
     this.Zotero = ztoolkit.getGlobal("Zotero");
     // Zotero 10 replaced the pdf-worker with the unified document-worker:
@@ -101,6 +108,7 @@ export class PDFProcessor {
             respData = new Uint8Array(response.response);
           }
         } catch (e) {
+          this.fontDataFetchFailures++;
           this.ztoolkit.log("Failed to fetch font data:", e, "error");
         }
 
