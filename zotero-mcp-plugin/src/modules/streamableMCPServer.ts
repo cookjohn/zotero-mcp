@@ -298,9 +298,14 @@ export class StreamableMCPServer {
 
 
   private buildToolDefinitions(): any[] {
+    // MCP annotation: tools that only read Zotero data. Write tools
+    // below must not be marked read-only.
+    const readOnly = { annotations: { readOnlyHint: true } };
+
     return [
       {
         name: 'get_libraries',
+        ...readOnly,
         description: 'List all Zotero libraries available in the current client. Returns minimal library metadata for each library as a paginated array.',
         inputSchema: {
           type: 'object',
@@ -312,6 +317,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'search_library',
+        ...readOnly,
         description: 'Search the Zotero library with advanced parameters, boolean operators, relevance scoring, and pagination. Results are from user\'s personal library. Use itemKey with get_content for full text. To find standalone PDFs without metadata, use itemType="attachment" with includeAttachments="true".',
         inputSchema: {
           type: 'object',
@@ -366,6 +372,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'search_libraries',
+        ...readOnly,
         description: 'Search libraries by name',
         inputSchema: {
           type: 'object',
@@ -379,6 +386,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'search_annotations',
+        ...readOnly,
         description: 'Search and filter annotations (highlights, notes, comments) by query, colors, or tags. Returns user\'s personal research notes with relevance scoring. Preserve exact wording when quoting.',
         inputSchema: {
           type: 'object',
@@ -435,6 +443,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_item_details',
+        ...readOnly,
         description: 'Get detailed bibliographic metadata for a specific item (title, authors, dates, identifiers, attachments, notes, tags). Use get_content for full text. Suitable for generating citations and references.',
         inputSchema: {
           type: 'object',
@@ -455,6 +464,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_annotations',
+        ...readOnly,
         description: 'Get annotations and notes for specific items with color/tag filtering. REQUIRED: provide one of itemKey, annotationId, or annotationIds (use search_library first to find the itemKey; use search_annotations to search by colors/tags across the library). Returns user\'s personal highlights and comments from PDFs. Preserve exact wording when quoting.',
         inputSchema: {
           type: 'object',
@@ -506,6 +516,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_content',
+        ...readOnly,
         description: 'Get full-text content from PDFs, attachments, notes, and abstracts. May contain OCR artifacts. When user asks for complete text, provide it without summarization.',
         inputSchema: {
           type: 'object',
@@ -569,6 +580,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_collections',
+        ...readOnly,
         description: 'Get collections in the library. By default returns a flat, paginated list of top-level collections. Use recursive=true to retrieve the complete nested collection tree (all levels) in one call. Use parentCollection to scope to a specific parent\'s direct children.',
         inputSchema: {
           type: 'object',
@@ -597,6 +609,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'search_collections',
+        ...readOnly,
         description: 'Search collections by name',
         inputSchema: {
           type: 'object',
@@ -612,6 +625,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_collection_details',
+        ...readOnly,
         description: 'Get detailed information about a specific collection',
         inputSchema: {
           type: 'object',
@@ -627,6 +641,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_collection_items',
+        ...readOnly,
         description: 'Get items in a specific collection',
         inputSchema: {
           type: 'object',
@@ -644,6 +659,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_subcollections',
+        ...readOnly,
         description: 'Get subcollections (child collections) of a specific collection. Use recursive=true to retrieve the full nested hierarchy of all descendant collections.',
         inputSchema: {
           type: 'object',
@@ -783,6 +799,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'search_fulltext',
+        ...readOnly,
         description: 'Search within full-text content of all documents. Returns matching passages with context. Use get_content with itemKey for complete text of a result.',
         inputSchema: {
           type: 'object',
@@ -811,6 +828,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'get_item_abstract',
+        ...readOnly,
         description: 'Get the abstract/summary of a specific item. Typically the author\'s own summary from the original publication.',
         inputSchema: {
           type: 'object',
@@ -832,6 +850,7 @@ export class StreamableMCPServer {
       // Semantic Search Tools
       {
         name: 'semantic_search',
+        ...readOnly,
         description: 'AI-powered semantic search using embeddings. Finds conceptually related content even without exact keyword matches. Combine with keyword search (search_library, search_fulltext) for comprehensive results.',
         inputSchema: {
           type: 'object',
@@ -859,6 +878,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'find_similar',
+        ...readOnly,
         description: 'Find items semantically similar to a given item using AI embeddings. Useful for expanding research from a known relevant paper and discovering thematic clusters.',
         inputSchema: {
           type: 'object',
@@ -881,6 +901,7 @@ export class StreamableMCPServer {
       },
       {
         name: 'semantic_status',
+        ...readOnly,
         description: 'Get the status of the semantic search service including index statistics.',
         inputSchema: {
           type: 'object',
@@ -890,6 +911,7 @@ export class StreamableMCPServer {
       // Full-text Database Tool (read-only operations)
       {
         name: 'fulltext_database',
+        ...readOnly,
         description: 'Access the cached full-text content database (read-only). Faster than re-extracting from Zotero. Actions: list (cached items), search (find text), get (retrieve content), stats (database info).',
         inputSchema: {
           type: 'object',
