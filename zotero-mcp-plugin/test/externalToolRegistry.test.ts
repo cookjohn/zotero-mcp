@@ -1,9 +1,8 @@
+import { expect } from "chai";
 import {
   getToolRegistry,
   resetToolRegistry,
-} from "../src/modules/toolRegistry";
-
-declare const expect: Chai.ExpectStatic;
+} from "../src/modules/toolRegistry.ts";
 
 describe("External Tool Registry compatibility", function () {
   beforeEach(function () {

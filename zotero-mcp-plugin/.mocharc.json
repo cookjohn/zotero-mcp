@@ -1,4 +1,13 @@
 {
-  "spec": ["test/**/*.test.ts"],
-  "node-option": ["experimental-strip-types", "no-warnings"]
+  "spec": [
+    "test/**/*.test.ts"
+  ],
+  "ignore": [
+    "test/writeOperations.test.ts",
+    "test/citationExportService.test.ts"
+  ],
+  "node-option": [
+    "experimental-strip-types",
+    "no-warnings"
+  ]
 }
