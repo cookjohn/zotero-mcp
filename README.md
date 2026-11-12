@@ -378,6 +378,8 @@ if (mcp && mcp.api && mcp.api.unregisterAllTools) {
 - The registry survives MCP server restarts (e.g. port changes). Tools registered before the server starts will appear once it does.
 - Handler errors are caught and returned as MCP error responses — no need to wrap in try/catch.
 - Results are JSON-serialised and wrapped in MCP `text` content automatically.
+- External tools are **not** covered by this plugin's "Enable write operations" switch. If your tool modifies the library, gate it in your own plugin.
+- Registrations live in this plugin's memory. They are dropped when Zotero MCP is disabled, updated or reloaded, so register again whenever `Zotero.ZoteroMCP.api` becomes available.
 
 ---
 

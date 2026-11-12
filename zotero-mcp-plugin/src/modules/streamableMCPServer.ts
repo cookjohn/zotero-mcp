@@ -1615,7 +1615,8 @@ export class StreamableMCPServer {
           // Check externally-registered tools from other Zotero plugins
           const registry = getToolRegistry();
           const externalTool = registry.getTool(name);
-          if (externalTool) {
+          // Disabled tools are hidden from tools/list and must not be callable.
+          if (externalTool && externalTool.enabled !== false) {
             ztoolkit.log(`[StreamableMCP] Calling external tool: ${name}`);
             result = await externalTool.handler(args);
             break;

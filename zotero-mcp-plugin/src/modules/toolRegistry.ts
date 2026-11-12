@@ -60,7 +60,9 @@ const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
 
 /**
  * Built-in tool names that external plugins must not override.
- * Kept in sync with the `handleToolsList` switch in streamableMCPServer.ts.
+ * Kept in sync with buildToolDefinitions() in streamableMCPServer.ts; as a
+ * safety net, getRuntimeTools() also drops any external tool whose name
+ * collides with a built-in definition.
  */
 const BUILTIN_TOOL_NAMES = new Set<string>([
   'get_libraries',
@@ -90,6 +92,8 @@ const BUILTIN_TOOL_NAMES = new Set<string>([
   'write_tag',
   'write_metadata',
   'write_item',
+  'add_by_identifier',
+  'trash_item',
   'export_bibliography',
   'get_citation',
   'list_citation_styles',

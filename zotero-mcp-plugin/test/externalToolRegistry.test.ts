@@ -30,10 +30,10 @@ describe("External Tool Registry compatibility", function () {
     expect(registry.unregisterTool("example_tool")).to.equal(false);
   });
 
-  it("reserves sync_bib and cite as built-in tool names", function () {
+  it("reserves built-in and planned tool names", function () {
     const registry = getToolRegistry();
 
-    for (const name of ["sync_bib", "cite"]) {
+    for (const name of ["sync_bib", "cite", "trash_item", "add_by_identifier"]) {
       expect(() =>
         registry.registerTool({
           name,
